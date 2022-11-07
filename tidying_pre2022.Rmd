@@ -1,0 +1,641 @@
+---
+title: "poudre_pre2022"
+author: "Katie Willi"
+date: "2/22/2022"
+output: html_document
+---
+
+```{r}
+library(janitor) # 
+library(rvest)
+library(tidyverse)
+library(dygraphs)
+library(lubridate)
+library(padr)
+library(ggpubr)
+library(dygraphs)
+```
+
+ Listed accuracy and range for sensors:
+
+ Temperature: ±0.1 Celsius, -5 to 50 C
+
+ Barometric Pressure: ±1.0 mbars, 300 to 1,100 mbars
+
+ pH: ±0.1 pH, 0 to 14 pH
+
+ ORP: ±5 mV
+
+ Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+ TDS/Salinity: range of 0 to 350 ppt/0 to 350 PSU
+
+ RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+ Turbidity: ±2% of reading or ±0.5 NTU (whichever is greater)
+
+ TSS: range of 1 to 1,500 mg/L
+
+ Pressure: ±0.1% FS from -5 to 50°C
+
+ Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
+
+
+HTML readers, one for HydroVu htmls, one for direct downloads from the AquaTROLL 600, and one for downloading from the Vulink in the field:
+```{r}
+# from HydroVu:
+html_reader <- function(file) {
+    
+    raw_data <- rvest::read_html(file) %>%
+      rvest::html_node('table') %>%
+      rvest::html_table() %>%
+      slice(-1:-8) %>%
+      janitor::row_to_names(row_number = 1) 
+}
+
+# from AquaTROLL 600:
+direct_download_reader <- function(file) {
+  
+  raw_data <- rvest::read_html(file) %>%
+    rvest::html_node('table') %>%
+    rvest::html_table() %>%
+    slice(-1:-25) %>%
+    janitor::row_to_names(row_number = 1) 
+}
+
+# from VuLink in the field:
+vulink_on_reader <- function(file) {
+  
+  raw_data <- rvest::read_html(file) %>%
+    rvest::html_node('table') %>%
+    rvest::html_table() %>%
+    slice(-1:-31) %>%
+    janitor::row_to_names(row_number = 1) 
+}
+
+```
+
+## Rist
+```{r}
+raw <- map_dfr(grep(list.files("data/new_upload/rist/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+names(raw) <- make.names(names(raw), unique = T)
+
+vusitu <- raw %>%
+  select(DT = Date.Time,
+         Water_Temp_C = Temperature..C.,
+         pH = pH..pH.,
+         ORP_mV = ORP..mV.,
+         Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm.,
+         Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm.,
+         Salinity_PSU = Salinity..psu.,
+         TDS_ppt = Total.Dissolved.Solids..ppt.,
+         DO_ppm = DO..ppm.,
+         Perc_O2_Sat = X..Saturation.O2....sat.,
+         Turbidity_NTU = Turbidity..FNU.,
+         TSS_mg_L = Total.Suspended.Solids..mg.L.,
+         #Chla_RFU = Chl.a.Fluorescence..RFU.,
+         #Chla_µg_L = Chl.a.Concentration..µg.L.,
+         Pressure_PSI = Pressure..psi.,
+         Depth_ft = Depth..ft.,
+         Elevation_m = Level..Elevation..m.,
+         Depth_to_Water_ft = Level..Depth.to.Water..ft.) %>%
+  mutate(DT = as_datetime(DT, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"))
+
+# mdt <- map_dfr(grep(list.files("data/new_upload/rist/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mst <- map_dfr(grep(list.files("data/new_upload/rist/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# 
+# names(mdt) <- make.names(gsub("[[:digit:]]", "", names(mdt)), unique = T)
+# names(mst) <- make.names(gsub("[[:digit:]]", "", names(mst)), unique = T)
+#
+# mdt <- mdt %>%
+#   select(DT = Date.Time,
+#          Water_Temp_C = Temperature...C....,
+#          pH = pH..pH....,
+#          ORP_mV = ORP..mV....,
+#          Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#          Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#          Salinity_PSU = Salinity..PSU....,
+#          TDS_ppt = Total.Dissolved.Solids..ppt....,
+#          DO_ppm = RDO.Concentration..mg.L....,
+#          Perc_O2_Sat = RDO.Saturation...Sat....,
+#          Turbidity_NTU = Turbidity..NTU....,
+#          TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#          Pressure_PSI = Pressure..psi....,
+#          Depth_ft = Depth..ft....) %>%
+#   mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#   mutate(DT = DT - hours(1))
+#   
+#   mst <- mst %>%
+#     select(DT = Date.Time,
+#            Water_Temp_C = Temperature...C....,
+#            pH = pH..pH....,
+#            ORP_mV = ORP..mV....,
+#            Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#            Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#            Salinity_PSU = Salinity..PSU....,
+#            TDS_ppt = Total.Dissolved.Solids..ppt....,
+#            DO_ppm = RDO.Concentration..mg.L....,
+#            Perc_O2_Sat = RDO.Saturation...Sat....,
+#            Turbidity_NTU = Turbidity..NTU....,
+#            #TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#            Pressure_PSI = Pressure..psi....,
+#            Depth_ft = Depth..ft....) %>%
+#     mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#     mutate(DT = with_tz(DT, tzone = "MST"))
+  
+rist <- vusitu %>% #  bind_rows(vusitu,mdt,mst) %>%
+  mutate(data = "Yes") %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  mutate(year = lubridate::year(DT)) %>%
+  padr::pad(.,group = "year") %>%
+  mutate(date = as_date(substr(DT, 1, 10))) %>%
+  distinct(.keep_all=TRUE) %>%
+  mutate(sensor = "Rist",
+         comments = NA)
+```
+
+## Legacy
+```{r}
+raw <- map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+names(raw) <- make.names(names(raw), unique = T)
+
+vusitu <- raw %>%
+  select(DT = Date.Time,
+         Water_Temp_C = Temperature..C.,
+         pH = pH..pH.,
+         ORP_mV = ORP..mV.,
+         Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm.,
+         Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm.,
+         Salinity_PSU = Salinity..psu.,
+         TDS_ppt = Total.Dissolved.Solids..ppt.,
+         DO_ppm = DO..ppm.,
+         Perc_O2_Sat = X..Saturation.O2....sat.,
+         Turbidity_NTU = Turbidity..FNU.,
+         TSS_mg_L = Total.Suspended.Solids..mg.L.,
+         #Chla_RFU = Chl.a.Fluorescence..RFU.,
+         #Chla_µg_L = Chl.a.Concentration..µg.L.,
+         Pressure_PSI = Pressure..psi.,
+         Depth_ft = Depth..ft.,
+         #Elevation_m = Level..Elevation..m.,
+         Depth_to_Water_ft = Level..Depth.to.Water..ft.) %>%
+  mutate(DT = as_datetime(DT, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"))
+
+mdt <- map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+mdt_manual <-  map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+mst <- map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+#   select(-2:-4)
+
+
+names(mdt) <- make.names(gsub("[[:digit:]]", "", names(mdt)), unique = T)
+names(mdt_manual) <- make.names(gsub("[[:digit:]]", "", names(mdt_manual)), unique = T)
+names(mst) <- make.names(gsub("[[:digit:]]", "", names(mst)), unique = T)
+#names(mst_manual) <- make.names(gsub("[[:digit:]]", "", names(mst_manual)), unique = T)
+
+mdt_manual <- mdt_manual %>% #bind_rows(mdt,mdt_manual) %>%
+  select(DT = Date.Time,
+         Water_Temp_C = Temperature...C....,
+         pH = pH..pH....,
+         ORP_mV = ORP..mV....,
+         Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+         Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+         Salinity_PSU = Salinity..PSU....,
+         TDS_ppt = Total.Dissolved.Solids..ppt....,
+         DO_ppm = RDO.Concentration..mg.L....,
+         Perc_O2_Sat = RDO.Saturation...Sat....,
+         Turbidity_NTU = Turbidity..NTU....,
+         TSS_mg_L = Total.Suspended.Solids..mg.L....,
+         Pressure_PSI = Pressure..psi....,
+         Depth_ft = Depth..ft....) %>%
+  mutate(DT = as_datetime(DT, tz = "MST")) %>%
+  mutate(DT = DT - hours(1)) %>%
+  filter(DT < "2021-07-25 00:00:00" | DT >"2021-08-25 23:00:00")
+  
+mdt_direct <- mdt %>% #bind_rows(mdt,mdt_manual) %>%
+  select(DT = Date.Time,
+         Water_Temp_C = Temperature...C....,
+         pH = pH..pH....,
+         ORP_mV = ORP..mV....,
+         Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+         Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+         Salinity_PSU = Salinity..PSU....,
+         TDS_ppt = Total.Dissolved.Solids..ppt....,
+         DO_ppm = RDO.Concentration..mg.L....,
+         Perc_O2_Sat = RDO.Saturation...Sat....,
+         Turbidity_NTU = Turbidity..NTU....,
+         TSS_mg_L = Total.Suspended.Solids..mg.L....,
+         Pressure_PSI = Pressure..psi....,
+         Depth_ft = Depth..ft....) %>%
+  mutate(DT = as_datetime(DT, tz = "MST")) %>%
+  mutate(DT = DT - hours(1)) %>%
+  filter(DT >= "2021-07-25 00:00:00" & DT <="2021-08-25 23:00:00") 
+
+mdt <- bind_rows(mdt_manual,mdt_direct)
+
+
+  mst <- mst %>% # bind_rows(mst,mst_manual) %>%
+    select(DT = Date.Time,
+           Water_Temp_C = Temperature...C....,
+           pH = pH..pH....,
+           ORP_mV = ORP..mV....,
+           Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+           Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+           Salinity_PSU = Salinity..PSU....,
+           TDS_ppt = Total.Dissolved.Solids..ppt....,
+           DO_ppm = RDO.Concentration..mg.L....,
+           Perc_O2_Sat = RDO.Saturation...Sat....,
+           Turbidity_NTU = Turbidity..NTU....,
+           #TSS_mg_L = Total.Suspended.Solids..mg.L....,
+           Pressure_PSI = Pressure..psi....,
+           Depth_ft = Depth..ft....) %>%
+    mutate(DT = as_datetime(DT, tz = "MST")) %>%
+    mutate(DT = with_tz(DT, tzone = "MST"))
+  
+legacy <- bind_rows(vusitu,mdt,mst) %>%
+  filter(!is.na(Water_Temp_C)) %>%
+  mutate(data = "Yes") %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  mutate(year = lubridate::year(DT)) %>%
+  padr::pad(.,group = "year") %>%
+  mutate(date = as_date(substr(DT, 1, 10))) %>%
+  distinct(.keep_all=TRUE) %>%
+  mutate(sensor = "Legacy",
+  comments = NA)
+```
+
+## Timberline
+```{r}
+raw <- map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+names(raw) <- make.names(names(raw), unique = T)
+
+vusitu <- raw %>%
+  select(DT = Date.Time,
+         Water_Temp_C = Temperature..C.,
+         pH = pH..pH.,
+         ORP_mV = ORP..mV.,
+         Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm.,
+         Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm.,
+         Salinity_PSU = Salinity..psu.,
+         TDS_ppt = Total.Dissolved.Solids..ppt.,
+         DO_ppm = DO..ppm.,
+         Perc_O2_Sat = X..Saturation.O2....sat.,
+         Turbidity_NTU = Turbidity..FNU.,
+         TSS_mg_L = Total.Suspended.Solids..mg.L.,
+         #Chla_RFU = Chl.a.Fluorescence..RFU.,
+         #Chla_µg_L = Chl.a.Concentration..µg.L.,
+         Pressure_PSI = Pressure..psi.,
+         Depth_ft = Depth..ft.,
+         Elevation_m = Level..Elevation..m.,
+         Depth_to_Water_ft = Level..Depth.to.Water..ft.) %>%
+  mutate(DT = as_datetime(DT, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"))
+
+# mdt <- map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mdt_manual <-  map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+# mst <- map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+#   select(-2:-4)
+# 
+# 
+# names(mdt) <- make.names(gsub("[[:digit:]]", "", names(mdt)), unique = T)
+# names(mdt_manual) <- make.names(gsub("[[:digit:]]", "", names(mdt_manual)), unique = T)
+# names(mst) <- make.names(gsub("[[:digit:]]", "", names(mst)), unique = T)
+# names(mst_manual) <- make.names(gsub("[[:digit:]]", "", names(mst_manual)), unique = T)
+# 
+# mdt <- bind_rows(mdt,mdt_manual) %>%
+#   select(DT = Date.Time,
+#          Water_Temp_C = Temperature...C....,
+#          pH = pH..pH....,
+#          ORP_mV = ORP..mV....,
+#          Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#          Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#          Salinity_PSU = Salinity..PSU....,
+#          TDS_ppt = Total.Dissolved.Solids..ppt....,
+#          DO_ppm = RDO.Concentration..mg.L....,
+#          Perc_O2_Sat = RDO.Saturation...Sat....,
+#          Turbidity_NTU = Turbidity..NTU....,
+#          TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#          Pressure_PSI = Pressure..psi....,
+#          Depth_ft = Depth..ft....) %>%
+#   mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#   mutate(DT = DT - hours(1))
+#   
+#   mst <- bind_rows(mst,mst_manual) %>%
+#     select(DT = Date.Time,
+#            Water_Temp_C = Temperature...C....,
+#            pH = pH..pH....,
+#            ORP_mV = ORP..mV....,
+#            Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#            Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#            Salinity_PSU = Salinity..PSU....,
+#            TDS_ppt = Total.Dissolved.Solids..ppt....,
+#            DO_ppm = RDO.Concentration..mg.L....,
+#            Perc_O2_Sat = RDO.Saturation...Sat....,
+#            Turbidity_NTU = Turbidity..NTU....,
+#            #TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#            Pressure_PSI = Pressure..psi....,
+#            Depth_ft = Depth..ft....) %>%
+#     mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#     mutate(DT = with_tz(DT, tzone = "MST"))
+  
+timberline <- vusitu %>% # bind_rows(vusitu,mdt,mst) %>%
+  mutate(data = "Yes") %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  mutate(year = lubridate::year(DT)) %>%
+  padr::pad(.,group = "year") %>%
+  mutate(date = as_date(substr(DT, 1, 10))) %>%
+  distinct(.keep_all=TRUE) %>%
+  mutate(sensor = "Timberline",
+         comments = NA)
+```
+
+## Prospect
+```{r}
+raw <- map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+names(raw) <- make.names(names(raw), unique = T)
+
+vusitu <- raw %>%
+  select(DT = Date.Time,
+         Water_Temp_C = Temperature..C.,
+         pH = pH..pH.,
+         ORP_mV = ORP..mV.,
+         Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm.,
+         Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm.,
+         Salinity_PSU = Salinity..psu.,
+         TDS_ppt = Total.Dissolved.Solids..ppt.,
+         DO_ppm = DO..ppm.,
+         Perc_O2_Sat = X..Saturation.O2....sat.,
+         Turbidity_NTU = Turbidity..FNU.,
+         TSS_mg_L = Total.Suspended.Solids..mg.L.,
+         #Chla_RFU = Chl.a.Fluorescence..RFU.,
+         #Chla_µg_L = Chl.a.Concentration..µg.L.,
+         Pressure_PSI = Pressure..psi.,
+         Depth_ft = Depth..ft.,
+         Elevation_m = Level..Elevation..m.,
+         Depth_to_Water_ft = Level..Depth.to.Water..ft.) %>%
+  mutate(DT = as_datetime(DT, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"))
+
+# mdt <- map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mdt_manual <-  map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+# mst <- map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+#   select(-2:-4)
+# 
+# 
+# names(mdt) <- make.names(gsub("[[:digit:]]", "", names(mdt)), unique = T)
+# names(mdt_manual) <- make.names(gsub("[[:digit:]]", "", names(mdt_manual)), unique = T)
+# names(mst) <- make.names(gsub("[[:digit:]]", "", names(mst)), unique = T)
+# names(mst_manual) <- make.names(gsub("[[:digit:]]", "", names(mst_manual)), unique = T)
+# 
+# mdt <- bind_rows(mdt,mdt_manual) %>%
+#   select(DT = Date.Time,
+#          Water_Temp_C = Temperature...C....,
+#          pH = pH..pH....,
+#          ORP_mV = ORP..mV....,
+#          Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#          Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#          Salinity_PSU = Salinity..PSU....,
+#          TDS_ppt = Total.Dissolved.Solids..ppt....,
+#          DO_ppm = RDO.Concentration..mg.L....,
+#          Perc_O2_Sat = RDO.Saturation...Sat....,
+#          Turbidity_NTU = Turbidity..NTU....,
+#          TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#          Pressure_PSI = Pressure..psi....,
+#          Depth_ft = Depth..ft....) %>%
+#   mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#   mutate(DT = DT - hours(1))
+#   
+#   mst <- bind_rows(mst,mst_manual) %>%
+#     select(DT = Date.Time,
+#            Water_Temp_C = Temperature...C....,
+#            pH = pH..pH....,
+#            ORP_mV = ORP..mV....,
+#            Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#            Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#            Salinity_PSU = Salinity..PSU....,
+#            TDS_ppt = Total.Dissolved.Solids..ppt....,
+#            DO_ppm = RDO.Concentration..mg.L....,
+#            Perc_O2_Sat = RDO.Saturation...Sat....,
+#            Turbidity_NTU = Turbidity..NTU....,
+#            #TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#            Pressure_PSI = Pressure..psi....,
+#            Depth_ft = Depth..ft....) %>%
+#     mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#     mutate(DT = with_tz(DT, tzone = "MST"))
+  
+prospect <- vusitu %>% # bind_rows(vusitu,mdt,mst) %>%
+  mutate(data = "Yes") %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  mutate(year = lubridate::year(DT)) %>%
+  padr::pad(.,group = "year") %>%
+  mutate(date = as_date(substr(DT, 1, 10))) %>%
+  distinct(.keep_all=TRUE) %>%
+  mutate(sensor = "Prospect",
+    comments = NA)
+```
+## ELC
+```{r}
+raw <- map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+names(raw) <- make.names(names(raw), unique = T)
+
+vusitu <- raw %>%
+  select(DT = Date.Time,
+         Water_Temp_C = Temperature..C.,
+         pH = pH..pH.,
+         ORP_mV = ORP..mV.,
+         Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm.,
+         Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm.,
+         Salinity_PSU = Salinity..psu.,
+         TDS_ppt = Total.Dissolved.Solids..ppt.,
+         DO_ppm = DO..ppm.,
+         Perc_O2_Sat = X..Saturation.O2....sat.,
+         Turbidity_NTU = Turbidity..FNU.,
+         TSS_mg_L = Total.Suspended.Solids..mg.L.,
+         #Chla_RFU = Chl.a.Fluorescence..RFU.,
+         #Chla_µg_L = Chl.a.Concentration..µg.L.,
+         Pressure_PSI = Pressure..psi.,
+         Depth_ft = Depth..ft.,
+         Elevation_m = Level..Elevation..m.,
+         Depth_to_Water_ft = Level..Depth.to.Water..ft.) %>%
+  mutate(DT = as_datetime(DT, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"))
+
+mdt <- map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mdt_manual <-  map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+# mst <- map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+#   select(-2:-4)
+# 
+# 
+ names(mdt) <- make.names(gsub("[[:digit:]]", "", names(mdt)), unique = T)
+# names(mdt_manual) <- make.names(gsub("[[:digit:]]", "", names(mdt_manual)), unique = T)
+# names(mst) <- make.names(gsub("[[:digit:]]", "", names(mst)), unique = T)
+# names(mst_manual) <- make.names(gsub("[[:digit:]]", "", names(mst_manual)), unique = T)
+
+ mdt <- mdt %>% # bind_rows(mdt,mdt_manual) %>%
+   select(DT = Date.Time,
+          Water_Temp_C = Temperature...C....,
+          pH = pH..pH....,
+        ORP_mV = ORP..mV....,
+          Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+          Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+          Salinity_PSU = Salinity..PSU....,
+          TDS_ppt = Total.Dissolved.Solids..ppt....,
+          DO_ppm = RDO.Concentration..mg.L....,
+          Perc_O2_Sat = RDO.Saturation...Sat....,
+          Turbidity_NTU = Turbidity..NTU....,
+          TSS_mg_L = Total.Suspended.Solids..mg.L....,
+          Pressure_PSI = Pressure..psi....,
+          Depth_ft = Depth..ft....) %>%
+   mutate(DT = as_datetime(DT, tz = "MST")) %>%
+   mutate(DT = DT - hours(1))
+   
+#   mst <- bind_rows(mst,mst_manual) %>%
+#     select(DT = Date.Time,
+#            Water_Temp_C = Temperature...C....,
+#            pH = pH..pH....,
+#            ORP_mV = ORP..mV....,
+#            Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#            Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#            Salinity_PSU = Salinity..PSU....,
+#            TDS_ppt = Total.Dissolved.Solids..ppt....,
+#            DO_ppm = RDO.Concentration..mg.L....,
+#            Perc_O2_Sat = RDO.Saturation...Sat....,
+#            Turbidity_NTU = Turbidity..NTU....,
+#            #TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#            Pressure_PSI = Pressure..psi....,
+#            Depth_ft = Depth..ft....) %>%
+#     mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#     mutate(DT = with_tz(DT, tzone = "MST"))
+  
+elc <- bind_rows(vusitu,mdt) %>%
+  mutate(data = "Yes") %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  mutate(year = lubridate::year(DT)) %>%
+  padr::pad(.,group = "year") %>%
+  mutate(date = as_date(substr(DT, 1, 10))) %>%
+  distinct(.keep_all=TRUE) %>%
+  mutate(sensor = "ELC",
+    comments = NA)
+```
+
+## Archery
+```{r}
+raw <- map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+names(raw) <- make.names(names(raw), unique = T)
+
+vusitu <- raw %>%
+  select(DT = Date.Time,
+         Water_Temp_C = Temperature..C.,
+         pH = pH..pH.,
+         ORP_mV = ORP..mV.,
+         Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm.,
+         Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm.,
+         Salinity_PSU = Salinity..psu.,
+         TDS_ppt = Total.Dissolved.Solids..ppt.,
+         DO_ppm = DO..ppm.,
+         Perc_O2_Sat = X..Saturation.O2....sat.,
+         Turbidity_NTU = Turbidity..FNU.,
+         TSS_mg_L = Total.Suspended.Solids..mg.L.,
+         Chla_RFU = Chl.a.Fluorescence..RFU.,
+         Chla_µg_L = Chl.a.Concentration..µg.L.,
+         Pressure_PSI = Pressure..psi.,
+         Depth_ft = Depth..ft.,
+         Elevation_m = Level..Elevation..m.,
+         Depth_to_Water_ft = Level..Depth.to.Water..ft.) %>%
+  mutate(DT = as_datetime(DT, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"))
+
+#mdt <- map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mdt_manual <-  map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+# mst <- map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+#   select(-2:-4)
+# 
+# 
+# names(mdt) <- make.names(gsub("[[:digit:]]", "", names(mdt)), unique = T)
+# names(mdt_manual) <- make.names(gsub("[[:digit:]]", "", names(mdt_manual)), unique = T)
+# names(mst) <- make.names(gsub("[[:digit:]]", "", names(mst)), unique = T)
+# names(mst_manual) <- make.names(gsub("[[:digit:]]", "", names(mst_manual)), unique = T)
+# 
+# mdt <- mdt %>% # bind_rows(mdt,mdt_manual) %>%
+#   select(DT = Date.Time,
+#          Water_Temp_C = Temperature...C....,
+#          pH = pH..pH....,
+#        ORP_mV = ORP..mV....,
+#          Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#          Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#          Salinity_PSU = Salinity..PSU....,
+#          TDS_ppt = Total.Dissolved.Solids..ppt....,
+#          DO_ppm = RDO.Concentration..mg.L....,
+#          Perc_O2_Sat = RDO.Saturation...Sat....,
+#          Turbidity_NTU = Turbidity..NTU....,
+#          TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#          Pressure_PSI = Pressure..psi....,
+#          Depth_ft = Depth..ft....) %>%
+#   mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#   mutate(DT = DT - hours(1))
+#   
+#   mst <- bind_rows(mst,mst_manual) %>%
+#     select(DT = Date.Time,
+#            Water_Temp_C = Temperature...C....,
+#            pH = pH..pH....,
+#            ORP_mV = ORP..mV....,
+#            Actual_Conductivity_µS_cm = Actual.Conductivity..µS.cm....,
+#            Specific_Conductivity_µS_cm = Specific.Conductivity..µS.cm....,
+#            Salinity_PSU = Salinity..PSU....,
+#            TDS_ppt = Total.Dissolved.Solids..ppt....,
+#            DO_ppm = RDO.Concentration..mg.L....,
+#            Perc_O2_Sat = RDO.Saturation...Sat....,
+#            Turbidity_NTU = Turbidity..NTU....,
+#            #TSS_mg_L = Total.Suspended.Solids..mg.L....,
+#            Pressure_PSI = Pressure..psi....,
+#            Depth_ft = Depth..ft....) %>%
+#     mutate(DT = as_datetime(DT, tz = "MST")) %>%
+#     mutate(DT = with_tz(DT, tzone = "MST"))
+  
+archery <- vusitu %>% # bind_rows(vusitu,mdt) %>%
+  mutate(data = "Yes") %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  mutate(year = lubridate::year(DT)) %>%
+  padr::pad(.,group = "year") %>%
+  mutate(date = as_date(substr(DT, 1, 10))) %>%
+  distinct(.keep_all=TRUE) %>%
+  mutate(sensor = "Archery",
+         comments = case_when(DT == "2019-09-30 03:45:00" ~ "sensor deployed",
+                              DT == "2020-01-06 21:45:00" ~ "rental sensor battery dead",
+                              DT == "2020-01-10 08:45:00" ~ "rental sensor battery replaced",
+                              DT == "2020-04-04 18:00:00" ~ "rental sensor battery dead",
+                              DT == "2020-04-17 11:15:00" ~ "rental sensor battery replaced",
+                              DT == "2020-04-24 23:00:00" ~ "rental sensor stopped working?",
+                              DT == "2020-04-25 15:45:00" ~ "rental sensor swapped with new sensor",
+                              DT == "2021-08-17 09:00:00" ~ "sensor cleaned",
+                              DT == "2021-08-17 09:15:00" ~ "sensor re-deployed",
+                              DT == "2021-09-19 05:15:00" ~ "sensor stopped working - overheating?",
+                              DT == "2021-09-25 09:30:00" ~ "sensor removed from field",
+                              DT == "2021-10-04 09:00:00" ~ "sensor re-deployed",
+                              DT == "2021-10-05 07:45:00" ~ "sensor checked, then re-deployed",
+                              DT == "2021-12-04 09:00:00" ~ "sensor pulled for season"))
+```
+
+
+Bind all datasets together:
+```{r}
+# sunrise_sunset <- read_csv('data/outside_data/sunrise_sunset.csv') %>%
+#   mutate(date=mdy(date),
+#     sunrise=as_datetime(sunrise),
+#          sunset=as_datetime(sunset)) %>%
+#   mutate(sunrise_mst=sunrise-hours(1)) %>%
+#   mutate(sunup = ifelse(Timezone == "MDT", sunrise_mst, sunrise)) %>%
+#   mutate(sunup=as_datetime(sunup)) %>%
+#   mutate(sunset_mst=sunset-hours(1)) %>%
+#   mutate(sundown = ifelse(Timezone == "MDT", sunset_mst, sunset)) %>%
+#   mutate(sundown=as_datetime(sundown)) %>%
+#   select(date,sunup,sundown)
+
+raw <- bind_rows(rist,legacy,timberline,prospect,elc,archery) %>% write_csv('data/all_sensor_data_pre2022.csv')
+```
+
