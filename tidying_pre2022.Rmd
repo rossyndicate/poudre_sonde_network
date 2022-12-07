@@ -77,7 +77,7 @@ vulink_on_reader <- function(file) {
 
 ## Rist
 ```{r}
-raw <- map_dfr(grep(list.files("data/new_upload/rist/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+raw <- map_dfr(grep(list.files("data/sensor_data/pre2022/rist/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
 names(raw) <- make.names(names(raw), unique = T)
 
 vusitu <- raw %>%
@@ -102,8 +102,8 @@ vusitu <- raw %>%
   mutate(DT = as_datetime(DT, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"))
 
-# mdt <- map_dfr(grep(list.files("data/new_upload/rist/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
-# mst <- map_dfr(grep(list.files("data/new_upload/rist/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mdt <- map_dfr(grep(list.files("data/sensor_data/pre2022/rist/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mst <- map_dfr(grep(list.files("data/sensor_data/pre2022/rist/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
 # 
 # names(mdt) <- make.names(gsub("[[:digit:]]", "", names(mdt)), unique = T)
 # names(mst) <- make.names(gsub("[[:digit:]]", "", names(mst)), unique = T)
@@ -157,7 +157,7 @@ rist <- vusitu %>% #  bind_rows(vusitu,mdt,mst) %>%
 
 ## Legacy
 ```{r}
-raw <- map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+raw <- map_dfr(grep(list.files("data/sensor_data/pre2022/legacy/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
 names(raw) <- make.names(names(raw), unique = T)
 
 vusitu <- raw %>%
@@ -182,10 +182,10 @@ vusitu <- raw %>%
   mutate(DT = as_datetime(DT, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"))
 
-mdt <- map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
-mdt_manual <-  map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
-mst <- map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
-# mst_manual <-  map_dfr(grep(list.files("data/new_upload/legacy/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+mdt <- map_dfr(grep(list.files("data/sensor_data/pre2022/legacy/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+mdt_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/legacy/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+mst <- map_dfr(grep(list.files("data/sensor_data/pre2022/legacy/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/legacy/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
 #   select(-2:-4)
 
 
@@ -267,7 +267,7 @@ legacy <- bind_rows(vusitu,mdt,mst) %>%
 
 ## Timberline
 ```{r}
-raw <- map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+raw <- map_dfr(grep(list.files("data/sensor_data/pre2022/timberline/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
 names(raw) <- make.names(names(raw), unique = T)
 
 vusitu <- raw %>%
@@ -292,10 +292,10 @@ vusitu <- raw %>%
   mutate(DT = as_datetime(DT, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"))
 
-# mdt <- map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
-# mdt_manual <-  map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
-# mst <- map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
-# mst_manual <-  map_dfr(grep(list.files("data/new_upload/timberline/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+# mdt <- map_dfr(grep(list.files("data/sensor_data/pre2022/timberline/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mdt_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/timberline/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+# mst <- map_dfr(grep(list.files("data/sensor_data/pre2022/timberline/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/timberline/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
 #   select(-2:-4)
 # 
 # 
@@ -353,7 +353,7 @@ timberline <- vusitu %>% # bind_rows(vusitu,mdt,mst) %>%
 
 ## Prospect
 ```{r}
-raw <- map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+raw <- map_dfr(grep(list.files("data/sensor_data/pre2022/prospect/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
 names(raw) <- make.names(names(raw), unique = T)
 
 vusitu <- raw %>%
@@ -378,10 +378,10 @@ vusitu <- raw %>%
   mutate(DT = as_datetime(DT, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"))
 
-# mdt <- map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
-# mdt_manual <-  map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
-# mst <- map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
-# mst_manual <-  map_dfr(grep(list.files("data/new_upload/prospect/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+# mdt <- map_dfr(grep(list.files("data/sensor_data/pre2022/prospect/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mdt_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/prospect/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+# mst <- map_dfr(grep(list.files("data/sensor_data/pre2022/prospect/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/prospect/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
 #   select(-2:-4)
 # 
 # 
@@ -438,7 +438,7 @@ prospect <- vusitu %>% # bind_rows(vusitu,mdt,mst) %>%
 ```
 ## ELC
 ```{r}
-raw <- map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+raw <- map_dfr(grep(list.files("data/sensor_data/pre2022/elc/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
 names(raw) <- make.names(names(raw), unique = T)
 
 vusitu <- raw %>%
@@ -463,10 +463,10 @@ vusitu <- raw %>%
   mutate(DT = as_datetime(DT, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"))
 
-mdt <- map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
-# mdt_manual <-  map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
-# mst <- map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
-# mst_manual <-  map_dfr(grep(list.files("data/new_upload/elc/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+mdt <- map_dfr(grep(list.files("data/sensor_data/pre2022/elc/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mdt_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/elc/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+# mst <- map_dfr(grep(list.files("data/sensor_data/pre2022/elc/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/elc/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
 #   select(-2:-4)
 # 
 # 
@@ -524,7 +524,7 @@ elc <- bind_rows(vusitu,mdt) %>%
 
 ## Archery
 ```{r}
-raw <- map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
+raw <- map_dfr(grep(list.files("data/sensor_data/pre2022/archery/", full.names = T), pattern = "M", invert = T, value = T), html_reader)
 names(raw) <- make.names(names(raw), unique = T)
 
 vusitu <- raw %>%
@@ -549,10 +549,10 @@ vusitu <- raw %>%
   mutate(DT = as_datetime(DT, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"))
 
-#mdt <- map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
-# mdt_manual <-  map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
-# mst <- map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
-# mst_manual <-  map_dfr(grep(list.files("data/new_upload/archery/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
+#mdt <- map_dfr(grep(list.files("data/sensor_data/pre2022/archery/", full.names = T), pattern = "MDT_DIRECT", value = T), direct_download_reader)
+# mdt_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/archery/", full.names = T), pattern = "MDT_MANUAL", value = T), vulink_on_reader) %>% select(-2:-4)
+# mst <- map_dfr(grep(list.files("data/sensor_data/pre2022/archery/", full.names = T), pattern = "MST_DIRECT", value = T), direct_download_reader)
+# mst_manual <-  map_dfr(grep(list.files("data/sensor_data/pre2022/archery/", full.names = T), pattern = "MST_MANUAL", value = T), vulink_on_reader) %>%
 #   select(-2:-4)
 # 
 # 
