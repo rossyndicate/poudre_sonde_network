@@ -1,5 +1,5 @@
 ---
-title: "post_2022"
+title: "scratch"
 author: "Katie Willi"
 date: "`r Sys.Date()`"
 output: html_document
@@ -19,29 +19,7 @@ library(dygraphs)
 library(labelled)
 
 library(zoo)
-
-library(anomalize)
 ```
-Functions that you need!
-```{r}
-rollmeaner <- function (x) {
-  if (length(x) < 5) {
-    rep(NA,length(x)) 
-  } else {
-    rollmean(x, 5, align = "center", na.pad = TRUE)
-  }
-}
-
-rollsder <- function (x) {
-  if (length(x) < 5) {
-    rep(NA,length(x)) 
-  } else {
-    rollapplyr(x, 5, align = "center", FUN = sd, fill = 0)
-  }
-}
-```
- 
- 
  
  Listed accuracy and range for sensors:
 
@@ -89,6 +67,13 @@ pre_2022 <- read_csv('data/pretty/all_sensor_data_pre2022.csv') %>%
 This is the first year that there are consistent field notes. 
 
 ```{r}
+# WHEN DATA WAS STORED ON GOOGLE DRIVE:
+# field_notes <- read_sheet("https://docs.google.com/spreadsheets/d/11Gc1eS1wt9NrU12hWw1mUl25ixKZrTndIVCsvD4UKao/edit#gid=0") %>%
+#   mutate(start_time_mst = (substr(start_time_mst, 12, 19)),
+#          DT = round_date(as_datetime(paste0(date,' ',start_time_mst), tz="MST"), '15 mins'))
+
+# NOW, ON MICROSOFT ONEDRIVE:
+
 field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
   mutate(DT = (paste0(date, " ", start_time_mst))) %>%
   mutate(DT = ymd_hm(DT)) %>%
@@ -102,6 +87,14 @@ field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
 These are a bit tricky to automate nicely because the calibration table structure is different depending on what sensors are on the sonde, and what ports they're in...
 
 ```{r}
+# setwd("C:/Users/katie/Documents/0_My_Git/poudre_sonde_network/data/cal_reports")
+# 
+# #folder <- drive_get(as_id('https://drive.google.com/drive/folders/1XZwrnSaqd7o9GzfaYxdXdZtpZ_vEyixF'))
+# 
+# cal_files <- drive_ls(folder, type = "html")
+# 
+# walk(cal_files$id, ~ drive_download(as_id(.x)))
+
 cal_files <- list.files("data/calibration_reports", pattern=".html")
 
 cal_table <- vector("list", length = length(cal_files)) 
@@ -179,6 +172,29 @@ cal_table <- bind_rows(cal_table) %>%
   group_by(site) %>%
   mutate(DT = round_date(DT, "15 minutes")) %>%
   padr::pad(by='DT', group = 'site')
+  # set_variable_labels("site" = "Sensor Site",     
+  #                     "DT" = "Date Time (MST)",       
+  #                     "rdo_slope"  = "RDO Post-Calibration Slope, Unitless", 
+  #                     "rdo_offset" = "RDO Post-Calibration Offset (mg/L)",   
+  #                     "rdo_100"  = "RDO Pre-Calibration at 100% (% Saturation)",    
+  #                     "rdo_conc"  = "RDO 100% Saturation Concentration @ Calibration (mg/L)",   
+  #                     "rdo_temp" = "RDO Temperature @ Calibration (deg Celsius)",     
+  #                     "rdo_pressure" = "RDO Barometric Pressure @ Calibration (mbar)",   
+  #                     "ph_slope_pre" = "pH Pre-Calibration Slope (mV/pH)",
+  #                     "ph_offset_pre" = "pH Pre-Calibration Offset (mV)",
+  #                     "ph_slope_post" = "pH Post-Calibration Slope (mV/pH)",
+  #                     "ph_offset_post" = "pH Post-Calibration Offset (mV)",
+  #                     "ph_7" = "pH 7 Post-Calibration Reading (mV)",      
+  #                     "orp_offset" = "ORP Post-Calibration Offset at ZoBell's (mV)",    
+  #                     "tds_conversion_ppm" = "TDS Post-Calibration Conversion Factor (ppm)",
+  #                     "cond_cell_constant" = "Conductivity Cell Constant Post-Calibration, Unitless",
+  #                     "cond_pre" = "Specific Conductivity Pre-Calibration (µS/cm)",   
+  #                     "cond_post" = "Specific Conductivity Post-Calibration (µS/cm)",     
+  #                     "ntu_slope" = "Turbidity Post-Calibration Slope, Unitless",    
+  #                     "ntu_offset" = "Turbidity Post-Calibration Offset (NTU)",      
+  #                     "ntu_10" = "Turbidity Pre-Calibration @ 10 NTU (NTU)",      
+  #                     "ntu_100" = "Turbidity Pre-Calibration @ 100 NTU (NTU)",    
+  #                     "factory_defaults" = "Sensors re-set to factory defaults")
 
 rm(cal, cal_files, conductivity, date, i, ph_orp, rdo, time_mst, turbidity)
 ```
@@ -234,9 +250,13 @@ tube_reader <- function(file) {
 usgs_lincoln <- dataRetrieval::readNWISuv("06752260", parameterCd = "00065", startDate = "2019-09-01", endDate = "2022-12-01") %>%
   mutate(DT=ymd_hms(dateTime))%>%
   rename(Depth_ft = X_00065_00000) %>%
+  #mutate(date = as_date(dateTime)) %>%
+  #group_by(date) %>%
+  #summarize(X_00065_00000 = mean(X_00065_00000)) %>%
+  #mutate(Depth_m = X_00065_00000 * 0.3048) %>%
   select(DT, 
          Depth_ft) %>%
-  mutate(site = "usgs_lincoln")
+  mutate(site="usgs_lincoln")
 ```
 
 
@@ -254,10 +274,18 @@ rawless_troll_legacy <- raw_troll_legacy %>%
                       Water_Temp_C = as.numeric(contains('Temperature...C')),
                       pH = contains('pH'),
                       ORP_mV = contains('ORP'),
+                      #Actual_Conductivity_µS_cm = contains('Actual.Conductivity..µS.cm.'),
                       Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
+                      #Salinity_PSU = contains('Salinity..psu.'),
                       DO_ppm = contains('RDO.concentration'),
                       Turbidity_NTU = contains('Turbidity'),
+                      #TSS_mg_L = contains('Total.Suspended.Solids..mg.L.'),
+                      #Chla_RFU = contains('Chl.a.Fluorescence..RFU.'),
+                      #Chla_µg_L = contains('Chl.a.Concentration..µg.L.'),
+                      #Pressure_PSI = contains('Pressure..psi.'),
                       Depth_ft = contains('Depth..ft')) %>%
+                      #Elevation_m = contains('Level..Elevation..m.'),
+                      #Depth_to_Water_ft = contains('Level..Depth.to.Water..ft.')) %>%
   mutate(DT = ymd_hms(DT)) %>%
   mutate(DT = DT - lubridate::hours(1)) %>% # reported in MDT >:(
   mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
@@ -283,42 +311,42 @@ select(DT = contains('Date.Time'),
                       Water_Temp_C = as.numeric(contains('Temperature..C')),
                       pH = contains('pH'),
                       ORP_mV = contains('ORP'),
-                     
+                      #Actual_Conductivity_µS_cm = contains('Actual.Conductivity..µS.cm.'),
                       Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
+                      #Salinity_PSU = contains('Salinity..psu.'),
                       DO_ppm = contains('DO..mg'),
                       Turbidity_NTU = contains('Turbidity'),
+                      #TSS_mg_L = contains('Total.Suspended.Solids..mg.L.'),
+                      #Chla_RFU = contains('Chl.a.Fluorescence..RFU.'),
+                      #Chla_µg_L = contains('Chl.a.Concentration..µg.L.'),
+                      #Pressure_PSI = contains('Pressure..psi.'),
                       Depth_ft = contains('Depth..ft')) %>%
+                      #Elevation_m = contains('Level..Elevation..m.'),
+                      #Depth_to_Water_ft = contains('Level..Depth.to.Water..ft.')) %>%
   mutate(DT = ymd_hms(DT)) %>%
   mutate(DT = DT - lubridate::hours(7)) %>%
-  # Bind datasets together that were not on HydroVU:
   rbind(rawless_troll_legacy) %>%
   mutate_at(vars(2:ncol(.)), as.numeric) %>%
   mutate(site = "legacy") %>%
   arrange(ymd_hms(DT)) %>%
   mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
   mutate(DT = ymd_hms(DT)) %>%
-  # Join information about the telemetry device (like temperature, % battery):
   full_join(raw_tube_legacy, by='DT') %>%
-  # Join pre-2022 dataset
   dplyr::bind_rows(., filter(pre_2022, site == "legacy")) %>%
-  # Link up field notes:
   full_join(filter(field_notes, site == "legacy"), by = c('DT','site')) %>%
   mutate(date = as_date((DT)),
          hour = hour(DT),
-         year = year(DT),
-         month = month(DT)) %>%
+         year = year(DT)) %>%
   arrange(ymd_hms(DT)) %>%
-   # Remove data ranges where sensor was pulled out of field (THAT I KNOW OF, IE 2022 ONLY)
-  dplyr::filter(
-         !(ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00')),
+   # remove data ranges where sensor was pulled out of field (THAT I KNOW OF!).
+  dplyr::filter(!ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00'),
          !(ymd_hms(DT) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT) < ymd_hms('2022-06-01 13:30:00')),
          !(ymd_hms(DT) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT) <= ymd_hms('2022-07-12 10:00:00')),
          !(ymd_hms(DT) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT) <= ymd_hms('2022-08-25 16:15:00')),
-         !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-18 07:00:00'))
+         !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-19 07:00:00'))
          ) %>%
   mutate(DT = ymd_hms(DT)) %>%
-  padr::pad(by = 'DT') %>%
-  # Link up calibration data:
+  padr::pad(by = 'DT', group = 'year') %>%
   full_join(na.locf(na.locf(filter(cal_table, site == "legacy")), fromLast = TRUE), by = c('site','DT'))
 ```
 
@@ -327,42 +355,37 @@ select(DT = contains('Date.Time'),
 Specs for temperature: ±0.1 Celsius, -5 to 50 C
 
 ```{r}
-legacy_temp <- dplyr::select(rawless_legacy, c(DT, Water_Temp_C, PVC_Temp)) %>%
+legacy_temp <- dplyr::select(rawless_legacy, c(DT, Water_Temp_C, PVC_Temp, site)) %>%
   arrange(ymd_hms(DT)) %>%
-  # Pass one (p1): remove any data outside the In-Situ spec range:
+  group_by(site,DT) %>%
+  summarize(Water_Temp_C = mean(Water_Temp_C),
+            PVC_Temp = mean(PVC_Temp)) %>%
+  ungroup() %>%
+  distinct(DT,.keep_all=T) %>%
+  # pass one (p1): remove any data outside the In-Situ spec range
   mutate(p1 = ifelse(Water_Temp_C > 50, NA,
-              ifelse(Water_Temp_C <= 0 , NA, Water_Temp_C))) %>%
-  # For sites with more than one within the 15-minute increment, mean that shit:  
-  group_by(DT) %>%
-  summarize(p1 = mean(p1, na.rm=T),
-            PVC_Temp = mean(PVC_Temp, na.rm=T)) %>%
-  ungroup() %>% 
-  # Start getting stats:
-  mutate(rollavg = rollmeaner(p1),
-         rollsd = rollsder(p1),
-         sd3 = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)) & (month(DT) > 3 & month(DT) < 12), 1, 0))
-  
-ggplot() +
-  geom_line(data = legacy_temp, aes(x = DT, y = p1))+
-  geom_point(data = filter(legacy_temp, sd3 == 1), aes(x = ymd_hms(DT), y = (sd3*40)), color = 'red') +
-  theme_bw()
+              ifelse(Water_Temp_C < 0 , NA, Water_Temp_C)))
+  # mutate(pre = lag(Water_Temp_C, 1),
+  #        post = lead(Water_Temp_C, 1),
+  #        roll = (pre+Water_Temp_C+post)/3)
 
+means <- rollmean(legacy_temp$Water_Temp_C, k = 5, align = "center")
 
-# ANOMALIZE
-anamolized <- legacy_temp %>%
-  filter(na.rm())
-  time_decompose(p1, merge = T, trend = '6 hours') #%>%
-  anomalize(remainder, alpha = 0.03) %>%
-  time_recompose() 
+compare <- legacy_temp %>%
+  select(DT, Water_Temp_C, PVC_T, site) %>%
+  #rbind(usgs_lincoln) %>%
+  pivot_wider(., values_from = Water_Temp_C, names_from = "site")
 
+timeseries <- xts::xts(compare, order.by = ymd_hms(compare$DT))
 
-# What's it look like?
-dygraph(xts::xts(select(legacy_temp, c(DT, p1, PVC_Temp)), order.by = ymd_hms(legacy_temp$DT)),
-        main="Water Temperature Timeseries (UTC)") %>% 
-  dyRangeSelector()
-
-# ANOMALIZE
+dygraph(timeseries, main="Water Temperature Timeseries (UTC)") %>% 
+ dyRangeSelector() #%>%
+ # dyHighlight(highlightCircleSize = 4,
+ #           highlightSeriesBackgroundAlpha = 0.5,
+ #            hideOnMouseOut = T) %>%
+ # dyLegend(show = "follow")
 ```
+
 
 ## Legacy depth
 
@@ -370,38 +393,23 @@ We had a couple issues with "level" calibration. Here, I am "back-calibrating" f
 ```{r}
 legacy_depth <- dplyr::select(rawless_legacy, c(DT, Depth_ft, site)) %>%
   arrange(ymd_hms(DT)) %>%
-  # For sites with more than one within the 15-minute increment, mean that shit:  
-  group_by(DT) %>%
+  group_by(site,DT) %>%
   summarize(Depth_ft = mean((Depth_ft))) %>%
   ungroup() %>%
-  distinct(DT,.keep_all=T) %>%
-  # fix up the stage when the stage was obviously calibrated incorrectly:
-  mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-04-06 06:00:00') & DT < ymd_hms('2022-04-12 09:30:00'), 
-                              Depth_ft + abs(
-                                filter(legacy_depth, DT == ymd_hms('2022-04-12 09:15:00'))$Depth_ft - filter(legacy_depth, DT == ymd_hms('2022-04-12 09:30:00'))$Depth_ft
-                                ), Depth_ft)) %>%
-  mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-07-22 11:30:00') & DT <= ymd_hms('2022-07-25 14:15:00'), 
-                              Depth_ft_p1 + abs(
-                                filter(legacy_depth, DT == ymd_hms('2022-07-22 11:15:00'))$Depth_ft_p1 - filter(legacy_depth, DT == ymd_hms('2022-07-22 11:30:00'))$Depth_ft_p1
-                                ), Depth_ft_p1)) %>%
-  # Pass one (p1): remove any data outside the location's "natural" range:
-  mutate(p1 = ifelse(Depth_ft_p1 >= 7, NA,
-              ifelse(Depth_ft_p1 <= 0 , NA, Depth_ft_p1))) %>%
-  # Start getting stats:
-  mutate(rollavg = rollmeaner(p1),
-         rollsd = rollsder(p1),
-         sd3 = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)) & (month(DT) > 3 & month(DT) <12), 1, 0)) %>%
-  mutate(site='legacy')
+  distinct(DT,.keep_all=T) #%>%
 
-ggplot() +
-  geom_line(data = legacy_depth, aes(x = DT, y = p1))+
-  geom_point(data = filter(legacy_depth, sd3 == 1), aes(x = ymd_hms(DT), y = (sd3*6)), color = 'red') +
-  theme_bw()
+legacy_depth <- legacy_depth %>%
+  mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-04-06 06:00:00') & DT < ymd_hms('2022-04-12 09:30:00'), Depth_ft + abs(filter(legacy_depth, DT == ymd_hms('2022-04-12 09:15:00'))$Depth_ft - filter(legacy_depth, DT == ymd_hms('2022-04-12 09:30:00'))$Depth_ft), Depth_ft)) %>%
+  mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-07-22 11:30:00') & DT <= ymd_hms('2022-07-25 14:15:00'), Depth_ft_p1 + abs(filter(legacy_depth, DT == ymd_hms('2022-07-22 11:15:00'))$Depth_ft_p1 - filter(legacy_depth, DT == ymd_hms('2022-07-22 11:30:00'))$Depth_ft_p1), Depth_ft_p1)) %>%
+  mutate(pre = lag(Depth_ft_p1, 1),
+         post = lead(Depth_ft_p1, 1),
+         roll = (pre+Depth_ft_p1+post)/3)
 
 compare <- legacy_depth %>%
-  select(DT, Depth_ft=p1, site) %>%
+  select(DT, Depth_ft=Depth_ft_p1, site) %>%
   rbind(usgs_lincoln) %>%
-  pivot_wider(., values_from = Depth_ft, names_from = "site")
+  pivot_wider(., values_from = Depth_ft, names_from = "site") %>%
+  dplyr::filter(DT >= ymd_hms('2019-09-06 17:30:00'))
 
 timeseries <- xts::xts(compare, order.by = ymd_hms(compare$DT))
 
@@ -410,217 +418,62 @@ dygraph(timeseries, main="Depth Timeseries (UTC)") %>%
 ```
 
 ## Legacy conductivity
-
 ```{r}
 legacy_conductivity <- dplyr::select(rawless_legacy, c(DT, Specific_Conductivity_µS_cm, site)) %>%
   arrange(ymd_hms(DT)) %>%
-  # Pass one (p1): remove any data outside what appears to be the natural range:
-  mutate(p1 = ifelse(Specific_Conductivity_µS_cm > 600, NA,
-              ifelse(Specific_Conductivity_µS_cm <= 40 , NA, Specific_Conductivity_µS_cm))) %>%
-  # For sites with more than one within the 15-minute increment, mean that shit:  
-  group_by(DT) %>%
-  summarize(p1 = mean(p1, na.rm=T)) %>%
-  ungroup() %>% 
-  # Start getting stats:
-  mutate(rollavg = rollmeaner(p1),
-         rollsd = rollsder(p1),
-         sd3 = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)) & (month(DT) > 3 & month(DT) <12), 1, 0))
-  
-ggplot() +
-  geom_line(data = legacy_conductivity, aes(x = DT, y = p1))+
-  geom_point(data = filter(legacy_temp, sd3 == 1), aes(x = ymd_hms(DT), y = (sd3*40)), color = 'red') +
-  theme_bw()
+  group_by(site,DT) %>%
+  summarize(Specific_Conductivity_µS_cm = mean((Specific_Conductivity_µS_cm))) %>%
+  ungroup() %>%
+  distinct(DT,.keep_all=T) %>%
+  mutate(pre = lag(Specific_Conductivity_µS_cm, 1),
+         post = lead(Specific_Conductivity_µS_cm, 1),
+         roll = (pre+Specific_Conductivity_µS_cm+post)/3)
 
-timeseries <- xts::xts(select(legacy_conductivity, p1, DT), order.by = ymd_hms(timberline_conductivity$DT))
+compare <- legacy_conductivity %>%
+  select(DT, Specific_Conductivity_µS_cm, site) %>%
+  #rbind(usgs_lincoln) %>%
+  pivot_wider(., values_from = Specific_Conductivity_µS_cm, names_from = "site") %>%
+  dplyr::filter(DT >= ymd_hms('2022-04-06 17:30:00'))
+
+timeseries <- xts::xts(compare, order.by = ymd_hms(compare$DT))
 
 dygraph(timeseries, main="SpC Timeseries (UTC)") %>% 
- dyRangeSelector() 
+ dyRangeSelector() #%>%
+ # dyHighlight(highlightCircleSize = 4,
+ #           highlightSeriesBackgroundAlpha = 0.5,
+ #            hideOnMouseOut = T) %>%
+ # dyLegend(show = "follow")
 ```
 
+
+
+
+## Legacy turbidity
+
+```{r}
+turbidity <- select(rawless, c(DT, Specific_Conductivity_µS_cm, Turbidity_NTU, visit_comments, ntu_offset,ntu_slope,ntu_10,ntu_100,factory_defaults)) %>%
+  arrange(DT) %>%
+  group_by(DT, visit_comments, ntu_offset,ntu_slope,ntu_10,ntu_100,factory_defaults) %>%
+  summarize(Turbidity_NTU = mean(as.numeric(Turbidity_NTU)),
+            Spec_Check = mean(as.numeric(Specific_Conductivity_µS_cm))) %>%
+  ungroup() %>%
+  distinct(DT,.keep_all=T) %>%
+  mutate(raw_turb = (Turbidity_NTU-as.numeric(ntu_offset))/as.numeric(ntu_slope))
+
+  mutate(Turbidity_NTU = ifelse(DT >= ymd_hms('2022-06-01 13:15:00') & DT <= ymd_hms('2022-07-16 10:15:00') & Turbidity_NTU == 0, NA, Turbidity_NTU)) %>%
+  mutate(Turbidity_NTU = ifelse(Turbidity_NTU >= 3000, 3000, Turbidity_NTU)) %>%
+  group_by()
+  
+  
+# looking at 
+ggplot() +
+  geom_line(data=turbidity,aes(DT,Turbidity_NTU)) +
+  geom_line(data=depth,aes(DT,Depth_ft*500), color='red')
+```
 
 # Timberline
 
 This season, all sonde data was sent to HydroVu. 
-
-
-```{r}
-# Downloading VuLink data:
-raw_tube_timberline <- map_dfr(grep(list.files("data/sensor_data/2022/timberline/", full.names = T), pattern = "VuLink", invert = F, value = T, ignore.case = F), tube_reader) %>%
-  select(DT = 1,
-         PVC_Temp = 2,
-         Battery = 3,
-         Air_Baro = 4) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate(DT = DT - lubridate::hours(7)) %>%
-  mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
-  mutate(DT = ymd_hms(DT))  %>%
-  mutate_at(vars(2:ncol(.)), as.numeric)
-
-raw_timberline <- map_dfr(grep(list.files("data/sensor_data/2022/timberline/", full.names = T), pattern = "TROLL", invert = F, value = T, ignore.case = F), hydrovu_reader)
-names(raw_timberline) <- make.names(names(raw_timberline), unique = T)
-
-rawless_timberline <- raw_timberline %>% 
-select(DT = contains('Date.Time'),
-                      Water_Temp_C = as.numeric(contains('Temperature..C')),
-                      pH = contains('pH'),
-                      ORP_mV = contains('ORP'),
-                     
-                      Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
-                      DO_ppm = contains('DO..mg'),
-                      Turbidity_NTU = contains('Turbidity'),
-                      Depth_ft = contains('Depth..ft')) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate(DT = DT - lubridate::hours(7)) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric) %>%
-  mutate(site = "timberline") %>%
-  arrange(ymd_hms(DT)) %>%
-  mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  # Join information about the telemetry device (like temperature, % battery):
-  full_join(raw_tube_timberline, by='DT') %>%
-  # Join pre-2022 dataset
-  dplyr::bind_rows(., filter(pre_2022, site == "timberline")) %>%
-  # Link up field notes:
-  full_join(filter(field_notes, site == "timberline"), by = c('DT','site')) %>%
-  mutate(date = as_date((DT)),
-         hour = hour(DT),
-         year = year(DT),
-         month = month(DT)) %>%
-  arrange(ymd_hms(DT)) %>%
-   # Remove data ranges where sensor was pulled out of field (THAT I KNOW OF, IE 2022 ONLY)
-  # dplyr::filter(
-  #        !(ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00')),
-  #        !(ymd_hms(DT) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT) < ymd_hms('2022-06-01 13:30:00')),
-  #        !(ymd_hms(DT) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT) <= ymd_hms('2022-07-12 10:00:00')),
-  #        !(ymd_hms(DT) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT) <= ymd_hms('2022-08-25 16:15:00')),
-  #        !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-18 07:00:00'))
-  #        ) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  padr::pad(by = 'DT') %>%
-  # Link up calibration data:
-  full_join(na.locf(na.locf(filter(cal_table, site == "timberline")), fromLast = TRUE), by = c('site','DT'))
-```
-
-## timberline temperature
-
-Specs for temperature: ±0.1 Celsius, -5 to 50 C
-
-```{r}
-timberline_temp <- dplyr::select(rawless_timberline, c(DT, Water_Temp_C, PVC_Temp)) %>%
-  arrange(ymd_hms(DT)) %>%
-  # Pass one (p1): remove any data outside the In-Situ spec range:
-  mutate(p1 = ifelse(Water_Temp_C > 50, NA,
-              ifelse(Water_Temp_C <= 0 , NA, Water_Temp_C))) %>%
-  # For sites with more than one within the 15-minute increment, mean that shit:  
-  group_by(DT) %>%
-  summarize(p1 = mean(p1, na.rm=T),
-            PVC_Temp = mean(PVC_Temp, na.rm=T)) %>%
-  ungroup() %>% 
-  # Start getting stats:
-  mutate(rollavg = rollmeaner(p1),
-         rollsd = rollsder(p1),
-         sd3 = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)) & (month(DT) > 3 & month(DT) < 12), 1, 0))
-  
-ggplot() +
-  geom_line(data = timberline_temp, aes(x = DT, y = p1))+
-  geom_point(data = filter(timberline_temp, sd3 == 1), aes(x = ymd_hms(DT), y = (sd3*40)), color = 'red') +
-  theme_bw()
-
-
-# ANOMALIZE
-anamolized <- timberline_temp %>%
-  filter(na.rm())
-  time_decompose(p1, merge = T, trend = '6 hours') #%>%
-  anomalize(remainder, alpha = 0.03) %>%
-  time_recompose() 
-
-
-# What's it look like?
-dygraph(xts::xts(select(timberline_temp, c(DT, p1, PVC_Temp)), order.by = ymd_hms(timberline_temp$DT)),
-        main="Water Temperature Timeseries (UTC)") %>% 
-  dyRangeSelector()
-
-# ANOMALIZE
-```
-
-## timberline depth
-
-We had a couple issues with "level" calibration. Here, I am "back-calibrating" for them to match previous and/or post level when they were correct. Assumes (though subjectively verified in field) that river depth did not change during the field visit.
-```{r}
-timberline_depth <- dplyr::select(rawless_timberline, c(DT, Depth_ft, site)) %>%
-  arrange(ymd_hms(DT)) %>%
-  # For sites with more than one within the 15-minute increment, mean that shit:  
-  group_by(DT) %>%
-  summarize(Depth_ft = mean((Depth_ft))) %>%
-  ungroup() %>%
-  distinct(DT,.keep_all=T) %>%
-  # fix up the stage when the stage was obviously calibrated incorrectly:
-  mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-04-06 06:00:00') & DT < ymd_hms('2022-04-12 09:30:00'), 
-                              Depth_ft + abs(
-                                filter(timberline_depth, DT == ymd_hms('2022-04-12 09:15:00'))$Depth_ft - filter(timberline_depth, DT == ymd_hms('2022-04-12 09:30:00'))$Depth_ft
-                                ), Depth_ft)) %>%
-  mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-07-22 11:30:00') & DT <= ymd_hms('2022-07-25 14:15:00'), 
-                              Depth_ft_p1 + abs(
-                                filter(timberline_depth, DT == ymd_hms('2022-07-22 11:15:00'))$Depth_ft_p1 - filter(timberline_depth, DT == ymd_hms('2022-07-22 11:30:00'))$Depth_ft_p1
-                                ), Depth_ft_p1)) %>%
-  # Pass one (p1): remove any data outside the location's "natural" range:
-  mutate(p1 = ifelse(Depth_ft_p1 >= 7, NA,
-              ifelse(Depth_ft_p1 <= 0 , NA, Depth_ft_p1))) %>%
-  # Start getting stats:
-  mutate(rollavg = rollmeaner(p1),
-         rollsd = rollsder(p1),
-         sd3 = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)) & (month(DT) > 3 & month(DT) <12), 1, 0)) %>%
-  mutate(site='timberline')
-
-ggplot() +
-  geom_line(data = timberline_depth, aes(x = DT, y = p1))+
-  geom_point(data = filter(timberline_depth, sd3 == 1), aes(x = ymd_hms(DT), y = (sd3*6)), color = 'red') +
-  theme_bw()
-
-compare <- timberline_depth %>%
-  select(DT, Depth_ft=p1, site) %>%
-  rbind(usgs_lincoln) %>%
-  pivot_wider(., values_from = Depth_ft, names_from = "site")
-
-timeseries <- xts::xts(compare, order.by = ymd_hms(compare$DT))
-
-dygraph(timeseries, main="Depth Timeseries (UTC)") %>% 
- dyRangeSelector()
-```
-
-## timberline conductivity
-
-```{r}
-timberline_conductivity <- dplyr::select(rawless_timberline, c(DT, Specific_Conductivity_µS_cm, site)) %>%
-  arrange(ymd_hms(DT)) %>%
-  # Pass one (p1): remove any data outside what appears to be the natural range:
-  mutate(p1 = ifelse(Specific_Conductivity_µS_cm > 600, NA,
-              ifelse(Specific_Conductivity_µS_cm <= 40 , NA, Specific_Conductivity_µS_cm))) %>%
-  # For sites with more than one within the 15-minute increment, mean that shit:  
-  group_by(DT) %>%
-  summarize(p1 = mean(p1, na.rm=T)) %>%
-  ungroup() %>% 
-  # Start getting stats:
-  mutate(rollavg = rollmeaner(p1),
-         rollsd = rollsder(p1),
-         sd3 = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)) & (month(DT) > 3 & month(DT) <12), 1, 0))
-  
-ggplot() +
-  geom_line(data = timberline_conductivity, aes(x = DT, y = p1))+
-  geom_point(data = filter(timberline_temp, sd3 == 1), aes(x = ymd_hms(DT), y = (sd3*40)), color = 'red') +
-  theme_bw()
-
-timeseries <- xts::xts(select(timberline_conductivity, p1, DT), order.by = ymd_hms(timberline_conductivity$DT))
-
-dygraph(timeseries, main="SpC Timeseries (UTC)") %>% 
- dyRangeSelector() 
-```
-
-
-
-
-
-
 
 ```{r}
 raw <- map_dfr(grep(list.files("data/sensor_data/2022/timberline/", full.names = T), pattern = "HydroVu", invert = F, value = T), hydrovu_reader)
