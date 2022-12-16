@@ -7,5 +7,9 @@ docs/
 backup_data/
 backup_docs/
 misc_playtime/
+
+# files/folders to untrack for API pull
 */credentials.yml
 *credentials.yml
+*/env/
+*/requirements.txt
