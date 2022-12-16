@@ -1,0 +1,53 @@
+---
+title: "HydroVu API Pull"
+author: "B Steele"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Purpose
+
+This R-markdown accesses the HydroVu server via the API to download data within this scripted workflow. See the README.md file for directions to set up the credentials.yml file sourced in this script.
+
+## Requirements
+
+This Markdown uses R, Python, and Bash chunks. It may be buggy.
+
+In order to run this script, you'll need to download [MiniConda](https://docs.conda.io/en/latest/miniconda.html) or Anaconda.
+
+Now, in your terminal, run the following lines of code:
+
+\# install conda and extra modules for this workflow
+
+`mkdir api_pull/apienv`
+
+`conda create \--prefix api_pull/apienv python=3.8`
+
+In the hashed text, you will see a note: 'To activate this environment, use:'. Copy that line of shell code and enter it in your terminal. For instance, mine is:
+
+`conda activate /Users/steeleb/Documents/GitHub/poudre_sonde_network/api_pull/apienv`
+
+`conda install -c flask`
+
+## Workspace Set Up
+
+```{r}
+library('reticulate')
+library('tidyverse')
+```
+
+```{r}
+dir = getwd()
+install_python(version = '3.8', force = T)
+virtualenv_create(envname = file.path(dir, 'apienv'), 
+                              version = '3.8.16',
+                              packages = c('requests_oauthlib', 'flask'))
+```
+
+```{python}
+from requests_oauthlib import OAuth2Session
+from flask import Flask, request, redirect, session, url_for
+from flask.json import jsonify
+```
+
+## Accessing the API
