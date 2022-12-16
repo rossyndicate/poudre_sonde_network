@@ -1,9 +1,5 @@
 ---
-<<<<<<<< HEAD:scratch.Rmd
 title: "scratch"
-========
-title: "Tidying Sensor Data"
->>>>>>>> 6581c668dc6b656aeb73a126bb446f0cb8c23bca:tidying_2022.Rmd
 author: "Katie Willi"
 date: "`r Sys.Date()`"
 output: html_document
