@@ -11,43 +11,62 @@ This R-markdown accesses the HydroVu server via the API to download data within 
 
 ## Requirements
 
-This Markdown uses R, Python, and Bash chunks. It may be buggy.
-
-In order to run this script, you'll need to download [MiniConda](https://docs.conda.io/en/latest/miniconda.html) or Anaconda.
-
-Now, in your terminal, run the following lines of code:
-
-\# install conda and extra modules for this workflow
-
-`mkdir api_pull/apienv`
-
-`conda create \--prefix api_pull/apienv python=3.8`
-
-In the hashed text, you will see a note: 'To activate this environment, use:'. Copy that line of shell code and enter it in your terminal. For instance, mine is:
-
-`conda activate /Users/steeleb/Documents/GitHub/poudre_sonde_network/api_pull/apienv`
-
-`conda install -c flask`
+This Markdown uses R and Python chunks. It may be buggy, but all steps should be working. If you are having *any* issues, contact me an I'll take another shot at debugging. :-)
 
 ## Workspace Set Up
+
+Load reticulate and install miniconda. You may get an error message if you previously installed miniconda, and a warning message that you have instances of flasks and requests. Both of those are a-okay.
 
 ```{r}
 library('reticulate')
 library('tidyverse')
+install_miniconda()
+py_install(packages = c('flask', 'requests-oauthlib', 'pyyaml'))
 ```
 
+Now, set up the virtual environment, activate it, and install needed python modules.
+
 ```{r}
+#grab your current WD
 dir = getwd()
-install_python(version = '3.8', force = T)
-virtualenv_create(envname = file.path(dir, 'apienv'), 
-                              version = '3.8.16',
-                              packages = c('requests_oauthlib', 'flask'))
+#create a conda environment named 'apienv' with the packages flask and requests-oauthlib
+conda_create(envname = file.path(dir, 'apienv'),
+                  packages = c('flask', 'requests-oauthlib'))
+Sys.setenv(RETICULATE_PYTHON = file.path(dir, 'apienv/bin/python/'))
+use_condaenv("apienv/")
+#print the configuration
+py_config()
+
+# install flask and requests-oauthlib
+py_install(packages = c('flask', 'requests-oauthlib', 'pyyaml'), envname = 'apienv/')
 ```
+
+Import the Python modules.
 
 ```{python}
 from requests_oauthlib import OAuth2Session
 from flask import Flask, request, redirect, session, url_for
 from flask.json import jsonify
+import yaml
 ```
 
 ## Accessing the API
+
+First thing, we're going to read in our client id and client secret for accessing the HydroVu API. In your Python environment, you should see a simple key-pair for client and secret.
+
+```{python}
+with open('credentials.yml', 'r') as file:
+  creds = yaml.safe_load(file)
+
+client_id = creds['client']
+client_secret = creds['secret']
+```
+
+Get location lists
+
+```{python}
+locs_api = 'https://www.hydrovu.com/public-api/v1/locations/list'
+OAuth2Session(client_id, locs_api)
+
+
+```
