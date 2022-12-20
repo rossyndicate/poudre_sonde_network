@@ -15,58 +15,62 @@ This Markdown uses R and Python chunks. It may be buggy, but all steps should be
 
 ## Workspace Set Up
 
-Load reticulate and install miniconda. You may get an error message if you previously installed miniconda, and a warning message that you have instances of flasks and requests. Both of those are a-okay.
+For grabbing data from HydroVu, we'll be using the credentials.yml file and the package 'HydroVuR', which is available on GitHub through devtools.
 
 ```{r}
-library('reticulate')
+devtools::install_github("jvandens/HydroVuR")
 library('tidyverse')
-install_miniconda()
-py_install(packages = c('flask', 'requests-oauthlib', 'pyyaml'))
-```
+library('HydroVuR')
 
-Now, set up the virtual environment, activate it, and install needed python modules.
-
-```{r}
-#grab your current WD
-dir = getwd()
-#create a conda environment named 'apienv' with the packages flask and requests-oauthlib
-conda_create(envname = file.path(dir, 'apienv'),
-                  packages = c('flask', 'requests-oauthlib'))
-Sys.setenv(RETICULATE_PYTHON = file.path(dir, 'apienv/bin/python/'))
-use_condaenv("apienv/")
-#print the configuration
-py_config()
-
-# install flask and requests-oauthlib
-py_install(packages = c('flask', 'requests-oauthlib', 'pyyaml'), envname = 'apienv/')
-```
-
-Import the Python modules.
-
-```{python}
-from requests_oauthlib import OAuth2Session
-from flask import Flask, request, redirect, session, url_for
-from flask.json import jsonify
-import yaml
 ```
 
 ## Accessing the API
 
-First thing, we're going to read in our client id and client secret for accessing the HydroVu API. In your Python environment, you should see a simple key-pair for client and secret.
+First thing, we're going to read in our client id and client secret for accessing the HydroVu API. Don't print these out in this chunk: if you save your Rmd file with the chunk history, that's another way that the world can see your data. :)
 
-```{python}
-with open('credentials.yml', 'r') as file:
-  creds = yaml.safe_load(file)
+```{r}
+creds = yaml::read_yaml('credentials.yml')
 
-client_id = creds['client']
-client_secret = creds['secret']
+client_id = as.character(creds['client'])
+client_secret = as.character(creds['secret'])
+
+# get a token for location lists and data access
+token <- hv_auth(client_id, client_secret)
 ```
 
-Get location lists
+Get location list:
 
-```{python}
-locs_api = 'https://www.hydrovu.com/public-api/v1/locations/list'
-OAuth2Session(client_id, locs_api)
+```{r}
+#need to turn off scientific notation
+options(scipen = 999)
+# get the locations
+locs <- hv_locations(token) 
+
+#make a list of site names
+loc_list <- locs$name
+
+loc_id <- locs$id
+```
+
+Get data:
+
+```{r}
+# function to get data
+get_data <- function(site, startdate, enddate){
+  data <- hv_data(site, startdate, enddate, tz = 'UTC', token)
+  data
+}
+
+get_data(loc_list[3], '2022-07-01 00:00:00', '2022-08-01 00:00:00')
 
 
+```
+
+```{r}
+
+# get the Friendly Names for parameters and units for reference.
+# can be returned indiviually as data.frames or as a list of both data.frames
+params <- hv_names(token, return = "params")
+units <- hv_names(token, return = "units")
+both <- hv_names(token)
 ```

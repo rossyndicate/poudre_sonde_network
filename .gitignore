@@ -11,5 +11,5 @@ misc_playtime/
 # files/folders to untrack for API pull
 */credentials.yml
 *credentials.yml
-*/env/
+*/apienv/
 */requirements.txt
