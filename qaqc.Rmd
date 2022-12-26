@@ -27,9 +27,9 @@ Functions that you need!
 
 ```{r}
 try(plyr::ldply(list.files(path="src/",
-                       pattern="*.R",
-                       full.names=TRUE),
-            source))
+                           pattern="*.R",
+                           full.names=TRUE),
+                source))
 ```
 
 Listed accuracy and range for sensors:
@@ -805,7 +805,7 @@ elc_conductivity <-  first_pass(what = rawless_elc, parama = "Specific_Conductiv
   mutate(site = "elc") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/elc_conductivity.feather')
- 
+
 # dygraph(xts::xts(select(elc_conductivity, p1, sd3, DT), order.by = ymd_hms(elc_conductivity$DT)),
 #         main="SpC Timeseries (UTC)") %>% 
 #   dyRangeSelector() 
@@ -952,7 +952,7 @@ ph <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*ph.f
 
 all_data <- list(depth,temperature,conductivity,do,ph) %>%
   reduce(full_join, by=c('site','DT')) %>%
-    mutate(tracer = case_when(site=="rist" ~ "1",
+  mutate(tracer = case_when(site=="rist" ~ "1",
                             site=="legacy" ~ "2",
                             site=="lincoln" ~ "3",
                             site=="timberline" ~ "4",
@@ -970,37 +970,49 @@ hourly <- all_data %>%
   group_by(site,tracer,hourly) %>%
   summarize_all(., mean, na.rm=T)
 
-cols <- c("#7C221D", "#D1520A", "#DF810B", "#D9B35B", "#4F6010", "#374105")  #red to green
+cols <- c("#7C221D", "#D1520A", "#DF810B", "#D9B35B", "#4F6010", "#374105", "#20331a")
+
+cols <- c("#ff0a54", "#ff0072",  "#ff177f", "#ff2e8c", "#ff4598", "#ff5ca5", "#ff74b2", "#ff8bbf", "#ffa2cb", "#ffb9d8", "#ffd0e5")
+
+cols <- rev(c("#7C221D", "#E7331A", "#F16A16", "#FFC82F", "#0D98BA", "#0074A5", "#2E5895"))
+
 
 october_pulse <- hourly %>% filter(as_date(hourly) > ymd('2022-10-18') & as_date(hourly) < ymd('2022-10-26')) %>%
-  select(DT,site,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft)%>%
-  pivot_longer(cols=-c(DT,site), names_to="Parameter")
+  ungroup() %>%
+  select(DT,site,tracer,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft) %>%
+  pivot_longer(cols=-c(DT,tracer,site), names_to="Parameter")
 
-ggplot(october_pulse)+
-  geom_path(aes(x = DT, y = value, color = site)) +
-  scale_color_manual(values=cols, breaks = c("1","2","3","4","5","6","7")) +
-  #labels = c("four", "six", "eight")) +
+ggplot(october_pulse) +
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values = cols, labels = c("Lincoln","Timberline","Prospect","ELC", "Archery")) +
   facet_wrap(~Parameter, scales = "free_y", ncol = 1) +
-  theme_bw()
+  theme_bw() +
+  theme(legend.position="bottom", legend.title = element_blank())
 
 
 bw_event <- hourly %>% filter(as_date(hourly) > ymd('2022-08-15') & as_date(hourly) < ymd('2022-08-23')) %>%
-  select(DT,site,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft)%>%
-  pivot_longer(cols=-c(DT,site), names_to="Parameter")
+  ungroup() %>%
+  select(DT,site,tracer,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft) %>%
+  pivot_longer(cols=-c(DT,tracer,site), names_to="Parameter")
 
 ggplot(bw_event)+
-  geom_path(aes(x = DT, y = value, color = site)) +
+  geom_path(aes(x = DT, y = value, color = tracer)) +
+  scale_color_manual(values = cols, labels = c("Archery", "ELC", "Lincoln", "Prospect", "Timberline")) +
   facet_wrap(~Parameter, scales = "free_y", ncol = 1) +
-  theme_bw()
+  theme_bw() +
+  theme(legend.position="bottom", legend.title = element_blank())
 
 
 runoff <- hourly %>% filter(as_date(hourly) > ymd('2022-06-01') & as_date(hourly) < ymd('2022-06-15')) %>%
-  select(DT,site,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft)%>%
-  pivot_longer(cols=-c(DT,site), names_to="Parameter")
+  ungroup() %>%
+  select(DT,site,tracer,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft) %>%
+  pivot_longer(cols=-c(DT,tracer,site), names_to="Parameter")
 
-ggplot(runoff)+
-  geom_path(aes(x = DT, y = value, color = site)) +
+ggplot(runoff) +
+  geom_path(aes(x = DT, y = value, color = tracer)) +
+  scale_color_manual(values = cols, labels = c("Archery", "ELC", "Lincoln", "Prospect", "Timberline")) +
   facet_wrap(~Parameter, scales = "free_y", ncol = 1) +
-  theme_bw()
+  theme_bw() +
+  theme(legend.position="bottom", legend.title = element_blank())
 ```
 
