@@ -12,4 +12,4 @@ You should store these credentials in a file called 'credentials.yml' as indicat
 
 1) fill in your API credentials. Follow the steps in __Requirements__ to create and copy your Client ID and Secret, then follow the directions in the header of 'CopyYourCreds.yml' to update the template to include your API access info. **MAKE SURE YOU RENAME THE FILE TO 'credentials.yml' IMMEDIATELY UPON ENTERING YOUR API CREDENTIALS.**
 
-2) Run the 'HydroVu_API_pull.Rmd' script. All further directions are in this file.
+2) Run the 'HydroVu_API_pull.Rmd' script. All further directions are in this file. Start/Stop dates and file export name are currently hardcoded in here. Will need to update when we decide how to deploy this script.
