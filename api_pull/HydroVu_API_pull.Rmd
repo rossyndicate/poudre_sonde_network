@@ -18,10 +18,11 @@ This Markdown uses R and Python chunks. It may be buggy, but all steps should be
 For grabbing data from HydroVu, we'll be using the credentials.yml file and the package 'HydroVuR', which is available on GitHub through devtools.
 
 ```{r}
-devtools::install_github("jvandens/HydroVuR")
+devtools::install_github("steeleb/HydroVuR")
 library('tidyverse')
 library('HydroVuR')
-
+source('hv_getdata_id.R')
+source('hv_locations_all.R')
 ```
 
 ## Accessing the API
@@ -41,36 +42,22 @@ token <- hv_auth(client_id, client_secret)
 Get location list:
 
 ```{r}
-#need to turn off scientific notation
-options(scipen = 999)
-# get the locations
-locs <- hv_locations(token) 
-
+locs <- hv_locations_all(token)
 #make a list of site names
-loc_list <- locs$name
+options(scipen = 999)
+loc_list <- locs$id
 
-loc_id <- locs$id
 ```
 
 Get data:
 
 ```{r}
-# function to get data
-get_data <- function(site, startdate, enddate){
-  data <- hv_data(site, startdate, enddate, tz = 'UTC', token)
-  data
-}
+#map over location dataframe
+startdate = '2022-08-01 00:00:00'
+enddate = '2022-09-01 00:00:00'
 
-get_data(loc_list[3], '2022-07-01 00:00:00', '2022-08-01 00:00:00')
+alldata <- map_dfr(loc_list, hv_data_id, 
+                   start_time = startdate, end_time = enddate, token = token,
+                   .id = NULL)
 
-
-```
-
-```{r}
-
-# get the Friendly Names for parameters and units for reference.
-# can be returned indiviually as data.frames or as a list of both data.frames
-params <- hv_names(token, return = "params")
-units <- hv_names(token, return = "units")
-both <- hv_names(token)
 ```
