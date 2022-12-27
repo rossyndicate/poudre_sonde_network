@@ -2,6 +2,9 @@
 
 This folder contains a basic API script to pull data from the HydroVu API programatically. 
 
+Right now, this script requires functions from the HydroVuR package - and I've had to update a few of the functions to work for our purposes - those are the two 'hv_....R' scripts. Ideally, B will integrate these updates into the forked GH package and then we can just use the package functions and not need to call in the two 'hv_....R' scripts.
+
+
 ## Requirements
 
 In order for this workflow to work you need to add the API Access Credentials from the [HydroVu People & Permissions](https://www.hydrovu.com/#/company-dashboard/users/list) page (see bottom 'Manage API Access Credentials'). To create your secret, add a client id of your choosing (please make sure it's clear we know who the credential belongs to), then click the '+ New Client Secret'. 
