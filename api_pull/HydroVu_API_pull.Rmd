@@ -49,12 +49,10 @@ loc_list <- locs$id
 
 ```
 
-Get data for each location. Note this maps over the entire list of locations, many of which are unlikely to be active during the time you specify. Don't freak out if you see a bunch of '404 Not Found' errors, you're just seeing the list of locations that are not active. The data frame 'alldata' should contain your data from all applicable sites during the timeframe indicated. Note that this will take some time. Be patient!
+Get data for each location. Note this maps over the entire list of locations, many of which are unlikely to be active during the time you specify. Don't freak out if you see a bunch of '404 Not Found' errors, you're just seeing the list of locations that are not active. The data frame 'alldata' should contain your data from all applicable sites during the timeframe indicated. Note that this will take some time (one month of data for 5 sites takes \~10 mins. Be patient!
 
 ```{r}
-st <- print(Sys.time())
-
-# add date range you are interested in
+# add date range you are interested in; data are stored in HydroVu in UTC
 startdate = '2022-08-01 00:00:00'
 enddate = '2022-09-01 00:00:00'
 timezone = 'UTC'
@@ -66,10 +64,16 @@ alldata <- map(loc_list,
                    end_time = enddate, 
                    token = token, 
                    tz = timezone)
-#grab only locsations with data (stored as a data frame)
+
+#grab only locations with data (stored as a data frame) / drop 404 errors
 filtered <- purrr::keep(alldata, is.data.frame)
 
-one_df <- bind_rows(filtered)
-e <- print(Sys.time())
-e-st
+#bind lists together (now that all are dataframes, we can just collate quickly)
+one_df <- bind_rows(filtered) %>% 
+  rename(id = Location,
+         parameter = Parameter,
+         units = Units) %>% 
+  left_join(., locs) %>% 
+  select(id, name, timestamp, parameter, value, units)
+
 ```
