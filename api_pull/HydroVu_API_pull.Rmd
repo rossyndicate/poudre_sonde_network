@@ -11,7 +11,7 @@ This R-markdown accesses the HydroVu server via the API to download data within 
 
 ## Requirements
 
-This Markdown uses R and Python chunks. It may be buggy, but all steps should be working. If you are having *any* issues, contact me an I'll take another shot at debugging. :-)
+This Markdown requires the package 'HydroVuR', which is currently forked in B's GH.
 
 ## Workspace Set Up
 
