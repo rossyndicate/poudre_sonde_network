@@ -25,6 +25,12 @@ source('hv_getdata_id.R')
 source('hv_locations_all.R')
 ```
 
+And point to the directory where the data should be saved to:
+
+```{r}
+dump_dir = '~/OneDrive - Colostate/poudre_sonde_network/data/api_dump/'
+```
+
 ## Accessing the API
 
 First thing, we're going to read in our client id and client secret for accessing the HydroVu API. Don't print these out in this chunk: if you save your Rmd file with the chunk history, that's another way that the world can see your data. :)
@@ -75,5 +81,10 @@ one_df <- bind_rows(filtered) %>%
          units = Units) %>% 
   left_join(., locs) %>% 
   select(id, name, timestamp, parameter, value, units)
+```
 
+## Save your data
+
+```{r}
+write.csv(one_df, file.path(dump_dir, '2022-08_apipull.csv'), row.names = F)
 ```
