@@ -1,8 +1,8 @@
 
 
-hv_data_id <- function(loc_id, start_time = startdate, end_time = enddate, tz = "UTC", token) {
+hv_data_id <- function(loc_id, start_time = startdate, end_time = enddate, tz = timezone, token) {
 
-  # convert the time to timestamp, convert to UTC for lookup in Hydrovu
+  # convert the time to timestamp, convert to UTC for lookup in HydroVu
   start <- as.numeric(lubridate::with_tz(lubridate::ymd_hms(start_time, tz = tz), tzone = "UTC"))
   end <- as.numeric(lubridate::with_tz(lubridate::ymd_hms(end_time, tz = tz), tzone = "UTC"))
 
@@ -11,6 +11,7 @@ hv_data_id <- function(loc_id, start_time = startdate, end_time = enddate, tz = 
   url <- paste0(url, loc_id, "/data?endTime=", end, '&startTime=', start)
 
   req <- httr2::request(url)
+  print(paste0('Trying site ', loc_id))
   try({
     resp <-  req %>% httr2::req_oauth_client_credentials(token) %>% httr2::req_perform()
     data <- list(resp %>% httr2::resp_body_json())
