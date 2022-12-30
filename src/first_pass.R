@@ -13,18 +13,18 @@ first_pass <- function(what, parama, max=100000, min=-100000){
     group_by(DT) %>%
     summarize(p1 = as.numeric(mean(p1, na.rm=T))) %>%
   ungroup() #%>%
-  # mutate(
-  #   front1=lead(p1, n=1),
-  #   front2=lead(p1, n=2),
-  #   front3=lead(p1, n=3),
-  #   back1=lag(p1, n=1),
-  #   back2=lag(p1, n=2),
-  #   back3=lag(p1, n=3)) %>%
-  # group_by(DT) %>%
-  # mutate(rollsd = sd(unlist(select(cur_data(), front1:back3))),
-  #        rollavg=mean(unlist(select(cur_data(), front1:back3)))) %>%
-  # ungroup() %>%
-  # mutate(sd3_flag = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)), 1, 0))
+   mutate(
+     front1=lead(p1, n=1),
+     front2=lead(p1, n=2),
+     front3=lead(p1, n=3),
+     back1=lag(p1, n=1),
+     back2=lag(p1, n=2),
+     back3=lag(p1, n=3)) %>%
+   group_by(DT) %>%
+   mutate(rollsd = sd(unlist(select(cur_data(), front1:back3))),
+          rollavg=mean(unlist(select(cur_data(), front1:back3)))) %>%
+   ungroup() %>%
+   mutate(sd3_flag = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)), 1, 0))
 
   return(it)
 }

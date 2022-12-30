@@ -9,17 +9,11 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
-
 library(lubridate)
-
 library(rvest)
-
 library(dygraphs)
-
 library(labelled)
-
 library(zoo)
-
 library(anomalize)
 ```
 
@@ -67,9 +61,9 @@ pre_2022 <- read_csv('data/pretty/all_sensor_data_pre2022.csv') %>%
                           sensor == "ELC" ~ "elc",
                           sensor == "Archery" ~ "archery"
   )) %>%
-  rename(pH1=pH,
+  rename(pH1 = pH,
          comment_pre = comments) %>%
-  select(-c(sensor,year, date, data))
+  select(-c(sensor, year, date, data))
 ```
 
 #### Pulling up field notes
@@ -165,25 +159,13 @@ cal_table <- bind_rows(cal_table) %>%
   distinct(.keep_all = TRUE) %>%
   group_by(site) %>%
   mutate(DT = round_date(DT, "15 minutes")) %>%
-  padr::pad(by='DT', group = 'site')
+  padr::pad(by = 'DT', group = 'site')
 
 rm(cal, cal_files, conductivity, date, i, ph_orp, rdo, time_mst, turbidity)
 ```
 
 
 #### Downloading sonde data
-
-#### Downloading relevant outside datasets
-
-```{r}
-# usgs_lincoln <- dataRetrieval::readNWISuv("06752260", parameterCd = "00065", startDate = "2019-09-01", endDate = "2022-12-01") %>%
-#   mutate(DT=ymd_hms(dateTime))%>%
-#   rename(Depth_ft = X_00065_00000) %>%
-#   select(DT, 
-#          Depth_ft) %>%
-#   mutate(site = "usgs_lincoln")
-```
-
 
 # Rist
 
@@ -200,7 +182,6 @@ rawless_rist <- going_rawless(site_name = "rist", trolled = NA) %>%
   full_join(na.locf(na.locf(filter(cal_table, site == "rist")), fromLast = TRUE), 
             by = c('site','DT'))
 ```
-
 
 ## Temperature
 
@@ -219,7 +200,6 @@ rist_temp <- first_pass(what = rawless_rist, parama = "Water_Temp_C", min = -5, 
 
 ```
 
-
 ## Depth
 
 ```{r}
@@ -228,12 +208,7 @@ rist_depth <- dplyr::select(rawless_rist, c(DT, Depth_ft)) %>%
   mutate(site = 'rist') %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/rist_depth.feather')
-
-# dygraph(xts::xts(select(rist_depth, p1, DT, sd3), order.by = ymd_hms(rist_depth$DT)), 
-#         main="Depth Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Conductivity
 
@@ -244,12 +219,7 @@ rist_conductivity <-  first_pass(what = rawless_rist, parama = "Specific_Conduct
   mutate(site = "rist") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/rist_conductivity.feather')
-
-# dygraph(xts::xts(select(rist_conductivity, p1, sd3, DT), order.by = ymd_hms(rist_conductivity$DT)),
-#         main="SpC Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## DO
 
@@ -260,12 +230,7 @@ rist_do <- first_pass(what = rawless_rist, parama = "DO_ppm", min = 0, max = 25)
   mutate(site = "rist") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/rist_do.feather')
-
-# dygraph(xts::xts(select(rist_do, p1, DT, sd3), order.by = ymd_hms(rist_do$DT)), 
-#         main="DO Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## pH
 
@@ -274,12 +239,16 @@ rist_ph <- first_pass(what = rawless_rist, parama = "pH1", min = 0, max = 14) %>
   mutate(site = "rist") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/rist_ph.feather')
-
-# dygraph(xts::xts(select(rist_ph, p1, DT, sd3), order.by = ymd_hms(rist_ph$DT)), 
-#         main="pH Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
 
+## Turbidity
+
+```{r}
+rist_turbidity <- first_pass(what = rawless_rist, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "rist") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/rist_turbidity.feather')
+```
 
 # Legacy
 
@@ -321,7 +290,6 @@ rawless_legacy <- going_rawless(site_name = "legacy", trolled = rawless_troll_le
 rm(raw_troll_legacy,rawless_troll_legacy)
 ```
 
-
 ## Temperature
 
 Specs for temperature: ±0.1 Celsius, -5 to 50 C
@@ -330,13 +298,7 @@ Specs for temperature: ±0.1 Celsius, -5 to 50 C
 legacy_temp <- first_pass(what = rawless_legacy, parama = "Water_Temp_C", min = -5, max = 50) %>%
   mutate(site="legacy") %>%
   feather::write_feather('data/sensor_data/p1_backup/legacy_temp.feather')
-
-# What's it look like?
-# dygraph(xts::xts(select(legacy_temp, c(DT, p1, sd3)), order.by = ymd_hms(legacy_temp$DT)),
-#         main="Water Temperature Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Depth
 
@@ -344,7 +306,7 @@ We had a couple issues with "level" calibration. Here, I am "back-calibrating" f
 
 ```{r}
 legacy_depth <- dplyr::select(rawless_legacy, c(DT, Depth_ft)) %>%
-  filter(year(DT)>2021) %>%
+  #filter(year(DT) > 2021) %>%
   mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-04-06 06:00:00') & DT < ymd_hms('2022-04-12 09:30:00'), 
                               Depth_ft + 
                                 abs(
@@ -363,12 +325,7 @@ legacy_depth <- legacy_depth %>%
   first_pass(., parama ="Depth_ft_p2", max=7, min=0) %>%
   mutate(site = 'legacy') %>%
   feather::write_feather('data/sensor_data/p1_backup/legacy_depth.feather')
-
-# dygraph(xts::xts(select(legacy_depth, p1, DT, sd3), order.by = ymd_hms(legacy_depth$DT)), 
-#         main="Depth Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Conductivity
 
@@ -378,12 +335,7 @@ Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% 
 legacy_conductivity <-  first_pass(what = rawless_legacy, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
   mutate(site = "legacy") %>%
   feather::write_feather('data/sensor_data/p1_backup/legacy_conductivity.feather')
-
-# dygraph(xts::xts(select(legacy_conductivity, p1, sd3, DT), order.by = ymd_hms(legacy_conductivity$DT)),
-#         main="SpC Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## DO
 
@@ -393,12 +345,7 @@ RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
 legacy_do <- first_pass(what = rawless_legacy, parama = "DO_ppm", min = 0, max = 25) %>%
   mutate(site = "legacy") %>%
   feather::write_feather('data/sensor_data/p1_backup/legacy_do.feather')
-
-# dygraph(xts::xts(select(legacy_do, p1, DT, sd3), order.by = ymd_hms(legacy_do$DT)), 
-#         main="DO Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## pH
 
@@ -406,11 +353,17 @@ legacy_do <- first_pass(what = rawless_legacy, parama = "DO_ppm", min = 0, max =
 legacy_ph <- first_pass(what = rawless_legacy, parama = "pH1", min = 0, max = 14) %>%
   mutate(site = "legacy") %>%
   feather::write_feather('data/sensor_data/p1_backup/legacy_ph.feather')
-
-# dygraph(xts::xts(select(legacy_ph, p1, DT, sd3), order.by = ymd_hms(legacy_ph$DT)), 
-#         main="pH Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
+
+## Turbidity
+
+```{r}
+legacy_turbidity <- first_pass(what = rawless_legacy, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "legacy") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/legacy_turbidity.feather')
+```
+
 
 # Lincoln
 
@@ -456,14 +409,7 @@ lincoln_temp <- first_pass(what = rawless_lincoln, parama = "Water_Temp_C", min 
   mutate(site="lincoln") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/lincoln_temp.feather')
-
-# What's it look like?
-# dygraph(xts::xts(select(lincoln_temp, c(DT, p1, sd3)), order.by = ymd_hms(lincoln_temp$DT)),
-#         main="Water Temperature Timeseries (UTC)") %>% 
-#   dyRangeSelector()
-
 ```
-
 
 ## Depth
 
@@ -473,12 +419,7 @@ lincoln_depth <- dplyr::select(rawless_lincoln, c(DT, Depth_ft)) %>%
   mutate(site = 'lincoln') %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/lincoln_depth.feather')
-
-# dygraph(xts::xts(select(lincoln_depth, p1, DT, sd3), order.by = ymd_hms(lincoln_depth$DT)), 
-#         main="Depth Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Conductivity
 
@@ -489,12 +430,7 @@ lincoln_conductivity <-  first_pass(what = rawless_lincoln, parama = "Specific_C
   mutate(site = "lincoln") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/lincoln_conductivity.feather')
-
-# dygraph(xts::xts(select(lincoln_conductivity, p1, sd3, DT), order.by = ymd_hms(lincoln_conductivity$DT)),
-#         main="SpC Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## DO
 
@@ -505,12 +441,7 @@ lincoln_do <- first_pass(what = rawless_lincoln, parama = "DO_ppm", min = 0, max
   mutate(site = "lincoln") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/lincoln_do.feather')
-
-# dygraph(xts::xts(select(lincoln_do, p1, DT, sd3), order.by = ymd_hms(lincoln_do$DT)), 
-#         main="DO Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## pH
 
@@ -519,10 +450,15 @@ lincoln_ph <- first_pass(what = rawless_lincoln, parama = "pH1", min = 0, max = 
   mutate(site = "lincoln") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/lincoln_ph.feather')
+```
 
-# dygraph(xts::xts(select(lincoln_ph, p1, sd3, DT), order.by = ymd_hms(lincoln_ph$DT)), 
-#         main="pH Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
+## Turbidity
+
+```{r}
+lincoln_turbidity <- first_pass(what = rawless_lincoln, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "lincoln") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/lincoln_turbidity.feather')
 ```
 
 
@@ -531,14 +467,13 @@ lincoln_ph <- first_pass(what = rawless_lincoln, parama = "pH1", min = 0, max = 
 ```{r}
 rawless_timberline <- going_rawless(site_name="timberline",trolled=NA) %>%
   # remove data ranges where sensor was pulled out of field.
-  dplyr::filter(!(ymd_hms(DT) > ymd_hms('2021-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00'))) %>%
+  dplyr::filter(!(ymd_hms(DT) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00'))) %>%
   mutate(DT = ymd_hms(DT)) %>%
   padr::pad(by = 'DT') %>%
   # Link up calibration data:
   full_join(na.locf(na.locf(filter(cal_table, site == "timberline")), fromLast = TRUE),
             by = c('site','DT'))
 ```
-
 
 ## Depth
 
@@ -569,12 +504,7 @@ timberline_depth <- timberline_depth %>%
   first_pass(., parama ="Depth_ft_p1", max=7, min=0) %>%
   mutate(site = 'timberline') %>%
   feather::write_feather('data/sensor_data/p1_backup/timberline_depth.feather')
-
-# dygraph(xts::xts(select(timberline_depth, p1, DT, sd3), order.by = ymd_hms(timberline_depth$DT)), 
-#         main="Depth Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Temperature
 
@@ -584,12 +514,7 @@ Specs for temperature: ±0.1 Celsius, -5 to 50 C
 timberline_temp <- first_pass(what = rawless_timberline, parama = "Water_Temp_C", min = 0, max = 50) %>%
   mutate(site="timberline") %>%
   feather::write_feather('data/sensor_data/p1_backup/timberline_temp.feather')
-
-# dygraph(xts::xts(select(timberline_temp, c(DT, p1, sd3)), order.by = ymd_hms(timberline_temp$DT)),
-#         main="Water Temperature Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Conductivity
 
@@ -599,12 +524,7 @@ Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% 
 timberline_conductivity <-  first_pass(what = rawless_timberline, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
   mutate(site = "timberline") %>%
   feather::write_feather('data/sensor_data/p1_backup/timberline_conductivity.feather')
-
-# dygraph(xts::xts(select(timberline_conductivity, p1, sd3, DT), order.by = ymd_hms(timberline_conductivity$DT)),
-#         main="SpC Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## DO
 
@@ -614,12 +534,7 @@ RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
 timberline_do <- first_pass(what = rawless_timberline, parama = "DO_ppm", min = 0, max = 25) %>%
   mutate(site = "timberline") %>%
   feather::write_feather('data/sensor_data/p1_backup/timberline_do.feather')
-
-# dygraph(xts::xts(select(timberline_do, sd3, p1, DT), order.by = ymd_hms(timberline_do$DT)), 
-#         main="DO Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## pH
 
@@ -627,12 +542,16 @@ timberline_do <- first_pass(what = rawless_timberline, parama = "DO_ppm", min = 
 timberline_ph <- first_pass(what = rawless_timberline, parama = "pH1", min = 0, max = 14) %>%
   mutate(site = "timberline") %>%
   feather::write_feather('data/sensor_data/p1_backup/timberline_ph.feather')
-
-# dygraph(xts::xts(select(timberline_ph, p1, sd3, DT), order.by = ymd_hms(timberline_ph$DT)),
-#         main="pH Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
 
+## Turbidity
+
+```{r}
+timberline_turbidity <- first_pass(what = rawless_timberline, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "timberline") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/timberline_turbidity.feather')
+```
 
 # Prospect
 
@@ -649,7 +568,6 @@ rawless_prospect <- going_rawless(site_name = "prospect", trolled = NA) %>%
             by = c('site','DT'))
 ```
 
-
 ## Temperature
 
 Specs for temperature: ±0.1 Celsius, -5 to 50 C
@@ -658,13 +576,7 @@ Specs for temperature: ±0.1 Celsius, -5 to 50 C
 prospect_temp <- first_pass(what = rawless_prospect, parama = "Water_Temp_C", min = 0, max = 50) %>%
   mutate(site="prospect")  %>%
   feather::write_feather('data/sensor_data/p1_backup/prospect_temp.feather')
-
-# What's it look like?
-# dygraph(xts::xts(select(prospect_temp, c(DT, sd3, p1)), order.by = ymd_hms(prospect_temp$DT)),
-#         main="Water Temperature Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Depth
 
@@ -673,12 +585,7 @@ prospect_depth <- dplyr::select(rawless_prospect, c(DT, Depth_ft)) %>%
   first_pass(., parama ="Depth_ft", max=7, min=0) %>%
   mutate(site = 'prospect') %>%
   feather::write_feather('data/sensor_data/p1_backup/prospect_depth.feather')
-
-# dygraph(xts::xts(select(prospect_depth, p1, sd3, DT), order.by = ymd_hms(prospect_depth$DT)), 
-#         main="Depth Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Conductivity
 
@@ -688,12 +595,7 @@ Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% 
 prospect_conductivity <-  first_pass(what = rawless_prospect, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
   mutate(site = "prospect") %>%
   feather::write_feather('data/sensor_data/p1_backup/prospect_conductivity.feather')
-
-# dygraph(xts::xts(select(prospect_conductivity, p1, sd3, DT), order.by = ymd_hms(prospect_conductivity$DT)),
-#         main="SpC Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## DO
 
@@ -703,12 +605,7 @@ RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
 prospect_do <- first_pass(what = rawless_prospect, parama = "DO_ppm", min = 0, max = 25) %>%
   mutate(site = "prospect") %>%
   feather::write_feather('data/sensor_data/p1_backup/prospect_do.feather')
-
-# dygraph(xts::xts(select(prospect_do, p1, DT, sd3), order.by = ymd_hms(prospect_do$DT)), 
-#         main="DO Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## pH
 
@@ -716,10 +613,15 @@ prospect_do <- first_pass(what = rawless_prospect, parama = "DO_ppm", min = 0, m
 prospect_ph <- first_pass(what = rawless_prospect, parama = "pH1", min = 0, max = 14) %>%
   mutate(site = "prospect") %>%
   feather::write_feather('data/sensor_data/p1_backup/prospect_ph.feather')
+```
 
-# dygraph(xts::xts(select(prospect_ph, p1, DT, sd3), order.by = ymd_hms(prospect_ph$DT)), 
-#         main="pH Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
+## Turbidity
+
+```{r}
+prospect_turbidity <- first_pass(what = rawless_prospect, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "prospect") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/prospect_turbidity.feather')
 ```
 
 
@@ -762,7 +664,6 @@ rawless_elc <- going_rawless(site_name = "elc", trolled = NA) %>%
 rm(rawless_troll_elc,raw_troll_elc)
 ```
 
-
 ## Temperature
 
 Specs for temperature: ±0.1 Celsius, -5 to 50 C
@@ -772,14 +673,7 @@ elc_temp <- first_pass(what = rawless_elc, parama = "Water_Temp_C", min = 0, max
   mutate(site="elc") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/elc_temp.feather')
-
-# What's it look like?
-# dygraph(xts::xts(select(elc_temp, c(DT, p1, sd3)), order.by = ymd_hms(elc_temp$DT)),
-#         main="Water Temperature Timeseries (UTC)") %>% 
-#   dyRangeSelector()
-
 ```
-
 
 ## Depth
 
@@ -789,12 +683,7 @@ elc_depth <- dplyr::select(rawless_elc, c(DT, Depth_ft)) %>%
   mutate(site = 'elc') %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/elc_depth.feather')
-
-# dygraph(xts::xts(select(elc_depth, p1, DT, sd3), order.by = ymd_hms(elc_depth$DT)), 
-#         main="Depth Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Conductivity
 
@@ -805,12 +694,7 @@ elc_conductivity <-  first_pass(what = rawless_elc, parama = "Specific_Conductiv
   mutate(site = "elc") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/elc_conductivity.feather')
-
-# dygraph(xts::xts(select(elc_conductivity, p1, sd3, DT), order.by = ymd_hms(elc_conductivity$DT)),
-#         main="SpC Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## DO
 
@@ -821,12 +705,7 @@ elc_do <- first_pass(what = rawless_elc, parama = "DO_ppm", min = 0, max = 25) %
   mutate(site = "elc") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/elc_do.feather')
-
-# dygraph(xts::xts(select(elc_do, p1, DT, sd3), order.by = ymd_hms(elc_do$DT)), 
-#         main="DO Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## pH
 
@@ -835,10 +714,15 @@ elc_ph <- first_pass(what = rawless_elc, parama = "pH1", min = 0, max = 14) %>%
   mutate(site = "elc") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/elc_ph.feather')
+```
 
-# dygraph(xts::xts(select(elc_ph, p1, sd3, DT), order.by = ymd_hms(elc_ph$DT)), 
-#         main="pH Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
+## Turbidity
+
+```{r}
+elc_turbidity <- first_pass(what = rawless_elc, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "elc") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/elc_turbidity.feather')
 ```
 
 
@@ -858,7 +742,6 @@ rawless_archery <- going_rawless(site_name = "archery", trolled = NA) %>%
             by = c('site','DT'))
 ```
 
-
 ## Temperature
 
 Specs for temperature: ±0.1 Celsius, -5 to 50 C
@@ -868,14 +751,7 @@ archery_temp <- first_pass(what = rawless_archery, parama = "Water_Temp_C", min 
   mutate(site="archery") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/archery_temp.feather')
-
-# What's it look like?
-# dygraph(xts::xts(select(archery_temp, c(DT, p1, sd3)), order.by = ymd_hms(archery_temp$DT)),
-#         main="Water Temperature Timeseries (UTC)") %>% 
-#   dyRangeSelector()
-
 ```
-
 
 ## Depth
 
@@ -885,12 +761,7 @@ archery_depth <- dplyr::select(rawless_archery, c(DT, Depth_ft)) %>%
   mutate(site = 'archery') %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/archery_depth.feather')
-
-# dygraph(xts::xts(select(archery_depth, p1, DT, sd3), order.by = ymd_hms(archery_depth$DT)), 
-#         main="Depth Timeseries (UTC)") %>% 
-#   dyRangeSelector()
 ```
-
 
 ## Conductivity
 
@@ -901,12 +772,7 @@ archery_conductivity <-  first_pass(what = rawless_archery, parama = "Specific_C
   mutate(site = "archery") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/archery_conductivity.feather')
-
-# dygraph(xts::xts(select(archery_conductivity, p1, sd3, DT), order.by = ymd_hms(archery_conductivity$DT)),
-#         main="SpC Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## DO
 
@@ -917,12 +783,7 @@ archery_do <- first_pass(what = rawless_archery, parama = "DO_ppm", min = 0, max
   mutate(site = "archery") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/archery_do.feather')
-
-# dygraph(xts::xts(select(archery_do, p1, DT, sd3), order.by = ymd_hms(archery_do$DT)), 
-#         main="DO Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
-
 
 ## pH
 
@@ -931,88 +792,76 @@ archery_ph <- first_pass(what = rawless_archery, parama = "pH1", min = 0, max = 
   mutate(site = "archery") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/archery_ph.feather')
-
-# dygraph(xts::xts(select(archery_ph, p1, sd3, DT), order.by = ymd_hms(archery_ph$DT)), 
-#         main="pH Timeseries (UTC)") %>% 
-#   dyRangeSelector() 
 ```
 
+## Turbidity
 
 ```{r}
-depth <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*depth.feather', full.names = TRUE), feather::read_feather) %>%
-  select(DT,Depth_ft=p1,site)
-temperature <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*temp.feather', full.names = TRUE), feather::read_feather) %>%
-  select(DT,Temperature_C=p1,site)
-conductivity <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*conductivity.feather', full.names = TRUE), feather::read_feather) %>%
-  select(DT,Specific_Conductivity_µS_cm=p1,site)
-do <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*do.feather', full.names = TRUE), feather::read_feather) %>%
-  select(DT,DO_ppm=p1,site)
-ph <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*ph.feather', full.names = TRUE), feather::read_feather) %>%
-  select(DT,pH=p1,site)
+archery_turbidity <- first_pass(what = rawless_archery, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "archery") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_turbidity.feather')
+```
 
-all_data <- list(depth,temperature,conductivity,do,ph) %>%
-  reduce(full_join, by=c('site','DT')) %>%
-  mutate(tracer = case_when(site=="rist" ~ "1",
-                            site=="legacy" ~ "2",
-                            site=="lincoln" ~ "3",
-                            site=="timberline" ~ "4",
-                            site=="prospect" ~ "5",
-                            site=="elc" ~ "6",
-                            site=="archery" ~ "7"))
+## Chl-a
+
+```{r}
+archery_chla <- first_pass(what = rawless_archery, parama = "Chla", min = 0, max = 2000) %>%
+  mutate(site = "archery") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_chla.feather')
+```
+
+## Binding all datasets together
+```{r}
+depth <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*depth.feather', 
+                                full.names = TRUE), feather::read_feather) %>%
+  select(DT, Depth_ft = p1, site)
+
+temperature <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*temp.feather',
+                                      full.names = TRUE), feather::read_feather) %>%
+  select(DT, Temperature_C = p1, site)
+
+conductivity <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*conductivity.feather', 
+                                       full.names = TRUE), feather::read_feather) %>%
+  select(DT, Specific_Conductivity_µS_cm = p1, site)
+
+do <- plyr::ldply(list.files(path = 'data/sensor_data/p1_backup', pattern = '*do.feather', 
+                             full.names = TRUE), feather::read_feather) %>%
+  select(DT, DO_ppm = p1, site)
+
+ph <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*ph.feather',
+                             full.names = TRUE), feather::read_feather) %>%
+  select(DT, pH = p1, site)
+
+chla <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*chla.feather',
+                               full.names = TRUE), feather::read_feather) %>%
+  select(DT, Chla = p1, site)
+
+turbidity <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*turbidity.feather',
+                                    full.names = TRUE), feather::read_feather) %>%
+  select(DT, Turbidity_NTU = p1, site)
+
+all_data <- list(depth, temperature, conductivity, do, ph, turbidity, chla) %>%
+  reduce(full_join, by = c('site','DT')) %>%
+  mutate(tracer = case_when(site == "rist" ~ "1 Rist",
+                            site == "legacy" ~ "2 Legacy",
+                            site == "lincoln" ~ "3 Lincoln",
+                            site == "timberline" ~ "4 Timberline",
+                            site == "prospect" ~ "5 Prospect",
+                            site == "elc" ~ "6 ELC",
+                            site == "archery" ~ "7 Archery")) %>%
+  feather::write_feather('data/pretty/all_data_15min.feather')
 
 daily <- all_data %>%
-  mutate(daily=as_date(ymd_hms(DT))) %>%
-  group_by(site,tracer,daily) %>%
-  summarize_all(., mean, na.rm=T) 
+  mutate(daily = as_date(ymd_hms(DT))) %>%
+  group_by(site, tracer, daily) %>%
+  summarize_all(., mean, na.rm = T) %>%
+  feather::write_feather('data/pretty/all_data_daily.feather')
 
 hourly <- all_data %>%
   mutate(hourly = ymd_hms(as.character(round_date(ymd_hms(DT), "1 hour")))) %>%
-  group_by(site,tracer,hourly) %>%
-  summarize_all(., mean, na.rm=T)
-
-cols <- c("#7C221D", "#D1520A", "#DF810B", "#D9B35B", "#4F6010", "#374105", "#20331a")
-
-cols <- c("#ff0a54", "#ff0072",  "#ff177f", "#ff2e8c", "#ff4598", "#ff5ca5", "#ff74b2", "#ff8bbf", "#ffa2cb", "#ffb9d8", "#ffd0e5")
-
-cols <- rev(c("#7C221D", "#E7331A", "#F16A16", "#FFC82F", "#0D98BA", "#0074A5", "#2E5895"))
-
-
-october_pulse <- hourly %>% filter(as_date(hourly) > ymd('2022-10-18') & as_date(hourly) < ymd('2022-10-26')) %>%
-  ungroup() %>%
-  select(DT,site,tracer,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft) %>%
-  pivot_longer(cols=-c(DT,tracer,site), names_to="Parameter")
-
-ggplot(october_pulse) +
-  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
-  scale_color_manual(values = cols, labels = c("Lincoln","Timberline","Prospect","ELC", "Archery")) +
-  facet_wrap(~Parameter, scales = "free_y", ncol = 1) +
-  theme_bw() +
-  theme(legend.position="bottom", legend.title = element_blank())
-
-
-bw_event <- hourly %>% filter(as_date(hourly) > ymd('2022-08-15') & as_date(hourly) < ymd('2022-08-23')) %>%
-  ungroup() %>%
-  select(DT,site,tracer,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft) %>%
-  pivot_longer(cols=-c(DT,tracer,site), names_to="Parameter")
-
-ggplot(bw_event)+
-  geom_path(aes(x = DT, y = value, color = tracer)) +
-  scale_color_manual(values = cols, labels = c("Archery", "ELC", "Lincoln", "Prospect", "Timberline")) +
-  facet_wrap(~Parameter, scales = "free_y", ncol = 1) +
-  theme_bw() +
-  theme(legend.position="bottom", legend.title = element_blank())
-
-
-runoff <- hourly %>% filter(as_date(hourly) > ymd('2022-06-01') & as_date(hourly) < ymd('2022-06-15')) %>%
-  ungroup() %>%
-  select(DT,site,tracer,DO_ppm,Specific_Conductivity_µS_cm,Depth_ft) %>%
-  pivot_longer(cols=-c(DT,tracer,site), names_to="Parameter")
-
-ggplot(runoff) +
-  geom_path(aes(x = DT, y = value, color = tracer)) +
-  scale_color_manual(values = cols, labels = c("Archery", "ELC", "Lincoln", "Prospect", "Timberline")) +
-  facet_wrap(~Parameter, scales = "free_y", ncol = 1) +
-  theme_bw() +
-  theme(legend.position="bottom", legend.title = element_blank())
+  group_by(site, tracer, hourly) %>%
+  summarize_all(., mean, na.rm = T) %>%
+  feather::write_feather('data/pretty/all_data_hourly.feather')
 ```
-
