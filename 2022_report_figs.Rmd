@@ -1,0 +1,268 @@
+---
+title: "2022 Report and Figures"
+author: "Katie Willi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(rvest)
+library(dygraphs)
+library(labelled)
+library(zoo)
+library(anomalize)
+```
+
+Pull in data-sets
+```{r}
+raw_data <- read_feather('data/pretty/all_data_15min.feather')
+daily <- write_feather('data/pretty/all_data_daily.feather')
+hourly <- write_feather('data/pretty/all_data_hourly.feather')
+
+# Playin' around with color palettes:
+cols <- c("#7C221D", "#D1520A", "#DF810B", "#D9B35B", "#4F6010", "#374105", "#20331a")
+
+cols <- c("#ff0a54", "#ff0072",  "#ff177f", "#ff2e8c", "#ff4598", "#ff5ca5", "#ff74b2", "#ff8bbf", "#ffa2cb", "#ffb9d8", "#ffd0e5")
+
+cols <- rev(c("#7C221D", "#E7331A", "#F16A16", "#FFC82F", "#0D98BA", "#0074A5", "#2E5895"))
+
+cols <- c("#F5E15A", "#F4BE1D", "#FEA305", "#FF850A", "#F26021", "#F34646", "#7C221D")
+
+cols <- c("#CC99C9", "#9EC1CF", "#9EE09E", "#FDFD97", "#FEB144", "#FF6663")
+
+cols <- c("#1D0255", "#2B0071", "#022394", "#43B54C", "#FAEF44", "#F39E3A", "#EE2939")
+```
+
+October diversion pulses
+```{r}
+# 2021
+october_pulse_2021 <- hourly %>% 
+  filter(as_date(hourly) > ymd('2021-10-26') & as_date(hourly) < ymd('2021-11-03')) %>%
+  ungroup() %>%
+  select(-c(hourly, Chla)) %>%
+  filter(!site %in% c("rist", "prospect")) %>% # weren't deployed at the time
+  mutate(DO_ppm = ifelse(is.na(DO_ppm), 0, DO_ppm)) %>%
+  pivot_longer(cols = -c(DT, tracer, site), names_to = "Parameter")
+
+# View in console:
+ggplot(october_pulse_2021) +
+      geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+      scale_color_manual(values = c("#F5E15A", "#FEA305", "#FF850A","#F34646")) +
+      facet_wrap(~Parameter, scales = "free_y", ncol = 2) +
+      theme_bw() +
+      theme(legend.position = "bottom", legend.title = element_blank())
+
+oct_2021 <- function(parameter, label) {
+  return(ggplot(filter(october_pulse_2021, Parameter == parameter)) +
+      geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+      scale_color_manual(values = c("#F5E15A", "#FEA305", "#FF850A","#F34646")) +
+      theme_bw() +
+      ylab(paste0(label)) +
+      xlab("") +
+      theme(legend.position = "bottom", legend.title = element_blank()))}
+
+oct_2021(parameter = "Depth_ft", label = "Depth (ft)")
+oct_2021(parameter = "DO_ppm", label = "DO (ppm)")
+oct_2021(parameter = "pH", label = "pH")
+oct_2021(parameter = "Specific_Conductivity_µS_cm", label = "SC (µS/cm)")
+oct_2021(parameter = "Temperature_C", label = "Temperature (C)")
+oct_2021(parameter = "Turbidity_NTU", label = "Turbidity (NTU)")
+
+ggsave(plot = ggpubr::ggarrange(a, b, c, d, e, f, nrow = 3, ncol = 2, common.legend = TRUE, legend = "bottom") + 
+         bg.color("white"), 'data/figures/oct_2021.jpg')
+
+# 2022
+october_pulse_2022 <- hourly %>% filter(as_date(hourly) > ymd('2022-10-18') & as_date(hourly) < ymd('2022-10-26')) %>%
+  ungroup() %>%
+  select(-c(hourly, Chla)) %>%
+  filter(!site %in% c("rist", "legacy", "lincoln")) %>% # weren't deployed at the time
+  mutate(DO_ppm = ifelse(is.na(DO_ppm), 0, DO_ppm)) %>%
+  pivot_longer(cols = -c(DT, tracer, site), names_to = "Parameter")
+
+# View in console:
+ggplot(october_pulse_2022) +
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values =c("#F5E15A", "#FEA305", "#FF850A","#F34646")) +
+  facet_wrap(~Parameter, scales = "free_y", ncol = 2) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+oct_2022 <- function(parameter, label) {
+  return(ggplot(filter(october_pulse_2022, Parameter == parameter)) +
+      geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+      scale_color_manual(values = c("#F5E15A", "#FEA305", "#FF850A","#F34646")) +
+      theme_bw() +
+      ylab(paste0(label)) +
+      xlab("") +
+      theme(legend.position="bottom", legend.title = element_blank()))}
+
+a = oct_2022(parameter = "Depth_ft", label = "Depth (ft)")
+e = oct_2022(parameter = "DO_ppm", label = "DO (ppm)")
+c = oct_2022(parameter = "pH", label = "pH")
+d = oct_2022(parameter = "Specific_Conductivity_µS_cm", label = "SC (µS/cm)")
+b = oct_2022(parameter = "Temperature_C", label = "Temperature (C)")
+f = oct_2022(parameter = "Turbidity_NTU", label = "Turbidity (NTU)")
+
+ggsave(plot = ggpubr::ggarrange(a, b, c, d, e, f, nrow = 3, ncol = 2, common.legend = TRUE, legend = "bottom") + 
+         bg.color("white"), 'data/figures/oct_2022.jpg')
+```
+
+Blackwater events
+```{r}
+# 2021
+bw_event_2021 <- hourly %>% filter(as_date(hourly) > ymd('2021-07-18') & as_date(hourly) < ymd('2021-08-07')) %>%
+  ungroup() %>%
+  select(-c(hourly, Chla)) %>%
+  # For plotting purposes:
+  mutate(DO_ppm = ifelse(is.na(DO_ppm), 0, DO_ppm)) %>%
+  filter(site != "prospect") %>% # not deployed at the time
+  pivot_longer(cols = -c(DT, tracer, site), names_to = "Parameter")
+
+# View in console:
+ggplot(bw_event_2021)+
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values = c("#F5E15A", "#F4BE1D", "#FEA305", "#F26021", "#F34646")) +
+  facet_wrap(~Parameter, scales = "free_y", ncol = 2) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+bw_2021 <- function(parameter, label) {
+  return(ggplot(filter(bw_event_2021, Parameter == parameter)) +
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values = c("#F5E15A", "#F4BE1D", "#FEA305", "#F26021", "#F34646")) +
+  theme_bw() +
+  ylab(paste0(label)) +
+  xlab("") +
+  theme(legend.position="bottom", legend.title = element_blank()))}
+
+a = bw_2021(parameter = "Depth_ft", label = "Depth (ft)")
+e = bw_2021(parameter = "DO_ppm", label = "DO (ppm)")
+c = bw_2021(parameter = "pH", label = "pH")
+d = bw_2021(parameter = "Specific_Conductivity_µS_cm", label = "SC (µS/cm)")
+b = bw_2021(parameter = "Temperature_C", label = "Temerature (C)")
+f = bw_2021(parameter = "Turbidity_NTU", label = "Turbidity (NTU)")
+
+ggsave(plot = ggpubr::ggarrange(a, b, c, d, e, f, nrow = 3, ncol = 2, common.legend = TRUE, legend = "bottom") +
+         bg.color("white"), 'data/figures/bw_2021.jpg')
+
+# 2022
+bw_event_2022 <- hourly %>% filter(as_date(hourly) > ymd('2022-08-15') & as_date(hourly) < ymd('2022-08-24')) %>%
+  ungroup() %>%
+  select(-c(hourly, Chla)) %>%
+  mutate(DO_ppm = ifelse(is.na(DO_ppm), 0, DO_ppm)) %>%
+  filter(!site %in% c("lincoln", "rist", "legacy")) %>%
+  pivot_longer(cols = -c(DT,tracer,site), names_to = "Parameter")
+
+# View in colsole:
+ggplot(bw_event_2022)+
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values =  c("#F5E15A", "#FEA305", "#FF850A", "#F34646")) +
+  facet_wrap(~Parameter, scales = "free_y", ncol = 2) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+bw_2022 <- function(parameter, label) {
+  return(ggplot(filter(bw_event_2022, Parameter == parameter)) +
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values =  c("#F5E15A", "#FEA305", "#FF850A", "#F34646")) +
+  theme_bw() +
+  ylab(paste0(label)) +
+  xlab("") +
+  theme(legend.position = "bottom", legend.title = element_blank()))}
+
+a = bw_2022(parameter = "Depth_ft", label = "Depth (ft)")
+e = bw_2022(parameter = "DO_ppm", label = "DO (ppm)")
+c = bw_2022(parameter = "pH", label = "pH")
+d = bw_2022(parameter = "Specific_Conductivity_µS_cm", label = "SC (µS/cm)")
+b = bw_2022(parameter = "Temperature_C", label = "Temperature (C)")
+f = bw_2022(parameter = "Turbidity_NTU", label = "Turbidity (NTU)")
+
+ggsave(plot = ggpubr::ggarrange(a, b, c, d, e, f, nrow = 3, ncol = 2, common.legend = TRUE, legend = "bottom") + 
+         bg.color("white"), 'data/figures/bw_2022.jpg')
+```
+
+Spring runoff 
+```{r}
+runoff_2021 <- hourly %>% 
+  filter(as_date(DT) > ymd('2021-06-16') & as_date(DT) < ymd('2021-06-19')) %>%
+  select(DT, site, tracer, DO_ppm, Specific_Conductivity_µS_cm, pH, Temperature_C) %>%
+  filter(!site %in% c("prospect")) %>%
+  pivot_longer(cols = -c(DT,tracer,site), names_to = "Parameter")
+
+ggplot(runoff_2021) +
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values = c("#F5E15A", "#F4BE1D", "#FEA305", "#F26021", "#F34646")) +
+  facet_wrap(~Parameter, scales = "free_y", ncol = 2) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.title = element_blank())
+
+run_2021 <- function(parameter, label) {
+  return(ggplot(data = filter(runoff_2021, Parameter == parameter)) +
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values = c("#F5E15A", "#F4BE1D", "#FEA305", "#F26021", "#F34646")) +
+  theme_bw() +
+  ylab(paste0(label)) +
+  xlab("") +
+  theme(legend.position = "none", legend.title = element_blank()))}
+
+d = run_2021(parameter = "DO_ppm", label = "DO (ppm)")
+b = run_2021(parameter = "pH", label = "pH")
+c = run_2021(parameter = "Specific_Conductivity_µS_cm", label = "SC (µS/cm)")
+a = run_2021(parameter = "Temperature_C", label = "Temperature (C)")
+
+ggsave(plot = ggpubr::ggarrange(a,b,c,d, common.legend = TRUE, legend = "bottom"), 'data/figures/run_2021.jpg')
+
+# 2022
+runoff_2022 <- all_data %>% 
+  filter(as_date(DT) > ymd('2022-06-23') & as_date(DT) < ymd('2022-06-27')) %>%
+  ungroup() %>%
+  select(DT, site, tracer, pH, DO_ppm, Specific_Conductivity_µS_cm, Temperature_C, Turbidity_NTU) %>%
+  pivot_longer(cols = -c(DT, tracer, site), names_to = "Parameter")
+
+ggplot(runoff_2022) +
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values = c("#F5E15A", "#F4BE1D", "#FEA305", "#FF850A", "#F26021", "#F34646")) +
+  facet_wrap(~Parameter, scales = "free_y", ncol = 2) +
+  theme_bw() +
+  theme(legend.position="bottom", legend.title = element_blank())
+
+run_2022 <- function(parameter, label) {
+  return(ggplot(data = filter(runoff_2022, Parameter == parameter)) +
+  geom_path(aes(x = DT, y = value, color = tracer), size = 0.75) +
+  scale_color_manual(values = c("#F5E15A", "#F4BE1D", "#FEA305", "#FF850A", "#F26021", "#F34646")) +
+  theme_bw() +
+  ylab(paste0(label)) +
+  xlab("") +
+  theme(legend.position = "none", legend.title = element_blank()))}
+
+d = run_2022(parameter = "DO_ppm", label = "DO (ppm)")
+b = run_2022(parameter = "pH", label = "pH")
+c = run_2022(parameter = "Specific_Conductivity_µS_cm", label = "SC (µS/cm)")
+a = run_2022(parameter = "Temperature_C", label = "Temerature (C)")
+
+ggsave(plot = ggpubr::ggarrange(a, b, c, d, common.legend = TRUE, legend = "bottom"), 'data/figures/run_2022.jpg')
+```
+
+```{r}
+rm(list = ls(all.names = TRUE)) #will clear all objects includes hidden objects.
+gc() #free up memrory and report the memory usage.
+pacman::p_unload("all")
+
+library(tidyverse)
+library(animation)
+library(gganimate)
+library(dygraphs)
+library(lubridate)
+library(xts)
+library(exifr)
+library(imputeTS)
+library(png)
+library(grid)
+library(ggthemes)
+library(patchwork)
+```
+
+

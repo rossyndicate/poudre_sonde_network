@@ -1,0 +1,124 @@
+---
+title: "Timberline Timelapse Video"
+author: "Katie Willi"
+date: "12/29/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(animation)
+library(gganimate)
+library(dygraphs)
+library(lubridate)
+library(xts)
+library(exifr)
+library(imputeTS)
+library(png)
+library(grid)
+library(ggthemes)
+library(patchwork)
+```
+
+## Photo timestamps
+```{r}
+photo_files = list.files('data/timelapse_photos/test', full.names = T)
+# For when videos are really big (or resolution of photos is great):
+compressed_files <- list.files('data/timelapse_photos/test', full.names = T)
+
+photo_time = read_exif(photo_files) %>%
+  # Files are named with their hour-rounded timestamp
+  arrange(FileName)
+```
+
+## WQ data
+```{r}
+hourly <- feather::read_feather('data/pretty/all_data_hourly.feather')
+
+wq_data <- hourly %>% 
+  filter(as_date(DT) > ymd('2022-04-20') & as_date(DT) < ymd('2022-05-02')) %>%
+  ungroup() %>%
+  filter(site %in% c("timberline")) %>%
+  select(dt=hourly, Depth_ft, Turbidity_NTU) 
+
+photo_join <- cbind(photo_time, wq_data)
+```
+
+## Initial graph
+
+```{r}
+library(jpeg)
+library(ggdark)
+library(animation)
+
+dex <- 200
+
+photo_plotter <- function(dex = 200){
+  
+  simul = photo_join[dex,]
+  
+  upto = photo_join[1:dex,]
+  photo_bg <- readJPEG(simul$SourceFile)
+  back <- ggplot() + 
+    annotation_custom(rasterGrob(photo_bg, 
+                                 width = unit(1,"npc"), 
+                                 height = unit(1,"npc")), 
+                      -Inf, Inf, -Inf, Inf) 
+  
+  inset <- ggplot() + 
+    geom_ribbon(data = upto, aes(x = dt, 
+                                 y = Depth_ft*50,
+                                 ymin = 0, 
+                                 ymax = Depth_ft*50), 
+                color = "white", 
+                fill = "white", 
+                #linetype = "dash", 
+                alpha = 0.75) +
+    geom_path(data = upto, aes(x = dt, y = Turbidity_NTU), 
+              color = "#F34646", size=2) +
+    geom_point(data = simul, aes(x = dt, y = Turbidity_NTU), 
+               color = "#F34646") +
+    ylim(min(photo_join$Turbidity_NTU, na.rm = T),
+         max(photo_join$Turbidity_NTU, na.rm = T)) + 
+    xlim(min(photo_join$dt, na.rm = T),
+         max(photo_join$dt, na.rm = T)) + 
+    scale_y_continuous(name = "Turbidity (NTU)",
+                       sec.axis = sec_axis(~./50,
+                                           name = 'River depth (feet)',
+                                           breaks = seq(0,50,1)),
+                       limits = c(0, 500, na.rm = T)) +
+    dark_theme_light(base_size = 40) +  
+    theme(axis.title.y.right = element_text(color="white"), axis.title.y.left = element_text(color="#F34646")) +
+    theme(
+      panel.background = element_rect(fill = "transparent"), 
+      plot.background = element_rect(fill = "transparent", color = NA), 
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(), 
+      legend.background = element_rect(fill = "transparent"),
+      legend.box.background = element_rect(fill = "transparent"),
+      panel.border = element_blank(),
+      axis.line = element_line(color = 'gray80'),
+    ) + 
+    ylab('River level (ft)') + 
+    xlab('')
+  
+  gp1 <- back + 
+    inset_element(inset,
+                  left = 0.16,
+                  bottom = 0.15,
+                  right = 0.9,
+                  top = 0.6)
+  print(gp1)
+}
+
+saveVideo(
+  {map(1:nrow(photo_join),photo_plotter)},
+  video.name = 'poudre_timberline_turbidity.mp4',
+  interval = 0.075,
+  ani.width = 1920,
+  ani.height = 1080)
+```
+
