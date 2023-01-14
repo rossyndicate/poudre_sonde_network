@@ -54,13 +54,7 @@ Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
 
 ```{r}
 pre_2022 <- read_csv('data/pretty/all_sensor_data_pre2022.csv') %>%
-  mutate(site = case_when(sensor == "Rist" ~ "rist",
-                          sensor == "Legacy" ~ "legacy",
-                          sensor == "Timberline" ~ "timberline",
-                          sensor == "Prospect" ~ "prospect",
-                          sensor == "ELC" ~ "elc",
-                          sensor == "Archery" ~ "archery"
-  )) %>%
+  mutate(site = tolower(sensor)) %>%
   rename(pH1 = pH,
          comment_pre = comments) %>%
   select(-c(sensor, year, date, data))
@@ -180,7 +174,8 @@ rawless_rist <- going_rawless(site_name = "rist", trolled = NA) %>%
   padr::pad(by = 'DT') %>%
   # Link up calibration data:
   full_join(na.locf(na.locf(filter(cal_table, site == "rist")), fromLast = TRUE), 
-            by = c('site','DT'))
+            by = c('site','DT')) %>%
+  distinct(.keep_all = TRUE)
 ```
 
 ## Temperature
@@ -260,19 +255,19 @@ raw_troll_legacy <- map_dfr(grep(list.files("data/sensor_data/2022/legacy/manual
 names(raw_troll_legacy) <- make.names(names(raw_troll_legacy), unique = T)
 
 rawless_troll_legacy <- raw_troll_legacy %>% 
-  select(DT = contains('Date.Time'),
+  select(DT_instrument = contains('Date.Time'),
          Water_Temp_C = as.numeric(contains('Temperature...C')),
          pH = contains('pH'),
          ORP_mV = contains('ORP'),
          Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
          DO_ppm = contains('RDO.concentration'),
          Turbidity_NTU = contains('Turbidity'),
-         Depth_ft = contains('Depth..ft')) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate(DT = DT - lubridate::hours(1)) %>% # reported in MDT >:(
-  mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric)
+         Depth_ft = contains('Depth..ft'))  %>%
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT_instrument = DT_instrument - lubridate::hours(1)) %>% # reported in MDT >:(
+  mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
+  mutate(DT = ymd_hms(DT))
 
 # Full Dataset:
 rawless_legacy <- going_rawless(site_name = "legacy", trolled = rawless_troll_legacy) %>%
@@ -374,7 +369,7 @@ raw <- readxl::read_excel('data/sensor_data/2022/lincoln/lincoln.xlsx')
 names(raw) <- make.names(names(raw), unique = T)
 
 rawless_lincoln <- raw %>%
-  select(DT = contains('Date.Time'),
+  select(DT_instrument = contains('Date.Time'),
          Water_Temp_C = as.numeric(contains('Temperature')),
          pH = contains('pH'),
          ORP_mV = contains('ORP'),
@@ -382,12 +377,12 @@ rawless_lincoln <- raw %>%
          DO_ppm = contains('RDO.Conc'),
          Turbidity_NTU = contains('Turbidity'),
          Depth_ft = contains('Depth')) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate(DT = DT - lubridate::hours(1)) %>%
   mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT_instrument = DT_instrument - lubridate::hours(1)) %>%
   mutate(site = 'lincoln') %>%
-  arrange(ymd_hms(DT)) %>%
-  mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
+  arrange(ymd_hms(DT_instrument)) %>%
+  mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
   mutate(DT = ymd_hms(DT)) %>%
   # Link up field notes:
   full_join(filter(field_notes, site == 'lincoln'), by = c('DT','site')) %>%
@@ -635,7 +630,7 @@ raw_troll_elc <- map_dfr(grep(list.files("data/sensor_data/2022/elc/manual/", fu
 names(raw_troll_elc) <- make.names(names(raw_troll_elc), unique = T)
 
 rawless_troll_elc <- raw_troll_elc %>% 
-  select(DT = contains('Date.Time'),
+  select(DT_instrument = contains('Date.Time'),
          Water_Temp_C = as.numeric(contains('Temperature...C')),
          pH = contains('pH'),
          ORP_mV = contains('ORP'),
@@ -643,11 +638,11 @@ rawless_troll_elc <- raw_troll_elc %>%
          DO_ppm = contains('RDO.concentration'),
          Turbidity_NTU = contains('Turbidity'),
          Depth_ft = contains('Depth..ft')) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate(DT = DT - lubridate::hours(1)) %>% # reported in MDT >:(
-  mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric) 
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT = DT_instrument - lubridate::hours(1)) %>% # reported in MDT >:(
+  mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
+  mutate(DT = ymd_hms(DT))
 
 
 # Full Dataset:
