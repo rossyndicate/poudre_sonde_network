@@ -1,0 +1,425 @@
+---
+title: "Tidying Elkhorn Data"
+author: "Katie Willi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+library(rvest)
+library(dygraphs)
+library(labelled)
+library(zoo)
+library(anomalize)
+```
+
+Functions that you need!
+
+```{r}
+try(plyr::ldply(list.files(path="src/",
+                           pattern="*.R",
+                           full.names=TRUE),
+                source))
+```
+
+Listed accuracy and range for sensors:
+
+Temperature: ±0.1 Celsius, -5 to 50 C
+
+Barometric Pressure: ±1.0 mbars, 300 to 1,100 mbars
+
+pH: ±0.1 pH, 0 to 14 pH
+
+ORP: ±5 mV
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+TDS/Salinity: range of 0 to 350 ppt/0 to 350 PSU
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+Turbidity: ±2% of reading or ±0.5 NTU (whichever is greater)
+
+TSS: range of 1 to 1,500 mg/L
+
+Pressure: ±0.1% FS from -5 to 50°C
+
+Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
+
+#### Pulling up field notes
+
+This is the first year that there are consistent field notes. 
+
+```{r}
+field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
+  mutate(DT = (paste0(date, " ", start_time_mst))) %>%
+  mutate(DT = ymd_hm(DT)) %>%
+  arrange(DT) %>%
+  mutate(DT = round_date(DT, "15 minutes"))
+```
+
+#### Downloading calibration reports. 
+
+These are a bit tricky to automate nicely because the calibration table structure is different depending on what sensors are on the sonde, and what ports they're in...
+
+```{r}
+cal_files <- list.files("data/calibration_reports", pattern=".html")
+
+cal_table <- vector("list", length = length(cal_files)) 
+
+for(i in 1:length(cal_table)){
+  
+  cal <- rvest::read_html(paste0("data/calibration_reports/", cal_files[i])) %>%
+    rvest::html_nodes('div') %>%
+    rvest::html_text() %>%
+    as_tibble()
+  
+  rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "")
+  
+  ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "")
+  
+  conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "")
+  
+  turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "")
+  
+  time_mst <- paste0(str_sub(cal_files[i], -13, -12),":", str_sub(cal_files[i], -11, -10))
+  
+  date <- paste0(str_sub(cal_files[i], -22, -19),"-", str_sub(cal_files[i], -18, -17),"-", str_sub(cal_files[i], -16, -15))
+  
+  cal_table[[i]] <- tibble(site = sub("\\_.*", "", cal_files[i]),
+                           
+                           DT = ymd_hm(paste0(date, " ", time_mst)),
+                           
+                           #Dissolved Oxygen
+                           rdo_slope = str_match(rdo, "Slope\\s*(.*?)\\s*Offset")[,2],
+                           rdo_offset = str_match(rdo, "Offset\\s*(.*?)\\s*mg/L")[,2],
+                           rdo_100 = str_match(rdo, "PreMeasurement\\s*(.*?)\\s*%SatPost")[,2],
+                           rdo_conc = str_match(rdo, "Concentration\\s*(.*?)\\s*mg/LPreMeasurement")[,2],
+                           rdo_temp = str_match(rdo, "Temperature\\s*(.*?)\\s*°C")[,2],
+                           rdo_pressure = str_match(rdo, "Pressure\\s*(.*?)\\s*mbar")[,2],
+                           
+                           #pH
+                           ph_slope_pre = str_match(ph_orp, "Offset1Slope\\s*(.*?)\\s*mV/pH")[,2],
+                           ph_offset_pre = str_match(ph_orp, "mV/pHOffset\\s*(.*?)\\s*mVSlopeandOffset2")[,2],
+                           ph_slope_post = str_match(ph_orp, "Offset2Slope\\s*(.*?)\\s*mV/pH")[,2],
+                           ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mV/pHOffset\\s*(.*?)\\s*mVORPORP"))[,2],
+                           ph_7_nice = str_sub(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2])),
+                           ph_7_other = str_sub(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2])),
+                           ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
+                           
+                           #ORP
+                           orp_offset = ifelse(is.na(str_match(ph_orp, "Zobell'sOffset\\s*(.*?)\\s*mVTemperature")[,2]),
+                                               str_match(ph_orp, "ZoBell'sOffset\\s*(.*?)\\s*mVTemperature")[,2],
+                                               str_match(ph_orp, "Zobell'sOffset\\s*(.*?)\\s*mVTemperature")[,2]),
+                           
+                           #Conductivity
+                           tds_conversion_ppm = str_sub(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2], 6, nchar(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2])),
+                           cond_cell_constant = str_match(conductivity, "CellConstant\\s*(.*?)\\s*ReferenceTemperature")[,2],
+                           cond_pre = str_match(conductivity,paste0(str_match(conductivity,
+                                                                              "PreMeasurementActual\\s*(.*?)\\s*SpecificConductivity")[,2],"SpecificConductivity\\s*(.*?)\\s*µS/cmPost"))[,2],
+                           cond_post = str_match(conductivity,paste0(str_match(conductivity,
+                                                                               "PostMeasurementActual\\s*(.*?)\\s*SpecificConductivity")[,2],"SpecificConductivity\\s*(.*?)\\s*µS/cm"))[,2],
+                           
+                           #Turbidity
+                           ntu_slope = str_match(turbidity, "Slope\\s*(.*?)\\s*Offset")[,2],
+                           ntu_offset = str_match(turbidity, "Offset\\s*(.*?)\\s*NTU")[,2],
+                           ntu_10 = str_match(turbidity, "CalibrationPoint1PreMeasurement\\s*(.*?)\\s*NTUPost")[,2],
+                           ntu_100 = str_match(turbidity, "CalibrationPoint2PreMeasurement\\s*(.*?)\\s*NTUPost")[,2],
+                           
+                           #Factory Defaults
+                           factory_defaults = paste0(ifelse(is.na(ntu_slope), "Turbidity ", ""),
+                                                     ifelse(is.na(rdo_slope), "RDO ", ""),
+                                                     ifelse(is.na(ph_slope_post), "pH ", ""),
+                                                     ifelse(is.na(orp_offset), "ORP ", ""),
+                                                     ifelse(is.na(cond_post), "Conductivity ", ""))) %>%
+    select(-c(ph_7_nice, ph_7_other))
+}
+
+cal_table <- bind_rows(cal_table) %>%
+  distinct(.keep_all = TRUE) %>%
+  group_by(site) %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  padr::pad(by = 'DT', group = 'site')
+
+rm(cal, cal_files, conductivity, date, i, ph_orp, rdo, time_mst, turbidity)
+```
+
+
+```{r}
+# From VuLink, in the field:
+vulink_reader <- function(file) {
+
+  raw_data <- rvest::read_html(file) %>%
+    rvest::html_node('table') %>%
+    rvest::html_table() %>%
+    slice(-1:-32) %>%
+    janitor::row_to_names(row_number = 1)
+  
+  names(raw_data) <- make.names(names(raw_data), unique = T)
+  
+  raw_data <- raw_data %>%
+    select(DT_instrument = contains('Date.Time'),
+           Water_Temp_C = contains('Temperature...C'),
+           pH = contains('pH'),
+           ORP_mV = contains('ORP'),
+           Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
+           DO_ppm = contains('RDO'),
+           Turbidity_NTU = contains('Turbidity'))
+  
+  
+  return(raw_data)
+}
+
+
+```
+
+
+
+
+#### Downloading sonde data
+
+# Upper Elkhorn
+
+```{r}
+csv <- read_csv('data/sensor_data/2022/elkhornupper/elkhornupper_20220708_20220713_vulink.csv') #%>%
+
+names(csv) <- make.names(names(csv), unique = T)
+
+csv <- csv %>%
+      select(DT_instrument = contains('DT_MST'),
+           Water_Temp_C = contains('Temperature...C'),
+           pH_1 = contains('pH'),
+           ORP_mV = contains('ORP'),
+           Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
+           DO_ppm = contains('RDO'),
+           Turbidity_NTU = contains('Turbidity')) %>%
+  mutate_at(vars(2:ncol(.)), as.numeric)
+
+
+# Full Dataset:
+rawless_elkhornupper <- map_dfr(list.files("data/sensor_data/2022/elkhornupper/", pattern = "*htm", full.names = T), vulink_reader) %>%
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+    mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+    mutate(DT_instrument = DT_instrument - lubridate::hours(7)) %>%
+  bind_rows(csv) %>%  
+  #mutate_at(vars(2:ncol(.)), as.numeric) %>%
+    mutate(site = "elkhornupper") %>%
+    arrange(ymd_hms(DT_instrument)) %>%
+    mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
+    mutate(DT = ymd_hms(DT)) %>%
+    distinct(.keep_all = TRUE) %>%
+    full_join(filter(field_notes, site == "elkhornupper"), by = c('DT','site')) %>%
+    mutate(date = as_date((DT)),
+           hour = hour(DT),
+           year = year(DT),
+           month = month(DT)) %>%
+    arrange(ymd_hms(DT)) %>%
+    mutate(DT = ymd_hms(DT)) %>%
+    filter(year(DT) >= "2022") %>%
+    padr::pad(by = 'DT') %>%
+    # Link up calibration data:
+    full_join(na.locf(na.locf(filter(cal_table, site == "elkhornupper")), fromLast = TRUE), 
+            by = c('site','DT')) %>%
+    distinct(.keep_all = TRUE)
+```
+
+
+
+
+
+
+# Lower Elkhorn
+
+```{r}
+# Full Dataset:
+rawless_elkhornlower <- map_dfr(list.files("data/sensor_data/2022/elkhornlower/", full.names = T, pattern = "*htm",), vulink_reader) %>%
+    mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+    mutate(DT_instrument = DT_instrument - lubridate::hours(7)) %>%
+    mutate_at(vars(2:ncol(.)), as.numeric) %>%
+    mutate(site = "elkhornlower") %>%
+    arrange(ymd_hms(DT_instrument)) %>%
+    mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
+    mutate(DT = ymd_hms(DT)) %>%
+    distinct(.keep_all = TRUE) %>%
+    full_join(filter(field_notes, site == "elkhornlower"), by = c('DT','site')) %>%
+    mutate(date = as_date((DT)),
+           hour = hour(DT),
+           year = year(DT),
+           month = month(DT)) %>%
+    arrange(ymd_hms(DT)) %>%
+    mutate(DT = ymd_hms(DT)) %>%
+    filter(year(DT) >= "2022") %>%
+    padr::pad(by = 'DT') %>%
+    # Link up calibration data:
+    full_join(na.locf(na.locf(filter(cal_table, site == "elkhornlower")), fromLast = TRUE), 
+            by = c('site','DT')) %>%
+    distinct(.keep_all = TRUE)
+```
+
+
+Bind together:
+
+```{r}
+rawless_elkhorn <- bind_rows(rawless_elkhornlower, rawless_elkhornupper)
+
+elkhorns <- c("elkhornupper","elkhornlower")
+```
+
+
+## Temperature
+
+Specs for temperature: ±0.1 Celsius, -5 to 50 C
+
+```{r}
+temp <- function(x){
+  
+  cleaned <- rawless_elkhorn %>%
+  filter(site == x) %>%
+  first_pass(what = ., parama = "Water_Temp_C2", min = -5, max = 50) %>%
+  filter(!is.na(DT)) %>% 
+  dplyr::mutate(site = paste0(x))
+  
+  #feather::write_feather(cleaned,paste0('data/sensor_data/p1_backup/',elkhorns,'_temp.feather'))
+  
+  return(cleaned)
+  
+}
+
+elkhorn_temp <- map(elkhorns, temp) %>%
+  bind_rows() %>%
+  rename(Temperature_C = p1)
+
+plotly::ggplotly(
+  ggplot(elkhorn_temp) +
+  geom_line(aes(x = DT, y = Temperature_C, color = site)) +
+    facet_wrap(~site,ncol=1)+
+    theme_bw()
+  )
+```
+
+## Conductivity
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+```{r}
+
+cond <- function(x){
+  
+  cleaned <- rawless_elkhorn %>%
+  filter(site == x) %>%
+  first_pass(what = ., parama = "Specific_Conductivity_µS_cm", min = 0, max = 1000) %>%
+  filter(!is.na(DT)) %>% 
+  dplyr::mutate(site = paste0(x))
+  
+  #feather::write_feather(cleaned,paste0('data/sensor_data/p1_backup/',elkhorns,'_temp.feather'))
+  
+  return(cleaned)
+  
+}
+
+elkhorn_cond <- map(elkhorns, cond) %>%
+  bind_rows() %>%
+  rename(Specific_Conductivity_µS_cm = p1)
+
+plotly::ggplotly(
+  ggplot(elkhorn_cond) +
+  geom_line(aes(x = DT, y = Specific_Conductivity_µS_cm, color = site)) +
+    facet_wrap(~site,ncol=1)+
+    theme_bw()
+  )
+```
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+# DO
+
+```{r}
+
+do <- function(x){
+  
+  cleaned <- rawless_elkhorn %>%
+  filter(site == x) %>%
+  first_pass(what = ., parama = "DO_ppm1", min = 0, max = 1000) %>%
+  filter(!is.na(DT)) %>% 
+  dplyr::mutate(site = paste0(x))
+  
+  #feather::write_feather(cleaned,paste0('data/sensor_data/p1_backup/',elkhorns,'_temp.feather'))
+  
+  return(cleaned)
+  
+}
+
+elkhorn_do <- map(elkhorns, do) %>%
+  bind_rows() %>%
+  rename(DO_ppm = p1)
+
+plotly::ggplotly(
+  ggplot(elkhorn_do) +
+  geom_line(aes(x = DT, y = DO_ppm, color = site)) +
+    facet_wrap(~site,ncol=1)+
+    theme_bw()
+  )
+```
+
+# pH
+```{r}
+
+pH <- function(x){
+  
+  cleaned <- rawless_elkhorn %>%
+  filter(site == x) %>%
+  first_pass(what = ., parama = "pH1", min = 0, max = 14) %>%
+  filter(!is.na(DT)) %>% 
+  dplyr::mutate(site = paste0(x))
+  
+  #feather::write_feather(cleaned,paste0('data/sensor_data/p1_backup/',elkhorns,'_temp.feather'))
+  
+  return(cleaned)
+  
+}
+
+elkhorn_pH <- map(elkhorns, pH) %>%
+  bind_rows() %>%
+  rename(pH = p1)
+
+plotly::ggplotly(
+  ggplot(elkhorn_pH) +
+  geom_line(aes(x = DT, y = pH, color = site)) +
+    facet_wrap(~site,ncol=1)+
+    theme_bw()
+  )
+```
+
+
+## Turbidity
+```{r}
+turb <- function(x){
+  
+  cleaned <- rawless_elkhorn %>%
+  filter(site == x) %>%
+  first_pass(what = ., parama = "Turbidity_NTU", min = 0, max = 1000) %>%
+  filter(!is.na(DT)) %>% 
+  dplyr::mutate(site = paste0(x))
+  
+  #feather::write_feather(cleaned,paste0('data/sensor_data/p1_backup/',elkhorns,'_temp.feather'))
+  
+  return(cleaned)
+  
+}
+
+elkhorn_turb <- map(elkhorns, turb) %>%
+  bind_rows() %>%
+  rename(Turbidity_NTU = p1)
+
+plotly::ggplotly(
+  ggplot(elkhorn_turb) +
+  geom_line(aes(x = DT, y = Turbidity_NTU, color = site)) +
+    facet_wrap(~site,ncol=1)+
+    theme_bw()
+  )
+
+```
