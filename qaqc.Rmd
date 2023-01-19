@@ -52,6 +52,8 @@ Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
 
 #### Pulling in previous years' data
 
+Currently I'm not running the data together because the old data needs to be o r g a n i z e d.
+
 ```{r}
 pre_2022 <- read_csv('data/pretty/all_sensor_data_pre2022.csv') %>%
   mutate(site = tolower(sensor)) %>%
@@ -62,7 +64,7 @@ pre_2022 <- read_csv('data/pretty/all_sensor_data_pre2022.csv') %>%
 
 #### Pulling up field notes
 
-This is the first year that there are consistent field notes. 
+This is the first year that there are consistent field notes. Any sort of field notes starts late 2021.
 
 ```{r}
 field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
@@ -72,9 +74,9 @@ field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
   mutate(DT = round_date(DT, "15 minutes"))
 ```
 
-#### Downloading calibration reports. 
+#### Downloading calibration reports
 
-These are a bit tricky to automate nicely because the calibration table structure is different depending on what sensors are on the sonde, and what ports they're in...
+These are a bit tricky to automate nicely because the calibration table structure is different depending on what sensors are on the sonde, and what ports they're in... needs work!
 
 ```{r}
 cal_files <- list.files("data/calibration_reports", pattern=".html")
@@ -163,6 +165,8 @@ rm(cal, cal_files, conductivity, date, i, ph_orp, rdo, time_mst, turbidity)
 
 # Rist
 
+Sometime before 2022-05-06, flows dropped below the sensors, so we "capped" the sonde until flows were consistently high enough. This site was damaged during peak flows and we were unable to re-install it. Next year, we are going to be re-installing this sensor a few hundred yards downstream in CSU's Tamasag Retreat Center.
+
 ```{r}
 # Full Dataset:
 rawless_rist <- going_rawless(site_name = "rist", trolled = NA) %>%
@@ -192,10 +196,11 @@ rist_temp <- first_pass(what = rawless_rist, parama = "Water_Temp_C", min = -5, 
 # dygraph(xts::xts(select(rist_temp, c(DT, p1, sd3)), order.by = ymd_hms(rist_temp$DT)),
 #         main="Water Temperature Timeseries (UTC)") %>% 
 #   dyRangeSelector()
-
 ```
 
 ## Depth
+
+This site's old location wasn't reliable at keeping the sensor submerged. 
 
 ```{r}
 rist_depth <- dplyr::select(rawless_rist, c(DT, Depth_ft)) %>%
@@ -245,9 +250,15 @@ rist_turbidity <- first_pass(what = rawless_rist, parama = "Turbidity_NTU", min 
   feather::write_feather('data/sensor_data/p1_backup/rist_turbidity.feather')
 ```
 
+# Clear Rist's data
+```{r}
+rm(rawless_rist,rist_conductivity,rist_depth,rist_do,rist_ph,rist_temp,rist_turbidity)
+```
+
+
 # Legacy
 
-So far in 2022, all data has been sent to HydroVu outside of genomic sampling on 2022-09-19. This location encountered several issues this field season: sensor pulled 2022-05-24 due to fears that its infrastructure would wash away. Sensor was re-deployed 2022-06-01, but was then pulled out due to tech issues 2022-07-08 and turbidity problems. Sometime between then and 2022-07-12, turbidity sensor totally broke. 2022-07-16, the turbidity sensor was replaced with the one that was previously being used at Archery. Between 2022-07-18 and 2022-07-21, the back-up sensor stopped working. After this we we swapped the sonde with sensor from Rist 2022-08-03. On 2022-08-04, the sensor was pulled because flows were too low (sensor was likely not suspended in the water 8/3 - 8/4). Redeployed on 2022-08-25, though issues with turbidity and ORP occurred from then until
+So far in 2022, all data has been sent to HydroVu outside of genomic sampling on 2022-09-19. This location encountered several issues this field season: sensor pulled 2022-05-24 due to fears that its infrastructure would wash away. Sensor was re-deployed 2022-06-01, but was then pulled out due to sensor issues 2022-07-08 (turbidity problems, conductivity problems). Sometime between then and 2022-07-12, turbidity sensor totally broke. 2022-07-16, the turbidity sensor was replaced with the one that was previously being used at Archery. Between 2022-07-18 and 2022-07-21, the back-up sensor stopped working. After this we we swapped the sonde with the sensor from Rist (2022-08-03). On 2022-08-04, the sensor was pulled because flows were too low (sensor was likely not suspended in the water 8/3 - 8/4). Redeployed on 2022-08-25, though issues with turbidity and ORP occurred from then until we pulled it _____. 
 
 ```{r}
 # No VuLink connection during final genomic survey (water was too low for full deployment)
@@ -265,9 +276,7 @@ rawless_troll_legacy <- raw_troll_legacy %>%
          Depth_ft = contains('Depth..ft'))  %>%
   mutate_at(vars(2:ncol(.)), as.numeric) %>%
   mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
-  mutate(DT_instrument = DT_instrument - lubridate::hours(1)) %>% # reported in MDT >:(
-  mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
-  mutate(DT = ymd_hms(DT))
+  mutate(DT_instrument = DT_instrument - lubridate::hours(1)) # reported in MDT >:(
 
 # Full Dataset:
 rawless_legacy <- going_rawless(site_name = "legacy", trolled = rawless_troll_legacy) %>%
@@ -317,7 +326,7 @@ legacy_depth <- legacy_depth %>%
                                     filter(legacy_depth, DT == ymd_hms('2022-07-22 11:30:00'))$Depth_ft_p1
                                 ), 
                               Depth_ft_p1)) %>%
-  first_pass(., parama ="Depth_ft_p2", max=7, min=0) %>%
+  first_pass(., parama ="Depth_ft_p2", max = 7, min = 0) %>%
   mutate(site = 'legacy') %>%
   feather::write_feather('data/sensor_data/p1_backup/legacy_depth.feather')
 ```
@@ -359,8 +368,16 @@ legacy_turbidity <- first_pass(what = rawless_legacy, parama = "Turbidity_NTU", 
   feather::write_feather('data/sensor_data/p1_backup/legacy_turbidity.feather')
 ```
 
+# Clear Legacy's data
+```{r}
+rm(rawless_legacy,legacy_conductivity,legacy_depth,legacy_do,legacy_ph,legacy_temp,legacy_turbidity)
+```
+
+
 
 # Lincoln
+
+Lincoln is the newest site and is run by In-Situ. We have access to this site on HydroVu but the site's VuLink wasn't sending data. In-Situ sent us an excel spreadsheet of the data mid-season. I'm still waiting on the full data set.
 
 ```{r}
 # Full Dataset:
@@ -457,6 +474,12 @@ lincoln_turbidity <- first_pass(what = rawless_lincoln, parama = "Turbidity_NTU"
 ```
 
 
+# Clear Lincoln's data
+```{r}
+rm(rawless_lincoln,lincoln_conductivity,lincoln_depth,lincoln_do,lincoln_ph,lincoln_temp,lincoln_turbidity)
+```
+
+
 # Timberline
 
 ```{r}
@@ -548,6 +571,11 @@ timberline_turbidity <- first_pass(what = rawless_timberline, parama = "Turbidit
   feather::write_feather('data/sensor_data/p1_backup/timberline_turbidity.feather')
 ```
 
+# Clear Timberline's data
+```{r}
+rm(rawless_timberline, timberline_conductivity, timberline_depth, timberline_do, timberline_ph, timberline_temp, timberline_turbidity)
+```
+
 # Prospect
 
 Was not deployed in 2021 due to damage to the PVC.
@@ -619,10 +647,15 @@ prospect_turbidity <- first_pass(what = rawless_prospect, parama = "Turbidity_NT
   feather::write_feather('data/sensor_data/p1_backup/prospect_turbidity.feather')
 ```
 
+# Clear Prospect's data
+```{r}
+rm(rawless_prospect, prospect_conductivity, prospect_depth, prospect_do, prospect_ph, prospect_temp, prospect_turbidity)
+```
+
 
 # ELC
 
-Was not deployed in 2021 due to damage to the PVC.
+Deployed for a brief period of time this year (site became unsuitable). We moved it a few hundred yards downstream to the Boxelder WWTP. 
 
 ```{r}
 # No VuLink connection during final genomic survey (water was too low for full deployment)
@@ -720,10 +753,16 @@ elc_turbidity <- first_pass(what = rawless_elc, parama = "Turbidity_NTU", min = 
   feather::write_feather('data/sensor_data/p1_backup/elc_turbidity.feather')
 ```
 
+# Clear ELC's data
+```{r}
+rm(rawless_elc, elc_conductivity, elc_depth, elc_do, elc_ph, elc_temp, elc_turbidity)
+```
+
 
 # Archery
 
-Was not deployed in 2021 due to damage to the PVC.
+Sonde encountered issues (temperature, chl-a, conductivity) early in the season so we swapped the sensor out for our back-up (intended for Fossil Creek). Then, it got buried at some point between 7/1 and 7/6 and got unclogged 7/14. Otherwise no issues envcountered. 10/4-10/7 sensor capped (new tech had issues connecting and didn't know what to do).  
+
 
 ```{r}
 # Full Dataset:
@@ -731,6 +770,7 @@ rawless_archery <- going_rawless(site_name = "archery", trolled = NA) %>%
   mutate(DT = ymd_hms(DT)) %>%
   padr::pad(by = 'DT') %>%
   mutate(Chl_a= ifelse(is.na(Chla), Chla_RFU, NA),
+         # 
          Chl_a = ifelse(is.na(Chl_a), Chla_µg_L/10, NA)) %>%
   # Link up calibration data:
   full_join(na.locf(na.locf(filter(cal_table, site == "archery")), fromLast = TRUE), 
