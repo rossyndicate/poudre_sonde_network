@@ -68,8 +68,9 @@ rawless_elkhornupper <- map_dfr(list.files("data/sensor_data/2022/elkhornupper/"
                                            pattern = "*htm", full.names = T), vulink_reader) %>%
   mutate_at(vars(2:ncol(.)), as.numeric) %>%
   mutate(DT = ymd_hms(DT)) %>%
-  bind_rows(csv) %>%
-  arrange(ymd_hms(DT)) %>%
+  #bind_rows(csv) %>%
+  #arrange(ymd_hms(DT)) %>%
+  mutate(DTnew = as.POSIXlt(DT) + lubridate::minute(27621910)) %>%
   mutate(DT = ymd_hms(as.character(round_date(ymd_hms(DT), "15 minutes")))) %>%
   # for removing duplicates that come from accidental downloads from the field:
   distinct(.keep_all = TRUE) %>%
@@ -120,14 +121,22 @@ rawless_elkhorn <- bind_rows(rawless_elkhornlower, rawless_elkhornupper) %>%
   mutate(Turbidity_NTU = ifelse(DT >= ymd_hms("2022-07-13 08:00:00") & DT <= ymd_hms("2022-08-27 13:00:00") & site == "elkhornupper",
                                 Turbidity_NTU, 
                          ifelse(is.na(ntu_offset), Turbidity_NTU, 
-                                ((Turbidity_NTU - as.numeric(ntu_offset))/as.numeric(ntu_slope))))) %>%
-  mutate(DO_ppm = ifelse(is.na(rdo_offset), DO_ppm, ((DO_ppm - as.numeric(rdo_offset))/as.numeric(rdo_slope))))
+                              ((Turbidity_NTU - as.numeric(ntu_offset))/as.numeric(ntu_slope))))) %>%
+  mutate(DO_ppm = ifelse(is.na(rdo_offset), DO_ppm, ((DO_ppm - as.numeric(rdo_offset))/as.numeric(rdo_slope)))) %>%
+  mutate(DT = ymd_hms(as.character(round_date(ymd_hms(DT), "1 hour")))) %>%
+  pivot_longer(cols = c("Air_Temp_C", "Water_Temp_C", "pH", "pH_mV", "ORP_mV",
+                        "Specific_Conductivity_µS_cm", "DO_ppm", "Turbidity_NTU"),
+               names_to = "Parameter") %>%
+  group_by(site, date, Parameter) %>%
+  summarize(mean = mean(value, na.rm = TRUE)) %>%
+  padr::pad(by = 'date', group = c('site', 'Parameter')) #%>%
+  pivot_wider(values_from = "mean", names_from = "Parameter")
 
   # calculate parameters and create new variable
-  .data <- dplyr::mutate(.data, low := calStdLow - ((!!factor) * (calStdLow - calValLow)))
-  .data <- dplyr::mutate(.data, high := calStdHigh - ((!!factor) * (calStdHigh - calValHigh)))
-  .data <- dplyr::mutate(.data, !!cleanVar := ((((!!source) - low) / (high - low) ) * (calStdHigh - calStdLow) ) + calStdLow)
-  .data <- dplyr::select(.data, -low, -high)
+  # .data <- dplyr::mutate(.data, low := calStdLow - ((!!factor) * (calStdLow - calValLow)))
+  # .data <- dplyr::mutate(.data, high := calStdHigh - ((!!factor) * (calStdHigh - calValHigh)))
+  # .data <- dplyr::mutate(.data, !!cleanVar := ((((!!source) - low) / (high - low) ) * (calStdHigh - calStdLow) ) + calStdLow)
+  # .data <- dplyr::select(.data, -low, -high)
   #  mutate(DT = ymd_hms(as.character(round_date(ymd_hms(DT), "1 hour")))) %>%
   # pivot_longer(cols = c("Air_Temp_C", "Water_Temp_C", "pH", "pH_mV", "ORP_mV",
   #                       "Specific_Conductivity_µS_cm", "DO_ppm", "Turbidity_NTU"),
@@ -138,18 +147,27 @@ rawless_elkhorn <- bind_rows(rawless_elkhornlower, rawless_elkhornupper) %>%
 
 elkhorns <- c("elkhornupper","elkhornlower")
 ```
+```{r}
+plotly::ggplotly(ggplot(data = rawless_elkhorn)+
+                   geom_path(aes(x=date, y = mean, color = site))+
+                   facet_wrap(~Parameter, scale = "free_y", ncol=1))
+```
 
 
 ```{r}
 plotly::ggplotly(ggplot(data = rawless_elkhorn) +
-         geom_point(aes(x = DT, y = Water_Temp_C, color = site)) +
-         geom_point(aes(x = DT, y = Air_Temp_C, color = site)) +
+         geom_line(aes(x = DT, y = Water_Temp_C, color = site)) +
+         #geom_point(aes(x = DT, y = Air_Temp_C, color = site)) +
          facet_wrap(~ site, ncol = 1)) 
 ```
 
 ```{r}
+field_plotter <- rawless_elkhorn %>%
+  mutate(mark = ifelse(is.na(crew), NA, 4))
+
 plotly::ggplotly(ggplot(data = rawless_elkhorn) +
          geom_line(aes(x = DT, y = pH, color = site)) +
+         geom_point(data = field_plotter, aes(x=DT, y=mark, color = site)) +
          facet_wrap(~ site, ncol = 1))
 ```
 
