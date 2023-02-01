@@ -1,0 +1,100 @@
+---
+title: "2023 Lower Poudre Plans"
+author: "Sam Struthers"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mapview)
+library(tidyverse)
+library(ggplot2)
+library(sf)
+
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+
+```
+
+# Purpose
+
+This document will serve as a guide for the initial work that we will be doing in the Spring of 2023 to improve the lower Poudre Monitoring network. This document will cover the current issues with sites and discuss next steps. The next steps section will require your help
+
+## Overview of lower sites
+
+This map is an overview of all the current sites in the Lower Poudre Monitoring network. Sites are color coded from upstream to downstream. Each site will be discussed individually below.
+
+```{r map, echo =FALSE, results=TRUE,warning=FALSE, message=FALSE}
+lower_sites <- read_csv("data/site_coords.csv")%>%
+  st_as_sf(coords = c( "Longitude", "Latitude"), crs = 4326 )
+
+lower_sites$Site  = factor(lower_sites$Site, levels = c("Rist", "old Rist", "Legacy Park", "Lincoln","Timberline Bridge","Prospect Bridge","old ELC","ELC","Archery Range","Fossil Creek Potential")) 
+
+color_pal <-c("#F5E15A", "#F4BE1D", "#FEA305", "#FF850A", "#F26021", "#F34646")
+
+lower_map <- mapview(filter(lower_sites,is.na(active)),col.regions="grey", layer.name="Inactive", cex = "3")+
+  mapview(filter(lower_sites, active == "x"),zcol = "Site", layer.name="Active Sites", col.regions = lower_sites$color)+
+  mapview(filter(lower_sites, active == "Future"),zcol = "Site", layer.name="Future Sites", col.regions = "#43B54C")
+  
+
+lower_map
+```
+
+## [Rist\*]{style="color:#F5E15A"}
+
+During peak flow, the installation snapped at the L-bend and was carried downstream. The sonde was saved, but the cable teared, and the glass bulb on the pH sensor shattered. The channel there has also changed, making the majority of flows at the installation location too low for the sensor to be submerged. For these reasons, we have forgone trying to re-install at this location.
+
+**Instead, we plan to deploy the sonde downstream at CSU's Tamasag Retreat Center where flows are more suitable.** We are currently in contact with them to set up install.
+
+## [Legacy\*]{style="color:#F4BE1D"}
+
+During peak flow, this installation also snapped at the L-bend. Subsequently, we cut the PVC so that the sensor could instead suspend straight down into the water (i.e., no more L-bend). Unfortunately, flows often became too low for the sensor to be submerged there.
+
+**We would like to re-install at the same location but instead of an L bend, we will angle the sensor so that it follows the channel bed until reaching the thalweg.**
+
+## [Lincoln]{style="color:#FEA305"}
+
+In-Situ will continue to manage this sensor.
+
+## [Timberline]{style="color:#FF850A"}
+
+The beaver dam upstream of this site was abandoned so this site should return to normal flow. If it continues to be an issue, the sensor will be moved just downstream to a similar style site.
+
+## [Prospect\*]{style="color:#F26021"}
+
+In 2021, the PVC snapped at this location so we had to rebuild the sensor housing and reenforce it with more bracketing. We would like to redesign this site using larger and sturdier PVC to prevent these issues.
+
+**We need the contact info for the bridge engineer for re-install.**
+
+## [ELC]{style="color:#F34646"}
+
+Since then old site was submerged in sediment, we have moved the location downstream to be co-located with the USGS gaging station above Boxelder Creek. No issues since then.
+
+## [Archery\*]{style="color:#7C221D"}
+
+As the season progressed, the PVC started to bend in similar fashion to Prospect.
+
+**We suggest redesigning the sensor housing at this location next year.**
+
+## [Fossil Creek: Potential Site?]{style="color:#43B54C"}
+
+This site is marked a placeholder in the map. We would need additional information about where this install would occur. Based on a satellite imagery and Larimer County parcel info, I identified a site at River Bluffs Open Space where the sensor could be located. This site has not been field verified.
+
+# Next Steps
+
+We are planning on moving forward with all the listed re-installs/re-designs mentioned above.
+
+We need your help on the following:
+
+-   Contact for Prospect Bridge Engineer
+
+-   Contact for Legacy Bridge
+
+-   Site location advice for below Fossil Creek site
