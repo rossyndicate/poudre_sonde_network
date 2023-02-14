@@ -38,14 +38,17 @@ lower_sites <- read_csv("data/site_coords.csv")%>%
 lower_sites$Site  = factor(lower_sites$Site, levels = c("Rist", "old Rist", "Legacy Park", "Lincoln","Timberline Bridge","Prospect Bridge","old ELC","ELC","Archery Range","Fossil Creek Potential")) 
 
 color_pal <-c("#F5E15A", "#F4BE1D", "#FEA305", "#FF850A", "#F26021", "#F34646")
+inactive_sites <- filter(lower_sites,is.na(active))
 
-lower_map <- mapview(filter(lower_sites,is.na(active)),col.regions="grey", layer.name="Inactive", cex = "3")+
-  mapview(filter(lower_sites, active == "x"),zcol = "Site", layer.name="Active Sites", col.regions = lower_sites$color)+
+lower_map <- mapview(filter(lower_sites, active == "x"),zcol = "Site", layer.name="Active Sites", col.regions = lower_sites$color)+
   mapview(filter(lower_sites, active == "Future"),zcol = "Site", layer.name="Future Sites", col.regions = "#43B54C")
+  # mapview(inactive_sites,col.regions="grey", layer.name="Inactive", cex = "4")
   
 
 lower_map
 ```
+
+#### Sites with an asterisk (\*) will need repairs before install this season.
 
 ## [Rist\*]{style="color:#F5E15A"}
 
