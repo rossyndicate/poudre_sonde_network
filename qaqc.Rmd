@@ -52,23 +52,19 @@ Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
 
 #### Pulling in previous years' data
 
+Currently I'm not running the data together because the old data needs to be O R G A N I Z E D !!!!!!
+
 ```{r}
 pre_2022 <- read_csv('data/pretty/all_sensor_data_pre2022.csv') %>%
-  mutate(site = case_when(sensor == "Rist" ~ "rist",
-                          sensor == "Legacy" ~ "legacy",
-                          sensor == "Timberline" ~ "timberline",
-                          sensor == "Prospect" ~ "prospect",
-                          sensor == "ELC" ~ "elc",
-                          sensor == "Archery" ~ "archery"
-  )) %>%
+  mutate(site = tolower(sensor)) %>%
   rename(pH1 = pH,
          comment_pre = comments) %>%
   select(-c(sensor, year, date, data))
 ```
 
-#### Pulling up field notes
+#### Pulling up field notes and calibration reports
 
-This is the first year that there are consistent field notes. 
+This is the first year that there are consistent field notes. Any sort of field notes starts late 2021.
 
 ```{r}
 field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
@@ -76,98 +72,15 @@ field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
   mutate(DT = ymd_hm(DT)) %>%
   arrange(DT) %>%
   mutate(DT = round_date(DT, "15 minutes"))
+
+cal_table <- cal_tabler()
 ```
-
-#### Downloading calibration reports. 
-
-These are a bit tricky to automate nicely because the calibration table structure is different depending on what sensors are on the sonde, and what ports they're in...
-
-```{r}
-cal_files <- list.files("data/calibration_reports", pattern=".html")
-
-cal_table <- vector("list", length = length(cal_files)) 
-
-for(i in 1:length(cal_table)){
-  
-  cal <- rvest::read_html(paste0("data/calibration_reports/", cal_files[i])) %>%
-    rvest::html_nodes('div') %>%
-    rvest::html_text() %>%
-    as_tibble()
-  
-  rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "")
-  
-  ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "")
-  
-  conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "")
-  
-  turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "")
-  
-  time_mst <- paste0(str_sub(cal_files[i], -13, -12),":", str_sub(cal_files[i], -11, -10))
-  
-  date <- paste0(str_sub(cal_files[i], -22, -19),"-", str_sub(cal_files[i], -18, -17),"-", str_sub(cal_files[i], -16, -15))
-  
-  cal_table[[i]] <- tibble(site = sub("\\_.*", "", cal_files[i]),
-                           
-                           DT = ymd_hm(paste0(date, " ", time_mst)),
-                           
-                           #Dissolved Oxygen
-                           rdo_slope = str_match(rdo, "Slope\\s*(.*?)\\s*Offset")[,2],
-                           rdo_offset = str_match(rdo, "Offset\\s*(.*?)\\s*mg/L")[,2],
-                           rdo_100 = str_match(rdo, "PreMeasurement\\s*(.*?)\\s*%SatPost")[,2],
-                           rdo_conc = str_match(rdo, "Concentration\\s*(.*?)\\s*mg/LPreMeasurement")[,2],
-                           rdo_temp = str_match(rdo, "Temperature\\s*(.*?)\\s*°C")[,2],
-                           rdo_pressure = str_match(rdo, "Pressure\\s*(.*?)\\s*mbar")[,2],
-                           
-                           #pH
-                           ph_slope_pre = str_match(ph_orp, "Offset1Slope\\s*(.*?)\\s*mV/pH")[,2],
-                           ph_offset_pre = str_match(ph_orp, "mV/pHOffset\\s*(.*?)\\s*mVSlopeandOffset2")[,2],
-                           ph_slope_post = str_match(ph_orp, "Offset2Slope\\s*(.*?)\\s*mV/pH")[,2],
-                           ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mV/pHOffset\\s*(.*?)\\s*mVORPORP"))[,2],
-                           ph_7_nice = str_sub(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2])),
-                           ph_7_other = str_sub(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2])),
-                           ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
-                           
-                           #ORP
-                           orp_offset = ifelse(is.na(str_match(ph_orp, "Zobell'sOffset\\s*(.*?)\\s*mVTemperature")[,2]),
-                                               str_match(ph_orp, "ZoBell'sOffset\\s*(.*?)\\s*mVTemperature")[,2],
-                                               str_match(ph_orp, "Zobell'sOffset\\s*(.*?)\\s*mVTemperature")[,2]),
-                           
-                           #Conductivity
-                           tds_conversion_ppm = str_sub(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2], 6, nchar(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2])),
-                           cond_cell_constant = str_match(conductivity, "CellConstant\\s*(.*?)\\s*ReferenceTemperature")[,2],
-                           cond_pre = str_match(conductivity,paste0(str_match(conductivity,
-                                                                              "PreMeasurementActual\\s*(.*?)\\s*SpecificConductivity")[,2],"SpecificConductivity\\s*(.*?)\\s*µS/cmPost"))[,2],
-                           cond_post = str_match(conductivity,paste0(str_match(conductivity,
-                                                                               "PostMeasurementActual\\s*(.*?)\\s*SpecificConductivity")[,2],"SpecificConductivity\\s*(.*?)\\s*µS/cm"))[,2],
-                           
-                           #Turbidity
-                           ntu_slope = str_match(turbidity, "Slope\\s*(.*?)\\s*Offset")[,2],
-                           ntu_offset = str_match(turbidity, "Offset\\s*(.*?)\\s*NTU")[,2],
-                           ntu_10 = str_match(turbidity, "CalibrationPoint1PreMeasurement\\s*(.*?)\\s*NTUPost")[,2],
-                           ntu_100 = str_match(turbidity, "CalibrationPoint2PreMeasurement\\s*(.*?)\\s*NTUPost")[,2],
-                           
-                           #Factory Defaults
-                           factory_defaults = paste0(ifelse(is.na(ntu_slope), "Turbidity ", ""),
-                                                     ifelse(is.na(rdo_slope), "RDO ", ""),
-                                                     ifelse(is.na(ph_slope_post), "pH ", ""),
-                                                     ifelse(is.na(orp_offset), "ORP ", ""),
-                                                     ifelse(is.na(cond_post), "Conductivity ", ""))) %>%
-    select(-c(ph_7_nice, ph_7_other))
-}
-
-cal_table <- bind_rows(cal_table) %>%
-  distinct(.keep_all = TRUE) %>%
-  group_by(site) %>%
-  mutate(DT = round_date(DT, "15 minutes")) %>%
-  padr::pad(by = 'DT', group = 'site')
-
-rm(cal, cal_files, conductivity, date, i, ph_orp, rdo, time_mst, turbidity)
-```
-
 
 #### Downloading sonde data
 
 # Rist
+
+Sometime before 2022-05-06, flows dropped below the sensors, so we "capped" the sonde until flows were consistently high enough. This site was damaged during peak flows and we were unable to re-install it. Next year, we are going to be re-installing this sensor a few hundred yards downstream in CSU's Tamasag Retreat Center.
 
 ```{r}
 # Full Dataset:
@@ -180,7 +93,8 @@ rawless_rist <- going_rawless(site_name = "rist", trolled = NA) %>%
   padr::pad(by = 'DT') %>%
   # Link up calibration data:
   full_join(na.locf(na.locf(filter(cal_table, site == "rist")), fromLast = TRUE), 
-            by = c('site','DT'))
+            by = c('site','DT')) %>%
+  distinct(.keep_all = TRUE)
 ```
 
 ## Temperature
@@ -197,10 +111,11 @@ rist_temp <- first_pass(what = rawless_rist, parama = "Water_Temp_C", min = -5, 
 # dygraph(xts::xts(select(rist_temp, c(DT, p1, sd3)), order.by = ymd_hms(rist_temp$DT)),
 #         main="Water Temperature Timeseries (UTC)") %>% 
 #   dyRangeSelector()
-
 ```
 
 ## Depth
+
+This site's old location wasn't reliable at keeping the sensor submerged. 
 
 ```{r}
 rist_depth <- dplyr::select(rawless_rist, c(DT, Depth_ft)) %>%
@@ -250,9 +165,15 @@ rist_turbidity <- first_pass(what = rawless_rist, parama = "Turbidity_NTU", min 
   feather::write_feather('data/sensor_data/p1_backup/rist_turbidity.feather')
 ```
 
+# Clear Rist's data
+```{r}
+rm(rawless_rist,rist_conductivity,rist_depth,rist_do,rist_ph,rist_temp,rist_turbidity)
+```
+
+
 # Legacy
 
-So far in 2022, all data has been sent to HydroVu outside of genomic sampling on 2022-09-19. This location encountered several issues this field season: sensor pulled 2022-05-24 due to fears that its infrastructure would wash away. Sensor was re-deployed 2022-06-01, but was then pulled out due to tech issues 2022-07-08 and turbidity problems. Sometime between then and 2022-07-12, turbidity sensor totally broke. 2022-07-16, the turbidity sensor was replaced with the one that was previously being used at Archery. Between 2022-07-18 and 2022-07-21, the back-up sensor stopped working. After this we we swapped the sonde with sensor from Rist 2022-08-03. On 2022-08-04, the sensor was pulled because flows were too low (sensor was likely not suspended in the water 8/3 - 8/4). Redeployed on 2022-08-25, though issues with turbidity and ORP occurred from then until
+So far in 2022, all data has been sent to HydroVu outside of genomic sampling on 2022-09-19. This location encountered several issues this field season: sensor pulled 2022-05-24 due to fears that its infrastructure would wash away. Sensor was re-deployed 2022-06-01, but was then pulled out due to sensor issues 2022-07-08 (turbidity problems, conductivity problems). Sometime between then and 2022-07-12, turbidity sensor totally broke. 2022-07-16, the turbidity sensor was replaced with the one that was previously being used at Archery. Between 2022-07-18 and 2022-07-21, the back-up sensor stopped working. After this we we swapped the sonde with the sensor from Rist (2022-08-03). On 2022-08-04, the sensor was pulled because flows were too low (sensor was likely not suspended in the water 8/3 - 8/4). Redeployed on 2022-08-25, though issues with turbidity and ORP occurred from then until we pulled it _____. 
 
 ```{r}
 # No VuLink connection during final genomic survey (water was too low for full deployment)
@@ -260,19 +181,17 @@ raw_troll_legacy <- map_dfr(grep(list.files("data/sensor_data/2022/legacy/manual
 names(raw_troll_legacy) <- make.names(names(raw_troll_legacy), unique = T)
 
 rawless_troll_legacy <- raw_troll_legacy %>% 
-  select(DT = contains('Date.Time'),
+  select(DT_instrument = contains('Date.Time'),
          Water_Temp_C = as.numeric(contains('Temperature...C')),
          pH = contains('pH'),
          ORP_mV = contains('ORP'),
          Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
          DO_ppm = contains('RDO.concentration'),
          Turbidity_NTU = contains('Turbidity'),
-         Depth_ft = contains('Depth..ft')) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate(DT = DT - lubridate::hours(1)) %>% # reported in MDT >:(
-  mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric)
+         Depth_ft = contains('Depth..ft'))  %>%
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT_instrument = DT_instrument - lubridate::hours(1)) # reported in MDT >:(
 
 # Full Dataset:
 rawless_legacy <- going_rawless(site_name = "legacy", trolled = rawless_troll_legacy) %>%
@@ -322,7 +241,7 @@ legacy_depth <- legacy_depth %>%
                                     filter(legacy_depth, DT == ymd_hms('2022-07-22 11:30:00'))$Depth_ft_p1
                                 ), 
                               Depth_ft_p1)) %>%
-  first_pass(., parama ="Depth_ft_p2", max=7, min=0) %>%
+  first_pass(., parama ="Depth_ft_p2", max = 7, min = 0) %>%
   mutate(site = 'legacy') %>%
   feather::write_feather('data/sensor_data/p1_backup/legacy_depth.feather')
 ```
@@ -364,8 +283,16 @@ legacy_turbidity <- first_pass(what = rawless_legacy, parama = "Turbidity_NTU", 
   feather::write_feather('data/sensor_data/p1_backup/legacy_turbidity.feather')
 ```
 
+# Clear Legacy's data
+```{r}
+rm(rawless_legacy,legacy_conductivity,legacy_depth,legacy_do,legacy_ph,legacy_temp,legacy_turbidity)
+```
+
+
 
 # Lincoln
+
+Lincoln is the newest site and is run by In-Situ. We have access to this site on HydroVu but the site's VuLink wasn't sending data. In-Situ sent us an excel spreadsheet of the data mid-season. I'm still waiting on the full data set.
 
 ```{r}
 # Full Dataset:
@@ -374,7 +301,7 @@ raw <- readxl::read_excel('data/sensor_data/2022/lincoln/lincoln.xlsx')
 names(raw) <- make.names(names(raw), unique = T)
 
 rawless_lincoln <- raw %>%
-  select(DT = contains('Date.Time'),
+  select(DT_instrument = contains('Date.Time'),
          Water_Temp_C = as.numeric(contains('Temperature')),
          pH = contains('pH'),
          ORP_mV = contains('ORP'),
@@ -382,12 +309,12 @@ rawless_lincoln <- raw %>%
          DO_ppm = contains('RDO.Conc'),
          Turbidity_NTU = contains('Turbidity'),
          Depth_ft = contains('Depth')) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate(DT = DT - lubridate::hours(1)) %>%
   mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT_instrument = DT_instrument - lubridate::hours(1)) %>%
   mutate(site = 'lincoln') %>%
-  arrange(ymd_hms(DT)) %>%
-  mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
+  arrange(ymd_hms(DT_instrument)) %>%
+  mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
   mutate(DT = ymd_hms(DT)) %>%
   # Link up field notes:
   full_join(filter(field_notes, site == 'lincoln'), by = c('DT','site')) %>%
@@ -459,6 +386,12 @@ lincoln_turbidity <- first_pass(what = rawless_lincoln, parama = "Turbidity_NTU"
   mutate(site = "lincoln") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/lincoln_turbidity.feather')
+```
+
+
+# Clear Lincoln's data
+```{r}
+rm(rawless_lincoln,lincoln_conductivity,lincoln_depth,lincoln_do,lincoln_ph,lincoln_temp,lincoln_turbidity)
 ```
 
 
@@ -553,6 +486,11 @@ timberline_turbidity <- first_pass(what = rawless_timberline, parama = "Turbidit
   feather::write_feather('data/sensor_data/p1_backup/timberline_turbidity.feather')
 ```
 
+# Clear Timberline's data
+```{r}
+rm(rawless_timberline, timberline_conductivity, timberline_depth, timberline_do, timberline_ph, timberline_temp, timberline_turbidity)
+```
+
 # Prospect
 
 Was not deployed in 2021 due to damage to the PVC.
@@ -624,10 +562,15 @@ prospect_turbidity <- first_pass(what = rawless_prospect, parama = "Turbidity_NT
   feather::write_feather('data/sensor_data/p1_backup/prospect_turbidity.feather')
 ```
 
+# Clear Prospect's data
+```{r}
+rm(rawless_prospect, prospect_conductivity, prospect_depth, prospect_do, prospect_ph, prospect_temp, prospect_turbidity)
+```
+
 
 # ELC
 
-Was not deployed in 2021 due to damage to the PVC.
+Deployed for a brief period of time this year (site became unsuitable). We moved it a few hundred yards downstream to the Boxelder WWTP. 
 
 ```{r}
 # No VuLink connection during final genomic survey (water was too low for full deployment)
@@ -635,7 +578,7 @@ raw_troll_elc <- map_dfr(grep(list.files("data/sensor_data/2022/elc/manual/", fu
 names(raw_troll_elc) <- make.names(names(raw_troll_elc), unique = T)
 
 rawless_troll_elc <- raw_troll_elc %>% 
-  select(DT = contains('Date.Time'),
+  select(DT_instrument = contains('Date.Time'),
          Water_Temp_C = as.numeric(contains('Temperature...C')),
          pH = contains('pH'),
          ORP_mV = contains('ORP'),
@@ -643,11 +586,11 @@ rawless_troll_elc <- raw_troll_elc %>%
          DO_ppm = contains('RDO.concentration'),
          Turbidity_NTU = contains('Turbidity'),
          Depth_ft = contains('Depth..ft')) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate(DT = DT - lubridate::hours(1)) %>% # reported in MDT >:(
-  mutate(DT = as.character(round_date(ymd_hms(DT), "15 minutes"))) %>%
-  mutate(DT = ymd_hms(DT)) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric) 
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT = DT_instrument - lubridate::hours(1)) %>% # reported in MDT >:(
+  mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
+  mutate(DT = ymd_hms(DT))
 
 
 # Full Dataset:
@@ -725,10 +668,16 @@ elc_turbidity <- first_pass(what = rawless_elc, parama = "Turbidity_NTU", min = 
   feather::write_feather('data/sensor_data/p1_backup/elc_turbidity.feather')
 ```
 
+# Clear ELC's data
+```{r}
+rm(rawless_elc, elc_conductivity, elc_depth, elc_do, elc_ph, elc_temp, elc_turbidity)
+```
+
 
 # Archery
 
-Was not deployed in 2021 due to damage to the PVC.
+Sonde encountered issues (temperature, chl-a, conductivity) early in the season so we swapped the sensor out for our back-up (intended for Fossil Creek). Then, it got buried at some point between 7/1 and 7/6 and got unclogged 7/14. Otherwise no issues envcountered. 10/4-10/7 sensor capped (new tech had issues connecting and didn't know what to do).  
+
 
 ```{r}
 # Full Dataset:
@@ -736,6 +685,7 @@ rawless_archery <- going_rawless(site_name = "archery", trolled = NA) %>%
   mutate(DT = ymd_hms(DT)) %>%
   padr::pad(by = 'DT') %>%
   mutate(Chl_a= ifelse(is.na(Chla), Chla_RFU, NA),
+         # 
          Chl_a = ifelse(is.na(Chl_a), Chla_µg_L/10, NA)) %>%
   # Link up calibration data:
   full_join(na.locf(na.locf(filter(cal_table, site == "archery")), fromLast = TRUE), 
