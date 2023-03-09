@@ -86,9 +86,13 @@ Sometime before 2022-05-06, flows dropped below the sensors, so we "capped" the 
 # Full Dataset:
 rawless_rist <- going_rawless(site_name = "rist", trolled = NA) %>%
   mutate(DT = ymd_hms(DT)) %>%
-  # Dataset got swapped to Rist's sensor, so need to remove data that 
-  # is actually Rist. Sensor also capped from 5/6/2022 - 5/9/2022 (flow too low)
+  # Remove times when sensor was very likely not submerged:
+  filter(Depth_ft > 0.01 & Water_Temp_C < 20) %>%
+  # Sensor not submerged, so removed from field on 2022-09-13
+  filter(!(ymd_hms(DT) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT) <= ymd_hms("2022-04-22 14:00:00"))) %>%
+  # Sensor pulled 2022-05-30 after sensor housing destroyed
   filter(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00")) %>%
+  # Sensor also capped from 5/6/2022 - 5/9/2022 (flow too low)
   filter(!(ymd_hms(DT) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT) <= ymd_hms('2022-05-09 14:30:00'))) %>%
   padr::pad(by = 'DT') %>%
   # Link up calibration data:
@@ -102,7 +106,7 @@ rawless_rist <- going_rawless(site_name = "rist", trolled = NA) %>%
 Specs for temperature: ±0.1 Celsius, -5 to 50 C
 
 ```{r}
-rist_temp <- first_pass(what = rawless_rist, parama = "Water_Temp_C", min = -5, max = 50) %>%
+rist_temp <- first_pass(what = rawless_rist, parama = "Water_Temp_C", min = -5, max = 30) %>%
   mutate(site="rist") %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/rist_temp.feather')
@@ -119,7 +123,7 @@ This site's old location wasn't reliable at keeping the sensor submerged.
 
 ```{r}
 rist_depth <- dplyr::select(rawless_rist, c(DT, Depth_ft)) %>%
-  first_pass(., parama ="Depth_ft", max=7, min=0) %>%
+  first_pass(., parama ="Depth_ft", max=7000, min=0) %>%
   mutate(site = 'rist') %>%
   filter(!is.na(DT)) %>%
   feather::write_feather('data/sensor_data/p1_backup/rist_depth.feather')

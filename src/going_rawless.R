@@ -6,13 +6,13 @@ troll_reader <- function(file) {
   raw_data <- rvest::read_html(file) %>%
     rvest::html_node('table') %>%
     rvest::html_table() %>%
-    slice(-1:-23) %>%
+    dplyr::slice(-1:-23) %>%
     janitor::row_to_names(row_number = 1)
 
   raw_data_bad <- rvest::read_html(file) %>%
     rvest::html_node('table') %>%
     rvest::html_table() %>%
-    slice(-1:-25) %>%
+    dplyr::slice(-1:-25) %>%
     janitor::row_to_names(row_number = 1)
 
   if (isTRUE(names(raw_data)[1] == "Date Time")) {
@@ -26,7 +26,7 @@ vulink_reader <- function(file) {
   raw_data <- rvest::read_html(file) %>%
     rvest::html_node('table') %>%
     rvest::html_table() %>%
-    slice(-1:-31) %>%
+    dplyr::slice(-1:-31) %>%
     janitor::row_to_names(row_number = 1)
 }
 
@@ -35,7 +35,7 @@ hydrovu_reader <- function(file) {
   raw_data <- rvest::read_html(file) %>%
     rvest::html_node('table') %>%
     rvest::html_table() %>%
-    slice(-1:-8) %>%
+    dplyr::slice(-1:-8) %>%
     janitor::row_to_names(row_number = 1)
 }
 
@@ -44,7 +44,7 @@ tube_reader <- function(file) {
   raw_data <- rvest::read_html(file) %>%
     rvest::html_node('table') %>%
     rvest::html_table() %>%
-    slice(-1:-8) %>%
+    dplyr::slice(-1:-8) %>%
     janitor::row_to_names(row_number = 1)
 }
 
