@@ -7,9 +7,10 @@ docs/
 backup_data/
 backup_docs/
 misc_playtime/
-
 # files/folders to untrack for API pull
 */credentials.yml
 *credentials.yml
 */apienv/
 */requirements.txt
+data
+.DS_Store
