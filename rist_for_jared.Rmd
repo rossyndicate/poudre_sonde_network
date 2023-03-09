@@ -37,7 +37,8 @@ rist_raw <- going_rawless(site_name = "rist", trolled = NA) %>%
 
 SC <- ggplot()+
   geom_line(data = rist_cleaned,aes(x=DT , y= Specific_Conductivity_µS_cm, group = site, color = site))+
-  geom_line(data = rist_raw, aes(x=DT , y= Specific_Conductivity_µS_cm), color = "green")+
+#+
+  #geom_line(data = rist_raw, aes(x=DT , y= Specific_Conductivity_µS_cm), color = "green")+
   theme_bw()
 
 plotly::ggplotly(SC)
