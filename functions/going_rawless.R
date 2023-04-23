@@ -21,14 +21,29 @@ troll_reader <- function(file) {
 }
 
 # From VuLink, in the field:
-vulink_reader <- function(file) {
+vulink_reader <- function(file, row = -31) {
 
   raw_data <- rvest::read_html(file) %>%
     rvest::html_node('table') %>%
     rvest::html_table() %>%
-    dplyr::slice(-1:-31) %>%
+    dplyr::slice(-1:row) %>%
     janitor::row_to_names(row_number = 1)
-}
+
+  names(raw_data) <- make.names(names(raw_data), unique = T)
+
+raw_data <- raw_data %>%
+  dplyr::select(DT_instrument = contains('Date.Time'),
+                Water_Temp_C = as.numeric(contains("Temperature")),
+                pH = contains('pH'),
+                ORP_mV = contains('ORP'),
+                Specific_Conductivity_µS_cm = contains("Specific") & contains("Conductivity"),
+                DO_ppm = contains("RDO") & !contains("Saturation"),
+                Turbidity_NTU = contains('Turbidity'),
+                Depth_ft = contains("Depth") & contains("ft"))
+
+    return(raw_data)
+
+  }
 
 # TROLL from HydroVu, on the cloud:
 hydrovu_reader <- function(file) {
@@ -37,6 +52,10 @@ hydrovu_reader <- function(file) {
     rvest::html_table() %>%
     dplyr::slice(-1:-8) %>%
     janitor::row_to_names(row_number = 1)
+
+  names(raw_data) <- make.names(names(raw_data), unique = T)
+
+  return(raw_data)
 }
 
 # Function to pull data from the VuLink itself from HydroVu (includes sensor temperature, baro, and power levels):
@@ -46,6 +65,9 @@ tube_reader <- function(file) {
     rvest::html_table() %>%
     dplyr::slice(-1:-8) %>%
     janitor::row_to_names(row_number = 1)
+  names(raw_data) <- make.names(names(raw_data), unique = T)
+
+  return(raw_data)
 }
 
 
@@ -124,3 +146,4 @@ going_rawless <- function(site_name, trolled) {
 
   return(rawless)
 }
+
