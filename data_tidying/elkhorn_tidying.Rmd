@@ -18,7 +18,7 @@ library(anomalize)
 
 Load in all the functions for this repo:
 ```{r}
-try(plyr::ldply(list.files(path="src/",
+try(plyr::ldply(list.files(path="functions/",
                            pattern="*.R",
                            full.names=TRUE),
                 source))
@@ -50,7 +50,7 @@ csv <- read_csv('data/sensor_data/2022/elkhornupper/elkhornupper_20220708_202207
 names(csv) <- make.names(names(csv), unique = T)
 
 csv <- csv %>%
-  select(DT = contains('DT_MST'),
+  select(DT_instrument = contains('DT_MST'),
          Water_Temp_C = contains('Temperature'),
          pH_1 = contains('pH'),
          ORP_mV = contains('ORP'),
@@ -61,17 +61,22 @@ csv <- csv %>%
          Air_Temp_C = Water_Temp_C1,
          pH = pH_11,
          pH_mV = pH_12) %>%
-  mutate(DT = as.POSIXct(DT, tz = "UTC", format = "%Y-%m-%d %H:%M:%S")) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric)
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT = as.POSIXct(DT_instrument, tz = "UTC", format = "%Y-%m-%d %H:%M:%S"),
+         DT_instrument = as.character(DT_instrument))
 
 # Pull in all datasets that were downloaded from the field using the VuLink reader
 rawless_elkhornupper <- map_dfr(list.files("data/sensor_data/2022/elkhornupper/", 
                                            pattern = "*htm", full.names = T), vulink_reader) %>%
+  select(-c(Water_Temp_C3)) %>%
+  rename(Water_Temp_C = Water_Temp_C2,
+         Air_Temp_C = Water_Temp_C1,
+         pH = pH1,
+         pH_mV = pH2) %>%
   mutate_at(vars(2:ncol(.)), as.numeric) %>%
-  mutate(DT = as.POSIXct(DT, tz = "UTC", format = "%Y-%m-%d %H:%M:%S")) %>%
+  mutate(DT = as.POSIXct(DT_instrument, tz = "UTC", format = "%Y-%m-%d %H:%M:%S")) %>%
   bind_rows(csv) %>%
   arrange(ymd_hms(DT)) %>%
-  #mutate(DTnew = DT + lubridate::minute(27621910)) %>%
   mutate(DT = round_date(DT, "15 minutes")) %>%
   # for removing duplicates that come from accidental downloads from the field:
   distinct(.keep_all = TRUE) %>%
@@ -94,17 +99,22 @@ rawless_elkhornupper <- map_dfr(list.files("data/sensor_data/2022/elkhornupper/"
 # Pull in all datasets that were downloaded from the field using the VuLink reader
 rawless_elkhornlower <- map_dfr(list.files("data/sensor_data/2022/elkhornlower/", 
                                            pattern = "*htm", full.names = T), vulink_reader) %>%
+    select(-c(Water_Temp_C3)) %>%
+  rename(Water_Temp_C = Water_Temp_C2,
+         Air_Temp_C = Water_Temp_C1,
+         pH = pH1,
+         pH_mV = pH2) %>%
   mutate_at(vars(2:ncol(.)), as.numeric) %>%
-  mutate(DT = as.POSIXct(DT, tz = "UTC", format = "%Y-%m-%d %H:%M:%S")) %>%
+  mutate(DT = as.POSIXct(DT_instrument, tz = "UTC", format = "%Y-%m-%d %H:%M:%S")) %>%
   arrange(ymd_hms(DT)) %>%
-  mutate(DT = ymd_hms(as.character(round_date(ymd_hms(DT), "15 minutes")))) %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
   # for removing duplicates that come from accidental downloads from the field:
   distinct(.keep_all = TRUE) %>%
   mutate(date = as_date((DT)),
          hour = hour(DT),
          year = year(DT),
          month = month(DT),
-         site = "elkhornlower") %>%
+         site = "elkhorlower") %>%
   # time of deployment
   filter(DT >= ymd_hms('2022-05-17 15:00:00') & DT <= ymd_hms('2022-10-21 09:40:00')) %>%
   padr::pad(by = 'DT') %>%
@@ -113,6 +123,7 @@ rawless_elkhornlower <- map_dfr(list.files("data/sensor_data/2022/elkhornlower/"
   full_join(na.locf(na.locf(filter(cal_table, site == "elkhornlower")), fromLast = TRUE), 
             by = c('site','DT')) %>%
   distinct(.keep_all = TRUE)
+  
 
 # Bind together
 rawless_elkhorn <- bind_rows(rawless_elkhornlower, rawless_elkhornupper) %>%
