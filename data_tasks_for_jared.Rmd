@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-## sourcing and packages 
+## sourcing and packages
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -21,8 +21,6 @@ try(plyr::ldply(list.files(path="src/",
                 source))
 
 ```
-
-
 
 # Grab cleaned
 
@@ -65,7 +63,6 @@ rist_raw <- going_rawless(site_name = "rist", trolled = NA) %>%
 
 ```
 
-
 ## SC plot
 
 ```{r pressure, echo=FALSE}
@@ -78,7 +75,6 @@ plotly::ggplotly(SC)
 
 
 ```
-
 
 ## Temp plot
 
@@ -93,7 +89,6 @@ plotly::ggplotly(temp)
 
 ```
 
-
 ## Depth plot
 
 ```{r pressure, echo=FALSE}
@@ -106,6 +101,7 @@ plotly::ggplotly(depth)
 
 
 ```
+
 ## Export Data
 
 ```{r}
@@ -136,23 +132,6 @@ library(arrow)
 
 all_data_15min <- read_feather(file = "data/pretty/all_data_15min.feather")
 
-unique(all_data_15min$site)
-
-archery <- filter(all_data_15min, site == "archery")
-elc <- filter(all_data_15min, site == "elc")
-
-
-ggplot(filter(all_data_15min, site %in% c("elc","timberline", "legacy")), aes(x = DT, y = Turbidity_NTU, color = site))+
-  geom_line()
-
-ggplot(elc, aes(x = DT, y = Turbidity_NTU))+
-  geom_line()
-
-timberline_turb <- filter(all_data_15min, site == "timberline"& Turbidity_NTU != "NaN")%>%
-  select(DT, Turbidity_NTU)
-
-write_csv_arrow(timberline_turb, sink = "data/sharing/threshold_calc/timberline_turb.csv")
-
 
 get_turb <- function(site_name){
   turb <- filter(all_data_15min, site == site_name & Turbidity_NTU != "NaN")%>%
@@ -165,14 +144,11 @@ get_turb <- function(site_name){
 }
 
 
-#get_turb(site_name = "timberline")
-#get_turb(site_name = "elc")
-#get_turb(site_name = "archery")
-#get_turb(site_name = "legacy")
 
 
 
 ```
+
 ## In house threshold calculator
 
 ```{r}
@@ -218,9 +194,6 @@ thresholds_turb <- map2(sites, conf2, get_thresholds)%>%
 
 
 ```
-
-
-
 
 ## Turbidity Thresholds Calculated:
 
@@ -268,7 +241,9 @@ ggplot(some_turb, aes(x = DT, y = Turbidity_NTU, color = trigger))+
    pivot_wider(names_from = trigger, values_from = count)%>%
     mutate(total = Alarm + Warning + None)
 ```
+
 ### Single site plots
+
 ```{r}
 
 indv_plot <- function(site_choice){
@@ -293,10 +268,7 @@ map(sites, indv_plot)
 
 ```
 
-
-
 ### Reducing triggers
-
 
 ```{r}
 
@@ -348,5 +320,3 @@ ggplot( some_turb_reduced, aes(x = DT, y = Turbidity_NTU, color = trigger_reduce
  
 
 ```
-
-
