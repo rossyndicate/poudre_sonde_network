@@ -2,14 +2,10 @@
 .Rhistory
 .RData
 .Ruserdata
+.DS_Store
 data/
-docs/
-backup_data/
-backup_docs/
-misc_playtime/
 
 # files/folders to untrack for API pull
-*/credentials.yml
-*credentials.yml
+src/api_pull/credentials.yml
 */apienv/
 */requirements.txt
