@@ -24,9 +24,9 @@ cal_files <- list.files("data/calibration_reports", pattern=".html")
 
 cal_tabler <- function(cal_files){
   
-  cal <- rvest::read_html(paste0("data/calibration_reports/", cal_files)) %>%
-    rvest::html_nodes('div') %>%
-    rvest::html_text() %>%
+  cal <- read_html(file.path("data/calibration_reports/", cal_files)) %>%
+    html_nodes('div') %>%
+    html_text() %>%
     as_tibble()
   
   rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "")
@@ -43,7 +43,7 @@ cal_tabler <- function(cal_files){
   
   cal_table <- tibble(site = sub("\\_.*", "", cal_files),
                       
-                      DT = ymd_hm(paste0(date, " ", time_mst)),
+                      DT = ymd_hm(paste(date, time_mst, tz = "MST")),
                       
                       #Dissolved Oxygen
                       rdo_slope = str_match(rdo, "Slope\\s*(.*?)\\s*Offset")[,2],
@@ -63,9 +63,9 @@ cal_tabler <- function(cal_files){
                       ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
                       
                       #ORP
-                      orp_offset = ifelse(is.na(str_match(ph_orp, "Zobell'sOffset\\s*(.*?)\\s*mVTemperature")[,2]),
-                                          str_match(ph_orp, "ZoBell'sOffset\\s*(.*?)\\s*mVTemperature")[,2],
-                                          str_match(ph_orp, "Zobell'sOffset\\s*(.*?)\\s*mVTemperature")[,2]),
+                                             orp_offset = ifelse(is.na(str_match(tolower(ph_orp), "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
+                                           str_match(ph_orp, "ORPStandardOffset\\s*(.*?)\\s*mVTemperature")[,2],
+                                           str_match(tolower(ph_orp), "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
                       
                       #Conductivity
                       tds_conversion_ppm = str_sub(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2], 6, nchar(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2])),
@@ -99,14 +99,12 @@ cal_tabler <- function(cal_files){
                                 ifelse(is.na(ph_slope_post), "pH ", ""),
                                 ifelse(is.na(orp_offset), "ORP ", ""),
                                 ifelse(is.na(cond_post), "Conductivity ", "")))
-  
-  return(cal_table)
+
+cal_table
   
 }
 
-cal_table <- cal_files %>%
-  map(~ cal_tabler(.)) %>%
-  bind_rows(.) %>%
+cal_table <- map_dfr(cal_files, cal_tabler) %>%
   distinct(.keep_all = TRUE) %>%
   group_by(site) %>%
   mutate(DT = round_date(DT, "15 minutes"))
