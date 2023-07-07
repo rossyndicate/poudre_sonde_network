@@ -9,6 +9,12 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Load necessary packages:
+```{r}
+source('src/package_loader.R')
+lapply(c('tidyverse','rvest','readxl'), package_loader)
+```
+
 Merge the datasets from all API pulls:
 ```{r}
 all_data <- list.files(path = 'data/api/', full.names = TRUE) %>%
@@ -20,7 +26,7 @@ all_data <- list.files(path = 'data/api/', full.names = TRUE) %>%
 
 Load and munge field calibration files:
 ```{r}
-cal_files <- list.files("data/calibration_reports", pattern=".html")
+cal_files <- list.files("data/calibration_reports", pattern=".html")[1]
 
 cal_tabler <- function(cal_files){
   
@@ -29,13 +35,13 @@ cal_tabler <- function(cal_files){
     html_text() %>%
     as_tibble()
   
-  rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "")
+  rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
   
-  ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "")
+  ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
   
-  conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "")
+  conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
   
-  turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "")
+  turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
   
   time_mst <- paste0(str_sub(cal_files, -13, -12),":", str_sub(cal_files, -11, -10))
   
@@ -46,35 +52,36 @@ cal_tabler <- function(cal_files){
                       DT = ymd_hm(paste(date, time_mst, tz = "MST")),
                       
                       #Dissolved Oxygen
-                      rdo_slope = str_match(rdo, "Slope\\s*(.*?)\\s*Offset")[,2],
-                      rdo_offset = str_match(rdo, "Offset\\s*(.*?)\\s*mg/L")[,2],
-                      rdo_100 = str_match(rdo, "PreMeasurement\\s*(.*?)\\s*%SatPost")[,2],
-                      rdo_conc = str_match(rdo, "Concentration\\s*(.*?)\\s*mg/LPreMeasurement")[,2],
-                      rdo_temp = str_match(rdo, "Temperature\\s*(.*?)\\s*°C")[,2],
-                      rdo_pressure = str_match(rdo, "Pressure\\s*(.*?)\\s*mbar")[,2],
+                      rdo_slope = str_match(rdo, "slope\\s*(.*?)\\s*offset")[,2],
+                      rdo_offset = str_match(rdo, "offset\\s*(.*?)\\s*mg/l")[,2],
+                      rdo_100 = str_match(rdo, "premeasurement\\s*(.*?)\\s*%satpost")[,2],
+                      rdo_conc = str_match(rdo, "concentration\\s*(.*?)\\s*mg/lpremeasurement")[,2],
+                      rdo_temp = str_match(rdo, "temperature\\s*(.*?)\\s*°c")[,2],
+                      rdo_pressure = str_match(rdo, "pressure\\s*(.*?)\\s*mbar")[,2],
                       
                       #pH
-                      ph_slope_pre = str_match(ph_orp, "Offset1Slope\\s*(.*?)\\s*mV/pH")[,2],
-                      ph_offset_pre = str_match(ph_orp, "mV/pHOffset\\s*(.*?)\\s*mVSlopeandOffset2")[,2],
-                      ph_slope_post = str_match(ph_orp, "Offset2Slope\\s*(.*?)\\s*mV/pH")[,2],
-                      ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mV/pHOffset\\s*(.*?)\\s*mVORPORP"))[,2],
-# Sometimes, the post value can actually be in the high 6 pH... therefore the post measurement regex matching text is conditional
-                      ph_7_nice = str_sub(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2])),
-                      ph_7_other = str_sub(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2])),
+                      ph_slope_pre = str_match(ph_orp, "offset1slope\\s*(.*?)\\s*mv/ph")[,2],
+                      ph_offset_pre = str_match(ph_orp, "mv/phoffset\\s*(.*?)\\s*mvslopeandoffset2")[,2],
+                      ph_slope_post = str_match(ph_orp, "offset2slope\\s*(.*?)\\s*mv/ph")[,2],
+                      ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mv/phoffset\\s*(.*?)\\s*mvorporp"))[,2],
+                      # Sometimes, the post value can actually be in the high 6 pH... therefore the post measurement regex matching text is conditional
+                      ph_7_nice = str_sub(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2])),
+                      ph_7_other = str_sub(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2])),
                       ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
                       
                       #ORP
-                                             orp_offset = ifelse(is.na(str_match(tolower(ph_orp), "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
-                                           str_match(ph_orp, "ORPStandardOffset\\s*(.*?)\\s*mVTemperature")[,2],
-                                           str_match(tolower(ph_orp), "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
+                      #Newly encountered thing: sometimes the calibration report calls the ORP standard Zobell's, sometimes it's just called "ORP Standard":
+                      orp_offset = ifelse(is.na(str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
+                                          str_match(ph_orp, "orpstandardoffset\\s*(.*?)\\s*mvtemperature")[,2],
+                                          str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
                       
                       #Conductivity
-                      tds_conversion_ppm = str_sub(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2], 6, nchar(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2])),
-                      cond_cell_constant = str_match(conductivity, "CellConstant\\s*(.*?)\\s*ReferenceTemperature")[,2],
+                      tds_conversion_ppm = str_sub(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2], 6, nchar(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2])),
+                      cond_cell_constant = str_match(conductivity, "cellconstant\\s*(.*?)\\s*referencetemperature")[,2],
                       cond_pre = str_match(conductivity,paste0(str_match(conductivity,
-                                                                         "PreMeasurementActual\\s*(.*?)\\s*SpecificConductivity")[,2],"SpecificConductivity\\s*(.*?)\\s*µS/cmPost"))[,2],
+                                                                         "premeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cmpost"))[,2],
                       cond_post = str_match(conductivity,paste0(str_match(conductivity,
-                                                                          "PostMeasurementActual\\s*(.*?)\\s*SpecificConductivity")[,2],"SpecificConductivity\\s*(.*?)\\s*µS/cm"))[,2],
+                                                                          "postmeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cm"))[,2],
                       
                       #Turbidity
                       ntu_slope = "None",
@@ -82,15 +89,15 @@ cal_tabler <- function(cal_files){
                       ntu_10 = "None",
                       ntu_100 = "None") %>%
     
-  select(-c(ph_7_nice, ph_7_other))
+    select(-c(ph_7_nice, ph_7_other))
   
   try(cal_table <- cal_table %>%
         mutate(     
           #Turbidity
-          ntu_slope = str_match(turbidity, "Slope\\s*(.*?)\\s*Offset")[,2],
-          ntu_offset = str_match(turbidity, "Offset\\s*(.*?)\\s*NTU")[,2],
-          ntu_10 = str_match(turbidity, "CalibrationPoint1PreMeasurement\\s*(.*?)\\s*NTUPost")[,2],
-          ntu_100 = str_match(turbidity, "CalibrationPoint2PreMeasurement\\s*(.*?)\\s*NTUPost")[,2]))
+          ntu_slope = str_match(turbidity, "slope\\s*(.*?)\\s*offset")[,2],
+          ntu_offset = str_match(turbidity, "offset\\s*(.*?)\\s*ntu")[,2],
+          ntu_10 = str_match(turbidity, "calibrationpoint1premeasurement\\s*(.*?)\\s*ntupost")[,2],
+          ntu_100 = str_match(turbidity, "calibrationpoint2premeasurement\\s*(.*?)\\s*ntupost")[,2]))
   
   cal_table <- cal_table %>%
     mutate(
@@ -100,8 +107,8 @@ cal_tabler <- function(cal_files){
                                 ifelse(is.na(ph_slope_post), "pH ", ""),
                                 ifelse(is.na(orp_offset), "ORP ", ""),
                                 ifelse(is.na(cond_post), "Conductivity ", "")))
-
-cal_table
+  
+  cal_table
   
 }
 
@@ -113,9 +120,8 @@ cal_table <- map_dfr(cal_files, cal_tabler) %>%
 
 Load field notes:
 ```{r}
-field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
-  mutate(DT = (paste0(date, " ", start_time_mst))) %>%
-  mutate(DT = ymd_hm(DT)) %>%
+field_notes <- read_excel('data/sensor_field_notes.xlsx') %>%
+  mutate(DT = ymd_hm(paste(date, start_time_mst, tz = "MST"))) %>%
   arrange(DT) %>%
   mutate(DT = round_date(DT, "15 minutes"))
 ```
