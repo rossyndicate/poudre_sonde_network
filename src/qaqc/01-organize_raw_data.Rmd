@@ -58,6 +58,7 @@ cal_tabler <- function(cal_files){
                       ph_offset_pre = str_match(ph_orp, "mV/pHOffset\\s*(.*?)\\s*mVSlopeandOffset2")[,2],
                       ph_slope_post = str_match(ph_orp, "Offset2Slope\\s*(.*?)\\s*mV/pH")[,2],
                       ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mV/pHOffset\\s*(.*?)\\s*mVORPORP"))[,2],
+# Sometimes, the post value can actually be in the high 6 pH... therefore the post measurement regex matching text is conditional
                       ph_7_nice = str_sub(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2])),
                       ph_7_other = str_sub(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2])),
                       ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
