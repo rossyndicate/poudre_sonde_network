@@ -11,13 +11,13 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Load necessary packages:
 ```{r}
-source('src/package_loader.R')
-lapply(c('tidyverse','rvest','readxl'), package_loader)
+source("src/package_loader.R")
+lapply(c("tidyverse", "rvest", "readxl"), package_loader)
 ```
 
 Merge the datasets from all API pulls:
 ```{r}
-all_data <- list.files(path = 'data/api/', full.names = TRUE) %>%
+all_data <- list.files(path = "data/api/", full.names = TRUE) %>%
   map(~read_csv(.)) %>%
   bind_rows() %>%
   # remove overlapping API-pull data
@@ -31,7 +31,7 @@ cal_files <- list.files("data/calibration_reports", pattern=".html")[1]
 cal_tabler <- function(cal_files){
   
   cal <- read_html(file.path("data/calibration_reports/", cal_files)) %>%
-    html_nodes('div') %>%
+    html_nodes("div") %>%
     html_text() %>%
     as_tibble()
   
@@ -120,7 +120,7 @@ cal_table <- map_dfr(cal_files, cal_tabler) %>%
 
 Load field notes:
 ```{r}
-field_notes <- read_excel('data/sensor_field_notes.xlsx') %>%
+field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
   mutate(DT = ymd_hm(paste(date, start_time_mst, tz = "MST"))) %>%
   arrange(DT) %>%
   mutate(DT = round_date(DT, "15 minutes"))
