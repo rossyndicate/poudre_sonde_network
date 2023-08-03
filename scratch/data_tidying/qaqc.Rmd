@@ -20,7 +20,7 @@ library(anomalize)
 Functions that you need!
 
 ```{r}
-try(plyr::ldply(list.files(path="src/",
+try(plyr::ldply(list.files(path="scratch/functions/",
                            pattern="*.R",
                            full.names=TRUE),
                 source))

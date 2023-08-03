@@ -1,6 +1,6 @@
 ---
 title: "HydroVu API Pull"
-author: "B Steele, modified by Sam Struthers"
+author: "ROSSyndicate"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -50,16 +50,18 @@ YYYY-MM-DD HH:MM:SS MDT
 dump_dir <- "data/api/"
 
 # Code for making the start time the day of the last saved API pull:
-start <- sort(list.files(dump_dir) %>%
-                str_sub(start = -14, end = -5), decreasing = TRUE)[1]
+start <- sort(list.files(dump_dir, pattern = "*.csv") %>%
+                str_sub(start = -14, end = -5), decreasing = TRUE) %>%
+  sort() %>%
+  .[1]
 #... or, manual selection of start time
-#start <- Sys.time() - lubridate::days(2000)  #Sys.time() - lubridate::days(7)
+# start <- Sys.time() - lubridate::days(2000)  #Sys.time() - lubridate::days(7)
 end <- Sys.time()
 sites <- c("Rist", 
            "Tamasag", # Rist was moved to Tamasag beginning of 2023
-           "Legacy", 
+           "Legacy",
            "Lincoln",
-           "Timberline", 
+           "Timberline",
            "Prospect", # no data in 2020
            "ELC",
            "Boxelder", # ELC was moved to Boxelder late summer 2022
@@ -67,7 +69,7 @@ sites <- c("Rist",
            "River Bluffs")
 
 api_puller <- function(site, 
-                       dump_dir = "data/api/", 
+                       dump_dir = 'data/api/', 
                        start,
                        end){
   
@@ -93,10 +95,6 @@ api_puller <- function(site,
   # Here, a way to find the most recent download of the data. Use this as the start date to 
   # reduce overlapping data
   
-  # start <- list.files('data/api/', pattern = site, full.names = FALSE) %>%
-  #   str_sub(., -14, -5) %>%
-  #   max(.)
-  # 
   utc_start_date <- format(as.POSIXct(format(start, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
   
   utc_end_date <- format(as.POSIXct(format(end, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
@@ -125,7 +123,7 @@ api_puller <- function(site,
              parameter = Parameter,
              units = Units) %>% 
       left_join(., locs) %>% 
-      mutate(site = site) %>%
+      mutate(site = tolower(site)) %>%
       select(site, id, name, timestamp, parameter, value, units)
     
     ## Save your data
@@ -135,11 +133,11 @@ api_puller <- function(site,
     
     return(one_df)
   }
+  
 }
 
-data <- sites %>% map_dfr(~api_puller(site = .,
-                                      start = start,
-                                      end = end)) #%>%
-bind_rows()
+sites %>% map_dfr(~api_puller(site = .,
+                              start = start,
+                              end = end))
 ```
 

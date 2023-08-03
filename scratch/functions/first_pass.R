@@ -36,6 +36,9 @@ first_pass <- function(what, parama, max = 100000, min = -100000){
           rollavg=mean(unlist(select(cur_data(), front1:back3)))) %>%
    ungroup() %>%
    mutate(sd3_flag = ifelse((p1 <= rollavg-(3*rollsd) | p1 >= rollavg+(3*rollsd)), 1, 0))
+ # Step 5: Flagging bad data
+  water_quality_data_clean$Flagged <- abs(water_quality_data_clean$parameter - water_quality_data_clean$RollingAverage) > num_sd_threshold * water_quality_data_clean$RollingSD
+
 
   return(it)
 }

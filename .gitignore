@@ -5,6 +5,7 @@
 .DS_Store
 data/
 data
+# remove the annoying Mac .DS_Store
 .DS_Store
 **/.DS_Store
 # files/folders to untrack for API pull
