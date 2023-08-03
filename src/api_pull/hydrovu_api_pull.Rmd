@@ -1,6 +1,6 @@
 ---
 title: "HydroVu API Pull"
-author: "B Steele, modified by Sam Struthers"
+author: "ROSSyndicate"
 date: "`r Sys.Date()`"
 output: html_document
 ---
@@ -11,7 +11,7 @@ This R-markdown accesses the HydroVu server via the API to download data within 
 
 ## Requirements
 
-This markdown requires the package 'HydroVuR', which is currently forked in B's GH.
+This markdown requires the package "HydroVuR", which is currently forked in B's GH.
 
 ## Workspace Set Up
 
@@ -19,10 +19,12 @@ For grabbing data from HydroVu, we'll be using the credentials.yml file and the 
 
 ```{r}
 devtools::install_github("steeleb/HydroVuR")
-library('tidyverse')
-library('HydroVuR')
-source('src/api_pull/hv_getdata_id.R')
-source('src/api_pull/hv_locations_all.R')
+
+source("src/package_loader.R")
+lapply(c("tidyverse", "lubridate", "HydroVuR"), package_loader)
+
+source("src/api_pull/hv_getdata_id.R")
+source("src/api_pull/hv_locations_all.R")
 ```
 
 ## Accessing the API
@@ -30,10 +32,10 @@ source('src/api_pull/hv_locations_all.R')
 First thing, we're going to read in our client id and client secret for accessing the HydroVu API. Don't print these out in this chunk: if you save your Rmd file with the chunk history, that's another way that the world can see your data. 🙃
 
 ```{r}
-creds = yaml::read_yaml('src/api_pull/credentials.yml')
+creds = yaml::read_yaml("src/api_pull/credentials.yml")
 
-client_id = as.character(creds['client'])
-client_secret = as.character(creds['secret'])
+client_id = as.character(creds["client"])
+client_secret = as.character(creds["secret"])
 
 # get a token for location lists and data access
 token <- hv_auth(client_id, client_secret)
@@ -45,20 +47,31 @@ YYYY-MM-DD HH:MM:SS MDT
 
 ```{r}
 # where the api data gets saved:
-dump_dir <- 'data/api/'
+dump_dir <- "data/api/"
 
 # Code for making the start time the day of the last saved API pull:
-# start <- sort(list.files(dump_dir) %>%
-#                  str_sub(start = -14, end = -5), decreasing = TRUE)[1]
-#... but, just the last 7 days for now
-start <- Sys.time() - lubridate::days(7)
+start <- sort(list.files(dump_dir, pattern = "*.csv") %>%
+                str_sub(start = -14, end = -5), decreasing = TRUE) %>%
+  sort() %>%
+  .[1]
+#... or, manual selection of start time
+# start <- Sys.time() - lubridate::days(2000)  #Sys.time() - lubridate::days(7)
 end <- Sys.time()
-sites <- c("Tamasag", "Legacy", "Timberline", "Prospect", "Boxelder", "Archery", "River Bluffs")
+sites <- c("Rist", 
+           "Tamasag", # Rist was moved to Tamasag beginning of 2023
+           "Legacy",
+           "Lincoln",
+           "Timberline",
+           "Prospect", # no data in 2020
+           "ELC",
+           "Boxelder", # ELC was moved to Boxelder late summer 2022
+           "Archery", 
+           "River Bluffs")
 
 api_puller <- function(site, 
                        dump_dir = 'data/api/', 
-                       start = Sys.time() - lubridate::days(7),
-                       end = Sys.time()){
+                       start,
+                       end){
   
   locs <- hv_locations_all(token)
   
@@ -79,10 +92,13 @@ api_puller <- function(site,
   # data for 5 sites takes ~10 mins. Be patient!
   
   # Add date range you are interested in; data are stored in HydroVu in UTC
+  # Here, a way to find the most recent download of the data. Use this as the start date to 
+  # reduce overlapping data
+  
   utc_start_date <- format(as.POSIXct(format(start, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
   
   utc_end_date <- format(as.POSIXct(format(end, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
-  timezone = 'UTC'
+  timezone = "UTC"
   
   # Map over the location ids 
   alldata <- map(site_loc_list, 
@@ -95,25 +111,33 @@ api_puller <- function(site,
   # grab only locations with data (stored as a data frame) / drop 404 errors
   filtered <- purrr::keep(alldata, is.data.frame)
   
-  # bind lists together (now that all are dataframes, we can just collate quickly)
-  one_df <- bind_rows(filtered) %>% 
-    rename(id = Location,
-           parameter = Parameter,
-           units = Units) %>% 
-    left_join(., locs) %>% 
-    mutate(site = site) %>%
-    select(site, id, name, timestamp, parameter, value, units)
-  
-  ## Save your data
-  
-  write_csv(one_df,
-            paste0(dump_dir, "/", site, "_", Sys.Date(), ".csv"))
-  
-  return(one_df)
+  if(length(filtered) == 0){
+    
+    print(paste0("No data at ", site, " during this time frame"))
+    
+  } else {
+    
+    # bind lists together (now that all are dataframes, we can just collate quickly)
+    one_df <- bind_rows(filtered) %>% 
+      rename(id = Location,
+             parameter = Parameter,
+             units = Units) %>% 
+      left_join(., locs) %>% 
+      mutate(site = tolower(site)) %>%
+      select(site, id, name, timestamp, parameter, value, units)
+    
+    ## Save your data
+    
+    write_csv(one_df,
+              paste0(dump_dir, "/", site, "_", lubridate::as_date(end), ".csv"))
+    
+    return(one_df)
+  }
   
 }
 
-data <- sites %>% map(~api_puller(site = .)) %>%
-  bind_rows()
+sites %>% map_dfr(~api_puller(site = .,
+                              start = start,
+                              end = end))
 ```
 
