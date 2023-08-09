@@ -149,7 +149,7 @@ field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
 Merge the datasets from all API pulls:
 ```{r}
 all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv") %>%
-  map(~read_csv(.)) %>%
+  map(~data.table::fread(.) %>% select(-id)) %>%
   bind_rows() %>%
   # remove overlapping API-pull data
   distinct(.keep_all = TRUE) %>%
@@ -159,24 +159,10 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
   mutate(DT = as_datetime(timestamp, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"),
          DT_round = round_date(DT, "15 minutes"),
-         site = tolower(site))
+         site = tolower(site)) %>%
+# Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
+  mutate(site = case_when(site == "rist" & DT > "2022-09-20" & DT < "2023-01-01" ~ "boxelder"))
 ``` 
-
-Remove date ranges where sensor was pulled out of the field. 
-```{r}
-all_data <- all_data %>%
-  # Remove data ranges where sensor was pulled out of field (THAT I KNOW OF, IE STARTING IN 2022)
-  dplyr::filter(!(ymd_hms(DT) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT) <= ymd_hms("2022-04-22 14:00:00") & site == "rist"),
-                !(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00") & site == "rist"),
-                !(ymd_hms(DT) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT) <= ymd_hms('2022-05-09 14:30:00') & site == "rist")) %>%
-  dplyr::filter(!(ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00') & site == "legacy"),
-                !(ymd_hms(DT) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT) < ymd_hms('2022-06-01 13:30:00') & site == "legacy"),
-                !(ymd_hms(DT) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT) <= ymd_hms('2022-07-12 10:00:00') & site == "legacy"),
-                !(ymd_hms(DT) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT) <= ymd_hms('2022-08-25 16:15:00') & site == "legacy"),
-                !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-18 07:00:00') & site == "legacy")) %>%
-  dplyr::filter(!(ymd_hms(DT) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00') & site == "timberline"))
-```
-
 
 Immediately remove values that are nonsensical, by parameter:
 
@@ -189,19 +175,47 @@ DO: 0 - 25 ppm
 pH: 0 - 14 
 Turbidity: 0 - 2000 NTU
 
+## KATIE REMINDERS
+
+- Timberline was buried starting "2022-04-22 00:00:00" and its RDO cap was in really poor condition at the beginning of 2022 field season until "2022-05-25 16:00"
+- Explore back calibrating all turbidity data - it is recommended not to calibrate. Does calibrating actually make turbidity worse?
+
 
 ## Temperature
 
 I think we will want to develop pipelines specific for each site and parameter for processing speed. Here I am starting a pipeline for Archery's temperature:
 ```{r}
-raw_temperature <- filter(all_data, parameter == "Temperature" & site == "archery") %>%
-  full_join(field_notes, by = c("DT", "site"))  %>%
+raw_temperature <- all_data %>%
+  data.table::setDT(.) %>%
+  filter(parameter == "Temperature" & site == "archery") %>%
+                # Rist
+  dplyr::filter(!(ymd_hms(DT) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT) <= ymd_hms("2022-04-22 14:00:00") & site == "rist"),
+                !(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00") & site == "rist"),
+                !(ymd_hms(DT) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT) <= ymd_hms('2022-05-09 14:30:00') & site == "rist"),
+                # Legacy
+                !(ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00') & site == "legacy"),
+                !(ymd_hms(DT) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT) < ymd_hms('2022-06-01 13:30:00') & site == "legacy"),
+                !(ymd_hms(DT) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT) <= ymd_hms('2022-07-12 10:00:00') & site == "legacy"),
+                !(ymd_hms(DT) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT) <= ymd_hms('2022-08-25 16:15:00') & site == "legacy"),
+                !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-18 07:00:00') & site == "legacy"),
+                # Timberline
+                !(ymd_hms(DT) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00') & site == "timberline"),
+                # Archery
+                !(ymd_hms(DT) > ymd_hms('2022-10-04 15:00:00') & ymd_hms(DT) <= ymd_hms('2022-10-07 16:00:00') & site == "archery")) %>%
+  select(-name) %>%
   distinct(., .keep_all=TRUE) %>%
-  # Create new column of value data without the out-of-range vals
-  mutate(p1 = ifelse(value <= 0, NA,
-              ifelse(value >= 30 , NA, value))) %>%
-  # Flag instances where data was out of reasonable range
-  mutate(flag = ifelse(value <= 0, "Data out of bounds",
-              ifelse(value >= 30 , "Data out of bounds", NA))) %>%
-  pad(by ="DT_round", break_above = 100) 
+  group_by(DT_round) %>%
+  summarize(p1 = as.numeric(mean(value, na.rm = T)),
+            diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
+            n_obs = n()) %>%
+  mutate(front1 = lead(p1, n = 1),
+         front2 = lead(p1, n = 2),
+         front3 = lead(p1, n = 3),
+         back1 = lag(p1, n = 1),
+         back2 = lag(p1, n = 2),
+         back3 = lag(p1, n = 3)) %>%
+  rowwise() %>%
+  mutate(rollavg = mean(c_across(front1:back3)),
+         rollsd = sd(c_across(front1:back3))) %>%
+  mutate(flag = ifelse((p1 <= rollavg - (3 * rollsd) | p1 >= rollavg + (3 * rollsd)), "Outside SD range", NA))
 ```
