@@ -16,9 +16,10 @@ Load necessary packages:
 
 ```{r}
 source("src/package_loader.R")
-lapply(c("tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly"), package_loader)
-# {data.table} is also required, but it has many masked functions with tidyverse that I'll need to explore more in depth.
+lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll"), package_loader)
 ```
+
+# Import and collate data
 
 Load and munge field calibration files:
 
@@ -139,28 +140,47 @@ cal_table <- map_dfr(cal_files, cal_tabler) %>%
   distinct(.keep_all = TRUE) %>%
   group_by(site) %>%
   mutate(DT = round_date(DT, "15 minutes"))
+# this creates a lot of errors, is it okay to ignore them all? Just make a note that these will create a lot of errors.
 
 rm(cal_files, cal_tabler, package_loader)
 ```
 
-Load field notes:
+Load field notes and define the start time as the 15 minute preceding the field time
 
 ```{r}
 field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
-  mutate(DT = ymd_hm(paste(date, start_time_mst, tz = "MST"))) %>%
-  arrange(DT) %>%
-  mutate(DT = round_date(DT, "15 minutes")) %>%
-  mutate(site = tolower(site))
+  mutate(start_DT = ymd_hm(paste(date, start_time_mst, tz = "MST")),
+         start_DT = floor_date(start_DT, "15 minutes"),
+         site = tolower(site),
+         season = year(start_DT)) %>%
+  arrange(start_DT)
+```
+
+Munge field notes
+
+```{r}
+field_notes_clean <- field_notes %>% 
+  mutate(sonde_impact = case_when(grepl('sonde', visit_comments, ignore.case = T) ~ 'y',
+                                  grepl('calib', visit_comments, ignore.case = T) ~ 'y',
+                                  sensor_pulled == 'x' ~ 'y',
+                                  sensor_deployed == 'x' ~ 'y',
+                                  grepl('yes', sensors_cleaned, ignore.case = T) ~ 'y'
+                                  ),
+          end_DT = case_when(sensor_pulled == 'x' ~ ymd_hm(paste0(season, '-12-31 23:59'), tz = 'MST'),
+                               sensor_deployed == 'x' ~ start_DT,
+                               TRUE ~ start_DT + minutes(15)),
+         start_DT = case_when(sensor_deployed == 'x' ~ ymd_hm(paste0(season, '-01-01 00:00'), tz = 'MST'),
+                                    TRUE ~ start_DT)) %>% 
+  filter(sonde_impact == 'y', !is.na(start_DT))
 ```
 
 Merge the data sets from all API pulls:
 
 ```{r}
 all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv") %>%
-  map(~data.table::fread(.) %>% select(-id)) %>%
-  bind_rows() %>%
+  map_dfr(~data.table::fread(.) %>% select(-id)) %>%
   # remove overlapping API-pull data
-  distinct(.keep_all = TRUE) %>%
+  distinct() %>%
   # remove VuLink data
   filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
   # Convert DT to MST:
@@ -172,18 +192,41 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
   mutate(site = ifelse(site == "rist" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
 ```
 
-# Level 1 QA-QC
-
-### Temperature at Archery
-
-I think we will want to develop pipelines specific for each site and parameter for
-processing speed (targets?). Here I am starting a pipeline for Archery's temperature:
+### Export collated raw file
 
 ```{r}
-temperature_archery <- all_data %>%
-  data.table::setDT(.) %>%
-  filter(parameter == "Temperature" & site == "archery") %>%
-  # Filter instances in which a sonde was pulled out of field mid-season (basically a backup filter in case a sonde was pulled out of water but the log didn't get stopped):
+#write_feather(all_data, paste0('data/SOME_FOLDER_FOR_POSTERITY/collated_raw_sonde_v', Sys.Date(), '.feather'))
+```
+
+# Level 1 QA-QC
+
+### Recoding data where sonde was out of water
+
+Filter instances in which a sonde was pulled out of field mid-season (basically a backup
+filter in case a sonde was pulled out of water but the log didn't get stopped)
+
+```{r}
+#this function is not working... not going to debug right now, but this is meant to do the lifting of this code block, but in an automated way... 
+
+# recode_for_maintenance = function(start, end, site) {
+#   # start_DT = ymd_hm(start, tz = 'MST')
+#   # end_DT = ymd_hm(end, tz = 'MST')
+#   all_data %>% 
+#     setDT(.) %>% 
+#     mutate(value = if_else(ymd_hms(DT) >= ymd_hms(start) & 
+#                              ymd_hms(DT) <= ymd_hms(end) & 
+#                              site == site,
+#                            NA_real_,
+#                            value),
+#            flag = if_else(ymd_hms(DT) >= ymd_hms(start) & 
+#                              ymd_hms(DT) <= ymd_hms(end) & 
+#                              site == site,
+#                            'recoded for sensor maintenance',
+#                            NA_character_))
+# }
+
+all_data <- all_data %>% 
+  setDT(.) %>%
   # Rist
   filter(!(ymd_hms(DT) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT) <= ymd_hms("2022-04-22 14:00:00") & site == "rist"),
          !(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00") & site == "rist"),
@@ -197,47 +240,126 @@ temperature_archery <- all_data %>%
          # Timberline
          !(ymd_hms(DT) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00') & site == "timberline"),
          # Archery
-         !(ymd_hms(DT) > ymd_hms('2022-10-04 15:00:00') & ymd_hms(DT) <= ymd_hms('2022-10-07 16:00:00') & site == "archery")) %>%
+         !(ymd_hms(DT) > ymd_hms('2022-10-04 15:00:00') & ymd_hms(DT) <= ymd_hms('2022-10-07 16:00:00') & site == "archery"))
+```
+
+### Temperature at Archery
+
+I think we will want to develop pipelines specific for each site and parameter for
+processing speed (targets?). Here I am starting a pipeline for Archery's temperature:
+
+#### Format data
+
+```{r}
+temperature_archery <- all_data %>%
+  filter(parameter == "Temperature" & site == "archery") %>%
   select(-name) %>%
-  distinct(., .keep_all=TRUE) %>%
+  distinct() %>%
   group_by(DT_round) %>%
   # I WOULD LIKE TO PRESERVE THE RAW VALS THAT WENT INTO MAKING THIS AVERAGE
   # IN A NESTED DATAFRAME VIA NEST(). IT WON'T WORK >:(
   summarize(p1 = as.numeric(mean(value, na.rm = T)),
             diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
-            n_obs = n()) %>%
-  mutate(flag = ifelse(p1 >= 30 | p1 <= 0, "Out of bounds", NA)) %>%
+            n_obs = n()) %>% 
   ungroup() %>%
-  # once outliers have been removed, pad the dataset
-  pad(by = "DT_round") %>%
+  # pad the dataset so that all 15-min timestamps are present
+  pad(by = "DT_round") %>% 
+  # add flag for no data times
+  mutate(flag = if_else(is.na(p1), 'no data', NA_character_)) %>% 
   # ... so that we can get the proper leading/lagging values across our entire timeseries:
   mutate(front1 = lead(p1, n = 1),
-         front2 = lead(p1, n = 2),
-         front3 = lead(p1, n = 3),
          back1 = lag(p1, n = 1),
-         back2 = lag(p1, n = 2),
-         back3 = lag(p1, n = 3)) %>%
-  rowwise() %>%
-  mutate(rollavg = mean(c_across(front1:back3)),
-         rollsd = sd(c_across(front1:back3)),
-         slope_ahead = abs(front1 - p1)/15,
-         slope_behind = abs(p1 - back1)/15) %>%
-  # flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
-  mutate(flag = case_when((p1 <= rollavg - (3 * rollsd) | p1 >= rollavg + (3 * rollsd)) ~ gsub("NA ", "", paste0(flag, " ", "Outside SD range")),
-                          flag == "Out of bounds" ~ "Out of bounds")) %>%
-  # flag data that repeats across time:
-  mutate(flag = ifelse(p1 == front1 | p1 == back1, gsub("NA ", "", paste0(flag, " ", "Unchanging value")),flag)) %>%
-  # flag data where slope between points is out of whack. using the 95th percentile value for now but this is arbitrary
-  mutate(flag = ifelse(slope_ahead >= 0.04 | slope_behind >= 0.04, gsub("NA ", "", paste0(flag, " ", "Slope exceedance")), flag)) %>%
-  mutate(flag_val = ifelse(is.na(flag), NA, 30))
+         rollavg = roll_mean(p1, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+         rollsd = roll_sd(p1, n = 7, align = 'center', na.rm = F, fill = NA_real_)) %>% 
+  mutate(slope_ahead = abs(front1 - p1)/15,
+         slope_behind = abs(p1 - back1)/15,
+         # add some summary info for future us
+         quarter = quarter(DT_round),
+         year = year(DT_round),
+         y_q = paste(year, '-', quarter))
+ggplot(temperature_archery, aes(x = DT_round, y = p1)) + 
+  geom_point() +
+  labs('Raw Temperature at Archery') +
+  theme_bw()
 
+```
 
+#### Set thresholds
+
+```{r}
+# value range
+temp_max = 30
+temp_min = 0
+
+# slope threshold
+slope_thresh = 1/15
+```
+
+#### Add the flags
+
+for data out of range
+
+```{r}
+# flag for values out of acceptable range
+temperature_archery <- temperature_archery %>%
+  mutate(flag = if_else(p1 >= temp_max | p1 <= temp_min, "Out of bounds", flag),
+         p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
+
+```
+
+For wonky data next to each other (defined by roll sd) - here we make some seasonal
+summaries to help with this
+
+```{r}
+temperature_summary <- temperature_archery %>% 
+  group_by(y_q) %>% 
+  summarise(yq_sd = sd(p1, na.rm = T))
+```
+
+```{r}
+# flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
+temperature_archery <- temperature_archery %>%
+  left_join(temperature_summary) %>% 
+  mutate(flag = if_else((p1 <= rollavg - (3 * yq_sd) | p1 >= rollavg + (3 * yq_sd)),
+                        "Outside SD range", 
+                        flag))
+
+```
+
+```{r}
+# flag data that repeat across time:
+temperature_archery <- temperature_archery %>% 
+  mutate(flag = if_else((p1 == front1 | p1 == back1), 
+                       if_else(is.na(flag),
+                               "Repeated value",
+                               paste(flag, "Repeated value", sep = "; ")),
+                       flag))
+
+```
+
+```{r}
+# flag data where change in a 15m period is > 1degC
+temperature_archery <- temperature_archery %>% 
+  mutate(flag = if_else(slope_ahead >= slope_thresh | slope_behind >= slope_thresh, 
+                        if_else(is.na(flag),
+                               "Slope exceedance",
+                               paste(flag, "Slope exceedance", sep = "; ")),
+                        flag)) 
+```
+
+#### Visualize the flags
+
+```{r}
 # Link up calibration data:
 # full_join(na.locf(na.locf(filter(cal_table, site == "archery")), fromLast = TRUE), 
 #           by = c('site','DT_round' = "DT"))
 
 # Current vis:
-ggplotly(ggplot() +
-           geom_line(data = temperature_archery, aes(x=DT_round, y = p1))+
-           geom_point(data = filter(temperature_archery, !is.na(flag)), aes(x=DT_round, y = p1, color = flag)))
+ggplot() +
+  geom_point(data = filter(temperature_archery, is.na(flag)), 
+            aes(x=DT_round, y = p1)) +
+  geom_point(data = filter(temperature_archery, !is.na(flag)), 
+             aes(x=DT_round, y = p1, color = flag)) +
+  theme_bw() +
+  theme(legend.position = 'bottom') 
 ```
