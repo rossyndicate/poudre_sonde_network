@@ -3,19 +3,25 @@ title: "Organizing raw data"
 author: "ROSSyndicate"
 date: "`r Sys.Date()`"
 output: html_document
+editor_options: 
+  markdown: 
+    wrap: 90
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
 ```
 
 Load necessary packages:
+
 ```{r}
 source("src/package_loader.R")
-lapply(c("tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr"), package_loader)
+lapply(c("tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly"), package_loader)
+# {data.table} is also required, but it has many masked functions with tidyverse that I'll need to explore more in depth.
 ```
 
 Load and munge field calibration files:
+
 ```{r}
 cal_files <- list.files("data/calibration_reports", pattern=".html")
 
@@ -138,6 +144,7 @@ rm(cal_files, cal_tabler, package_loader)
 ```
 
 Load field notes:
+
 ```{r}
 field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
   mutate(DT = ymd_hm(paste(date, start_time_mst, tz = "MST"))) %>%
@@ -146,10 +153,11 @@ field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
   mutate(site = tolower(site))
 ```
 
-Merge the datasets from all API pulls:
+Merge the data sets from all API pulls:
+
 ```{r}
 all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv") %>%
-  map(~read_csv(.)) %>%
+  map(~data.table::fread(.) %>% select(-id)) %>%
   bind_rows() %>%
   # remove overlapping API-pull data
   distinct(.keep_all = TRUE) %>%
@@ -159,49 +167,77 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
   mutate(DT = as_datetime(timestamp, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"),
          DT_round = round_date(DT, "15 minutes"),
-         site = tolower(site))
-``` 
-
-Remove date ranges where sensor was pulled out of the field. 
-```{r}
-all_data <- all_data %>%
-  # Remove data ranges where sensor was pulled out of field (THAT I KNOW OF, IE STARTING IN 2022)
-  dplyr::filter(!(ymd_hms(DT) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT) <= ymd_hms("2022-04-22 14:00:00") & site == "rist"),
-                !(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00") & site == "rist"),
-                !(ymd_hms(DT) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT) <= ymd_hms('2022-05-09 14:30:00') & site == "rist")) %>%
-  dplyr::filter(!(ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00') & site == "legacy"),
-                !(ymd_hms(DT) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT) < ymd_hms('2022-06-01 13:30:00') & site == "legacy"),
-                !(ymd_hms(DT) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT) <= ymd_hms('2022-07-12 10:00:00') & site == "legacy"),
-                !(ymd_hms(DT) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT) <= ymd_hms('2022-08-25 16:15:00') & site == "legacy"),
-                !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-18 07:00:00') & site == "legacy")) %>%
-  dplyr::filter(!(ymd_hms(DT) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00') & site == "timberline"))
+         site = tolower(site)) %>%
+  # Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
+  mutate(site = ifelse(site == "rist" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
 ```
 
+# Level 1 QA-QC
 
-Immediately remove values that are nonsensical, by parameter:
+### Temperature at Archery
 
-Here's a very basic start: 
+I think we will want to develop pipelines specific for each site and parameter for
+processing speed (targets?). Here I am starting a pipeline for Archery's temperature:
 
-Water temperature: 0 to 30 C
-Depth: 0 to 3 m (... might need to adjust per site)
-Conductivity: 40 - 10000 uS/cm
-DO: 0 - 25 ppm
-pH: 0 - 14 
-Turbidity: 0 - 2000 NTU
-
-
-## Temperature
-
-I think we will want to develop pipelines specific for each site and parameter for processing speed. Here I am starting a pipeline for Archery's temperature:
 ```{r}
-raw_temperature <- filter(all_data, parameter == "Temperature" & site == "archery") %>%
-  full_join(field_notes, by = c("DT", "site"))  %>%
+temperature_archery <- all_data %>%
+  data.table::setDT(.) %>%
+  filter(parameter == "Temperature" & site == "archery") %>%
+  # Filter instances in which a sonde was pulled out of field mid-season (basically a backup filter in case a sonde was pulled out of water but the log didn't get stopped):
+  # Rist
+  filter(!(ymd_hms(DT) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT) <= ymd_hms("2022-04-22 14:00:00") & site == "rist"),
+         !(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00") & site == "rist"),
+         !(ymd_hms(DT) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT) <= ymd_hms('2022-05-09 14:30:00') & site == "rist"),
+         # Legacy
+         !(ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00') & site == "legacy"),
+         !(ymd_hms(DT) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT) < ymd_hms('2022-06-01 13:30:00') & site == "legacy"),
+         !(ymd_hms(DT) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT) <= ymd_hms('2022-07-12 10:00:00') & site == "legacy"),
+         !(ymd_hms(DT) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT) <= ymd_hms('2022-08-25 16:15:00') & site == "legacy"),
+         !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-18 07:00:00') & site == "legacy"),
+         # Timberline
+         !(ymd_hms(DT) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00') & site == "timberline"),
+         # Archery
+         !(ymd_hms(DT) > ymd_hms('2022-10-04 15:00:00') & ymd_hms(DT) <= ymd_hms('2022-10-07 16:00:00') & site == "archery")) %>%
+  select(-name) %>%
   distinct(., .keep_all=TRUE) %>%
-  # Create new column of value data without the out-of-range vals
-  mutate(p1 = ifelse(value <= 0, NA,
-              ifelse(value >= 30 , NA, value))) %>%
-  # Flag instances where data was out of reasonable range
-  mutate(flag = ifelse(value <= 0, "Data out of bounds",
-              ifelse(value >= 30 , "Data out of bounds", NA))) %>%
-  pad(by ="DT_round", break_above = 100) 
+  group_by(DT_round) %>%
+  # I WOULD LIKE TO PRESERVE THE RAW VALS THAT WENT INTO MAKING THIS AVERAGE
+  # IN A NESTED DATAFRAME VIA NEST(). IT WON'T WORK >:(
+  summarize(p1 = as.numeric(mean(value, na.rm = T)),
+            diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
+            n_obs = n()) %>%
+  mutate(flag = ifelse(p1 >= 30 | p1 <= 0, "Out of bounds", NA)) %>%
+  ungroup() %>%
+  # once outliers have been removed, pad the dataset
+  pad(by = "DT_round") %>%
+  # ... so that we can get the proper leading/lagging values across our entire timeseries:
+  mutate(front1 = lead(p1, n = 1),
+         front2 = lead(p1, n = 2),
+         front3 = lead(p1, n = 3),
+         back1 = lag(p1, n = 1),
+         back2 = lag(p1, n = 2),
+         back3 = lag(p1, n = 3)) %>%
+  rowwise() %>%
+  mutate(rollavg = mean(c_across(front1:back3)),
+         rollsd = sd(c_across(front1:back3)),
+         slope_ahead = abs(front1 - p1)/15,
+         slope_behind = abs(p1 - back1)/15) %>%
+  # flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
+  mutate(flag = case_when((p1 <= rollavg - (3 * rollsd) | p1 >= rollavg + (3 * rollsd)) ~ gsub("NA ", "", paste0(flag, " ", "Outside SD range")),
+                          flag == "Out of bounds" ~ "Out of bounds")) %>%
+  # flag data that repeats across time:
+  mutate(flag = ifelse(p1 == front1 | p1 == back1, gsub("NA ", "", paste0(flag, " ", "Unchanging value")),flag)) %>%
+  # flag data where slope between points is out of whack. using the 95th percentile value for now but this is arbitrary
+  mutate(flag = ifelse(slope_ahead >= 0.04 | slope_behind >= 0.04, gsub("NA ", "", paste0(flag, " ", "Slope exceedance")), flag)) %>%
+  mutate(flag_val = ifelse(is.na(flag), NA, 30))
+
+
+# Link up calibration data:
+# full_join(na.locf(na.locf(filter(cal_table, site == "archery")), fromLast = TRUE), 
+#           by = c('site','DT_round' = "DT"))
+
+# Current vis:
+ggplotly(ggplot() +
+           geom_line(data = temperature_archery, aes(x=DT_round, y = p1))+
+           geom_point(data = filter(temperature_archery, !is.na(flag)), aes(x=DT_round, y = p1, color = flag)))
 ```

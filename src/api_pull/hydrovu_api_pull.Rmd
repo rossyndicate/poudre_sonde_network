@@ -5,6 +5,12 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+```{r}
+knitr::opts_chunk$set(echo = TRUE, evaluate = FALSE)
+```
+
+
+
 # Purpose
 
 This R-markdown accesses the HydroVu server via the API to download data within this scripted workflow. See the README.md file for directions to set up the credentials.yml file sourced in this script.
@@ -136,8 +142,8 @@ api_puller <- function(site,
   
 }
 
-sites %>% map_dfr(~api_puller(site = .,
-                              start = start,
-                              end = end))
+sites %>% walk(~api_puller(site = .,
+                           start = start,
+                           end = end))
 ```
 
