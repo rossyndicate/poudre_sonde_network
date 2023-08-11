@@ -1,0 +1,66 @@
+---
+title: "rist_for_jared"
+author: "Sam Struthers"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set up
+
+```{r cars}
+
+rist_cleaned <- feather::read_feather('data/pretty/all_data_15min.feather')%>%
+  filter(site %in% c("rist", "legacy") )
+
+
+
+rist_raw <- going_rawless(site_name = "rist", trolled = NA) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  # Dataset got swapped to Rist's sensor, so need to remove data that 
+  # is actually Rist. Sensor also capped from 5/6/2022 - 5/9/2022 (flow too low)
+  filter(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00")) %>%
+  filter(!(ymd_hms(DT) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT) <= ymd_hms('2022-05-09 14:30:00'))) %>%
+  padr::pad(by = 'DT') %>%
+  # Link up calibration data:
+  full_join(na.locf(na.locf(filter(cal_table, site == "rist")), fromLast = TRUE), 
+            by = c('site','DT'))
+
+```
+
+## SC plot
+
+```{r pressure, echo=FALSE}
+
+SC <- ggplot()+
+  geom_line(data = rist_cleaned,aes(x=DT , y= Specific_Conductivity_µS_cm, group = site, color = site))+
+#+
+  #geom_line(data = rist_raw, aes(x=DT , y= Specific_Conductivity_µS_cm), color = "green")+
+  theme_bw()
+
+plotly::ggplotly(SC)
+
+
+```
+
+## Export Data
+
+```{r}
+
+rist_for_jared <- rist_cleaned%>%
+  filter(site == "rist")%>%
+  mutate(date = as_date(DT), 
+         hour = lubridate::hour(DT), 
+         minute = lubridate::minute(DT))%>%
+  select(DT,date, hour, minute, site , Temperature_C, Specific_Conductivity_µS_cm)
+  
+
+arrow::write_csv_arrow(rist_for_jared,file = "data/sharing/rist_sc_temp.csv" )
+
+
+
+```
+

@@ -1,0 +1,243 @@
+---
+title: "Organizing raw data"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
+```
+
+Load necessary packages:
+
+```{r}
+source("src/package_loader.R")
+lapply(c("tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly"), package_loader)
+# {data.table} is also required, but it has many masked functions with tidyverse that I'll need to explore more in depth.
+```
+
+Load and munge field calibration files:
+
+```{r}
+cal_files <- list.files("data/calibration_reports", pattern=".html")
+
+cal_tabler <- function(cal_files){
+  
+  cal <- read_html(file.path("data/calibration_reports/", cal_files)) %>%
+    html_nodes("div") %>%
+    html_text() %>%
+    as_tibble()
+  
+  rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
+  
+  ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
+  
+  conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
+  
+  turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
+  
+  # Always the fifth sensor when depth is available:
+  try(depth <- cal %>% .[5,] %>% pull() %>% str_replace_all(., " ", "") %>% tolower())
+  
+  time_mst <- paste0(str_sub(cal_files, -13, -12),":", str_sub(cal_files, -11, -10))
+  
+  date <- paste0(str_sub(cal_files, -22, -19),"-", str_sub(cal_files, -18, -17),"-", str_sub(cal_files, -16, -15))
+  
+  cal_table <- tibble(site = sub("\\_.*", "", cal_files),
+                      
+                      DT = ymd_hm(paste(date, time_mst, tz = "MST")),
+                      
+                      # Depth
+                      depth_cal_date = "None",
+                      depth_offset = "None",
+                      depth_ref_depth = "None",
+                      depth_ref_offset = "None",
+                      depth_pre_psi = "None",
+                      depth_post_psi = "None",
+                      
+                      # Dissolved Oxygen
+                      rdo_slope = str_match(rdo, "slope\\s*(.*?)\\s*offset")[,2],
+                      rdo_offset = str_match(rdo, "offset\\s*(.*?)\\s*mg/l")[,2],
+                      rdo_100 = str_match(rdo, "premeasurement\\s*(.*?)\\s*%satpost")[,2],
+                      rdo_conc = str_match(rdo, "concentration\\s*(.*?)\\s*mg/lpremeasurement")[,2],
+                      rdo_temp = str_match(rdo, "temperature\\s*(.*?)\\s*°c")[,2],
+                      rdo_pressure = str_match(rdo, "pressure\\s*(.*?)\\s*mbar")[,2],
+                      
+                      # pH
+                      ph_slope_pre = str_match(ph_orp, "offset1slope\\s*(.*?)\\s*mv/ph")[,2],
+                      ph_offset_pre = str_match(ph_orp, "mv/phoffset\\s*(.*?)\\s*mvslopeandoffset2")[,2],
+                      ph_slope_post = str_match(ph_orp, "offset2slope\\s*(.*?)\\s*mv/ph")[,2],
+                      ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mv/phoffset\\s*(.*?)\\s*mvorporp"))[,2],
+                      # Sometimes, the post value can actually be in the high 6 pH... therefore the post measurement regex matching text is conditional
+                      ph_7_nice = str_sub(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2])),
+                      ph_7_other = str_sub(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2])),
+                      ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
+                      
+                      # ORP
+                      #Newly encountered thing: sometimes the calibration report calls the ORP standard Zobell's, sometimes it's just called "ORP Standard":
+                      orp_offset = ifelse(is.na(str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
+                                          str_match(ph_orp, "orpstandardoffset\\s*(.*?)\\s*mvtemperature")[,2],
+                                          str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
+                      
+                      # Conductivity
+                      tds_conversion_ppm = str_sub(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2], 6, nchar(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2])),
+                      cond_cell_constant = str_match(conductivity, "cellconstant\\s*(.*?)\\s*referencetemperature")[,2],
+                      cond_pre = str_match(conductivity,paste0(str_match(conductivity,
+                                                                         "premeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cmpost"))[,2],
+                      cond_post = str_match(conductivity,paste0(str_match(conductivity,
+                                                                          "postmeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cm"))[,2],
+                      
+                      # Turbidity
+                      ntu_slope = "None",
+                      ntu_offset = "None",
+                      ntu_10 = "None",
+                      ntu_100 = "None") %>%
+    
+    select(-c(ph_7_nice, ph_7_other))
+  
+  # Not all sondes have depth. So, we "try" to get the values.
+  try(cal_table <- cal_table %>%
+        mutate(
+          # Depth
+          depth_cal_date = str_match(depth, "lastcalibrated\\s*(.*?)\\s*calibrationdetails")[,2],
+          depth_offset = str_match(depth, "zerooffset\\s*(.*?)\\s*psireferencedepth")[,2],
+          depth_ref_depth = str_match(depth, "psireferencedepth\\s*(.*?)\\s*ftreferenceoffset")[,2],
+          depth_ref_offset = str_match(depth, "ftreferenceoffset\\s*(.*?)\\s*psipremeasurement")[,2],
+          depth_pre_psi = str_match(depth, "psipremeasurement\\s*(.*?)\\s*psipostmeasurement")[,2],
+          depth_post_psi = str_match(depth, "psipostmeasurement\\s*(.*?)\\s*psi")[,2]))
+  
+  
+  
+  # Not all sondes have turbidity. So, we "try" to get the values.
+  try(cal_table <- cal_table %>%
+        mutate(     
+          # Turbidity
+          ntu_slope = str_match(turbidity, "slope\\s*(.*?)\\s*offset")[,2],
+          ntu_offset = str_match(turbidity, "offset\\s*(.*?)\\s*ntu")[,2],
+          ntu_10 = str_match(turbidity, "calibrationpoint1premeasurement\\s*(.*?)\\s*ntupost")[,2],
+          ntu_100 = str_match(turbidity, "calibrationpoint2premeasurement\\s*(.*?)\\s*ntupost")[,2]))
+  
+  cal_table <- cal_table %>%
+    mutate(
+      #Factory Defaults
+      factory_defaults = paste0(ifelse(is.na(ntu_slope), "Turbidity ", ""),
+                                ifelse(is.na(rdo_slope), "RDO ", ""),
+                                ifelse(is.na(ph_slope_post), "pH ", ""),
+                                ifelse(is.na(orp_offset), "ORP ", ""),
+                                ifelse(is.na(cond_post), "Conductivity ", ""),
+                                ifelse(is.na(depth_cal_date), "Depth ", "")))
+  
+  cal_table
+  
+}
+
+cal_table <- map_dfr(cal_files, cal_tabler) %>%
+  distinct(.keep_all = TRUE) %>%
+  group_by(site) %>%
+  mutate(DT = round_date(DT, "15 minutes"))
+
+rm(cal_files, cal_tabler, package_loader)
+```
+
+Load field notes:
+
+```{r}
+field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
+  mutate(DT = ymd_hm(paste(date, start_time_mst, tz = "MST"))) %>%
+  arrange(DT) %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  mutate(site = tolower(site))
+```
+
+Merge the data sets from all API pulls:
+
+```{r}
+all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv") %>%
+  map(~data.table::fread(.) %>% select(-id)) %>%
+  bind_rows() %>%
+  # remove overlapping API-pull data
+  distinct(.keep_all = TRUE) %>%
+  # remove VuLink data
+  filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
+  # Convert DT to MST:
+  mutate(DT = as_datetime(timestamp, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"),
+         DT_round = round_date(DT, "15 minutes"),
+         site = tolower(site)) %>%
+  # Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
+  mutate(site = ifelse(site == "rist" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
+```
+
+# Level 1 QA-QC
+
+### Temperature at Archery
+
+I think we will want to develop pipelines specific for each site and parameter for
+processing speed (targets?). Here I am starting a pipeline for Archery's temperature:
+
+```{r}
+temperature_archery <- all_data %>%
+  data.table::setDT(.) %>%
+  filter(parameter == "Temperature" & site == "archery") %>%
+  # Filter instances in which a sonde was pulled out of field mid-season (basically a backup filter in case a sonde was pulled out of water but the log didn't get stopped):
+  # Rist
+  filter(!(ymd_hms(DT) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT) <= ymd_hms("2022-04-22 14:00:00") & site == "rist"),
+         !(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00") & site == "rist"),
+         !(ymd_hms(DT) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT) <= ymd_hms('2022-05-09 14:30:00') & site == "rist"),
+         # Legacy
+         !(ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00') & site == "legacy"),
+         !(ymd_hms(DT) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT) < ymd_hms('2022-06-01 13:30:00') & site == "legacy"),
+         !(ymd_hms(DT) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT) <= ymd_hms('2022-07-12 10:00:00') & site == "legacy"),
+         !(ymd_hms(DT) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT) <= ymd_hms('2022-08-25 16:15:00') & site == "legacy"),
+         !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-18 07:00:00') & site == "legacy"),
+         # Timberline
+         !(ymd_hms(DT) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00') & site == "timberline"),
+         # Archery
+         !(ymd_hms(DT) > ymd_hms('2022-10-04 15:00:00') & ymd_hms(DT) <= ymd_hms('2022-10-07 16:00:00') & site == "archery")) %>%
+  select(-name) %>%
+  distinct(., .keep_all=TRUE) %>%
+  group_by(DT_round) %>%
+  # I WOULD LIKE TO PRESERVE THE RAW VALS THAT WENT INTO MAKING THIS AVERAGE
+  # IN A NESTED DATAFRAME VIA NEST(). IT WON'T WORK >:(
+  summarize(p1 = as.numeric(mean(value, na.rm = T)),
+            diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
+            n_obs = n()) %>%
+  mutate(flag = ifelse(p1 >= 30 | p1 <= 0, "Out of bounds", NA)) %>%
+  ungroup() %>%
+  # once outliers have been removed, pad the dataset
+  pad(by = "DT_round") %>%
+  # ... so that we can get the proper leading/lagging values across our entire timeseries:
+  mutate(front1 = lead(p1, n = 1),
+         front2 = lead(p1, n = 2),
+         front3 = lead(p1, n = 3),
+         back1 = lag(p1, n = 1),
+         back2 = lag(p1, n = 2),
+         back3 = lag(p1, n = 3)) %>%
+  rowwise() %>%
+  mutate(rollavg = mean(c_across(front1:back3)),
+         rollsd = sd(c_across(front1:back3)),
+         slope_ahead = abs(front1 - p1)/15,
+         slope_behind = abs(p1 - back1)/15) %>%
+  # flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
+  mutate(flag = case_when((p1 <= rollavg - (3 * rollsd) | p1 >= rollavg + (3 * rollsd)) ~ gsub("NA ", "", paste0(flag, " ", "Outside SD range")),
+                          flag == "Out of bounds" ~ "Out of bounds")) %>%
+  # flag data that repeats across time:
+  mutate(flag = ifelse(p1 == front1 | p1 == back1, gsub("NA ", "", paste0(flag, " ", "Unchanging value")),flag)) %>%
+  # flag data where slope between points is out of whack. using the 95th percentile value for now but this is arbitrary
+  mutate(flag = ifelse(slope_ahead >= 0.04 | slope_behind >= 0.04, gsub("NA ", "", paste0(flag, " ", "Slope exceedance")), flag)) %>%
+  mutate(flag_val = ifelse(is.na(flag), NA, 30))
+
+
+# Link up calibration data:
+# full_join(na.locf(na.locf(filter(cal_table, site == "archery")), fromLast = TRUE), 
+#           by = c('site','DT_round' = "DT"))
+
+# Current vis:
+ggplotly(ggplot() +
+           geom_line(data = temperature_archery, aes(x=DT_round, y = p1))+
+           geom_point(data = filter(temperature_archery, !is.na(flag)), aes(x=DT_round, y = p1, color = flag)))
+```

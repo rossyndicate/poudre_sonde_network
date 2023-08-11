@@ -1,0 +1,821 @@
+---
+title: "Tidying Sensor Data"
+author: "Katie Willi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+library(rvest)
+library(dygraphs)
+library(labelled)
+library(zoo)
+library(anomalize)
+```
+
+Functions that you need!
+
+```{r}
+try(plyr::ldply(list.files(path="scratch/functions/",
+                           pattern="*.R",
+                           full.names=TRUE),
+                source))
+```
+
+Listed accuracy and range for sensors:
+
+Temperature: ±0.1 Celsius, -5 to 50 C
+
+Barometric Pressure: ±1.0 mbars, 300 to 1,100 mbars
+
+pH: ±0.1 pH, 0 to 14 pH
+
+ORP: ±5 mV
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+TDS/Salinity: range of 0 to 350 ppt/0 to 350 PSU
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+Turbidity: ±2% of reading or ±0.5 NTU (whichever is greater)
+
+TSS: range of 1 to 1,500 mg/L
+
+Pressure: ±0.1% FS from -5 to 50°C
+
+Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
+
+#### Pulling in previous years' data
+
+Currently I'm not running the data together because the old data needs to be O R G A N I Z E D !!!!!!
+
+```{r}
+pre_2022 <- read_csv('data/pretty/all_sensor_data_pre2022.csv') %>%
+  mutate(site = tolower(sensor)) %>%
+  rename(pH1 = pH,
+         comment_pre = comments) %>%
+  select(-c(sensor, year, date, data))
+```
+
+#### Pulling up field notes and calibration reports
+
+This is the first year that there are consistent field notes. Any sort of field notes starts late 2021.
+
+```{r}
+field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
+  mutate(DT = (paste0(date, " ", start_time_mst))) %>%
+  mutate(DT = ymd_hm(DT)) %>%
+  arrange(DT) %>%
+  mutate(DT = round_date(DT, "15 minutes"))
+
+cal_table <- cal_tabler()
+```
+
+#### Downloading sonde data
+
+# Rist
+
+Sometime before 2022-05-06, flows dropped below the sensors, so we "capped" the sonde until flows were consistently high enough. This site was damaged during peak flows and we were unable to re-install it. Next year, we are going to be re-installing this sensor a few hundred yards downstream in CSU's Tamasag Retreat Center.
+
+```{r}
+# Full Dataset:
+rawless_rist <- going_rawless(site_name = "rist", trolled = NA) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  # Remove times when sensor was very likely not submerged:
+  filter(Depth_ft > 0.01 & Water_Temp_C < 20) %>%
+  # Sensor not submerged, so removed from field on 2022-09-13
+  filter(!(ymd_hms(DT) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT) <= ymd_hms("2022-04-22 14:00:00"))) %>%
+  # Sensor pulled 2022-05-30 after sensor housing destroyed
+  filter(ymd_hms(DT) <= ymd_hms("2022-05-30 09:00:00")) %>%
+  # Sensor also capped from 5/6/2022 - 5/9/2022 (flow too low)
+  filter(!(ymd_hms(DT) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT) <= ymd_hms('2022-05-09 14:30:00'))) %>%
+  padr::pad(by = 'DT') %>%
+  # Link up calibration data:
+  full_join(na.locf(na.locf(filter(cal_table, site == "rist")), fromLast = TRUE), 
+            by = c('site','DT')) %>%
+  distinct(.keep_all = TRUE)
+```
+
+## Temperature
+
+Specs for temperature: ±0.1 Celsius, -5 to 50 C
+
+```{r}
+rist_temp <- first_pass(what = rawless_rist, parama = "Water_Temp_C", min = -5, max = 30) %>%
+  mutate(site="rist") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/rist_temp.feather')
+
+# What's it look like?
+# dygraph(xts::xts(select(rist_temp, c(DT, p1, sd3)), order.by = ymd_hms(rist_temp$DT)),
+#         main="Water Temperature Timeseries (UTC)") %>% 
+#   dyRangeSelector()
+```
+
+## Depth
+
+This site's old location wasn't reliable at keeping the sensor submerged. 
+
+```{r}
+rist_depth <- dplyr::select(rawless_rist, c(DT, Depth_ft)) %>%
+  first_pass(., parama ="Depth_ft", max=7000, min=0) %>%
+  mutate(site = 'rist') %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/rist_depth.feather')
+```
+
+## Conductivity
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+```{r}
+rist_conductivity <-  first_pass(what = rawless_rist, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
+  mutate(site = "rist") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/rist_conductivity.feather')
+```
+
+## DO
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+```{r}
+rist_do <- first_pass(what = rawless_rist, parama = "DO_ppm", min = 0, max = 25) %>%
+  mutate(site = "rist") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/rist_do.feather')
+```
+
+## pH
+
+```{r}
+rist_ph <- first_pass(what = rawless_rist, parama = "pH1", min = 0, max = 14) %>%
+  mutate(site = "rist") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/rist_ph.feather')
+```
+
+## Turbidity
+
+```{r}
+rist_turbidity <- first_pass(what = rawless_rist, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "rist") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/rist_turbidity.feather')
+```
+
+# Clear Rist's data
+```{r}
+rm(rawless_rist,rist_conductivity,rist_depth,rist_do,rist_ph,rist_temp,rist_turbidity)
+```
+
+
+# Legacy
+
+So far in 2022, all data has been sent to HydroVu outside of genomic sampling on 2022-09-19. This location encountered several issues this field season: sensor pulled 2022-05-24 due to fears that its infrastructure would wash away. Sensor was re-deployed 2022-06-01, but was then pulled out due to sensor issues 2022-07-08 (turbidity problems, conductivity problems). Sometime between then and 2022-07-12, turbidity sensor totally broke. 2022-07-16, the turbidity sensor was replaced with the one that was previously being used at Archery. Between 2022-07-18 and 2022-07-21, the back-up sensor stopped working. After this we we swapped the sonde with the sensor from Rist (2022-08-03). On 2022-08-04, the sensor was pulled because flows were too low (sensor was likely not suspended in the water 8/3 - 8/4). Redeployed on 2022-08-25, though issues with turbidity and ORP occurred from then until we pulled it _____. 
+
+```{r}
+# No VuLink connection during final genomic survey (water was too low for full deployment)
+raw_troll_legacy <- map_dfr(grep(list.files("data/sensor_data/2022/legacy/manual/", full.names = T), pattern = "trolled", invert = F, value = T), troll_reader)
+names(raw_troll_legacy) <- make.names(names(raw_troll_legacy), unique = T)
+
+rawless_troll_legacy <- raw_troll_legacy %>% 
+  select(DT_instrument = contains('Date.Time'),
+         Water_Temp_C = as.numeric(contains('Temperature...C')),
+         pH = contains('pH'),
+         ORP_mV = contains('ORP'),
+         Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
+         DO_ppm = contains('RDO.concentration'),
+         Turbidity_NTU = contains('Turbidity'),
+         Depth_ft = contains('Depth..ft'))  %>%
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT_instrument = DT_instrument - lubridate::hours(1)) # reported in MDT >:(
+
+# Full Dataset:
+rawless_legacy <- going_rawless(site_name = "legacy", trolled = rawless_troll_legacy) %>%
+  # Remove data ranges where sensor was pulled out of field (THAT I KNOW OF, IE 2022 ONLY)
+  dplyr::filter(!(ymd_hms(DT) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT) < ymd_hms('2022-04-06 17:30:00')),
+                !(ymd_hms(DT) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT) < ymd_hms('2022-06-01 13:30:00')),
+                !(ymd_hms(DT) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT) <= ymd_hms('2022-07-12 10:00:00')),
+                !(ymd_hms(DT) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT) <= ymd_hms('2022-08-25 16:15:00')),
+                !(ymd_hms(DT) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT) <= ymd_hms('2022-09-18 07:00:00'))) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  padr::pad(by = 'DT') %>%
+  # Link up calibration data:
+  full_join(na.locf(na.locf(filter(cal_table, site == "legacy")), fromLast = TRUE), 
+            by = c('site','DT'))
+rm(raw_troll_legacy,rawless_troll_legacy)
+```
+
+## Temperature
+
+Specs for temperature: ±0.1 Celsius, -5 to 50 C
+
+```{r}
+legacy_temp <- first_pass(what = rawless_legacy, parama = "Water_Temp_C", min = -5, max = 50) %>%
+  mutate(site="legacy") %>%
+  feather::write_feather('data/sensor_data/p1_backup/legacy_temp.feather')
+```
+
+## Depth
+
+We had a couple issues with "level" calibration. Here, I am "back-calibrating" for them to match previous and/or post level when they were correct. Assumes (though subjectively verified in field) that river depth did not change during the field visit. I want to spruce this code up - it is definitely the not-so-savvy fix for now. When time permits I plan to explore using level calibrations from the cal report for more refinement!
+
+```{r}
+legacy_depth <- dplyr::select(rawless_legacy, c(DT, Depth_ft)) %>%
+  #filter(year(DT) > 2021) %>%
+  mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-04-06 06:00:00') & DT < ymd_hms('2022-04-12 09:30:00'), 
+                              Depth_ft + 
+                                abs(
+                                  filter(dplyr::select(rawless_legacy, c(DT, Depth_ft)), DT == ymd_hms('2022-04-12 09:15:00'))$Depth_ft - 
+                                    filter(dplyr::select(rawless_legacy, c(DT, Depth_ft)), DT == ymd_hms('2022-04-12 09:30:00'))$Depth_ft
+                                ), 
+                              Depth_ft))
+legacy_depth <- legacy_depth %>%
+  mutate(Depth_ft_p2 = ifelse(DT >= ymd_hms('2022-07-22 11:30:00') & DT <= ymd_hms('2022-07-25 14:15:00'), 
+                              Depth_ft_p1 + 
+                                abs(
+                                  filter(legacy_depth, DT == ymd_hms('2022-07-22 11:15:00'))$Depth_ft_p1 -
+                                    filter(legacy_depth, DT == ymd_hms('2022-07-22 11:30:00'))$Depth_ft_p1
+                                ), 
+                              Depth_ft_p1)) %>%
+  first_pass(., parama ="Depth_ft_p2", max = 7, min = 0) %>%
+  mutate(site = 'legacy') %>%
+  feather::write_feather('data/sensor_data/p1_backup/legacy_depth.feather')
+```
+
+## Conductivity
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+```{r}
+legacy_conductivity <-  first_pass(what = rawless_legacy, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
+  mutate(site = "legacy") %>%
+  feather::write_feather('data/sensor_data/p1_backup/legacy_conductivity.feather')
+```
+
+## DO
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+```{r}
+legacy_do <- first_pass(what = rawless_legacy, parama = "DO_ppm", min = 0, max = 25) %>%
+  mutate(site = "legacy") %>%
+  feather::write_feather('data/sensor_data/p1_backup/legacy_do.feather')
+```
+
+## pH
+
+```{r}
+legacy_ph <- first_pass(what = rawless_legacy, parama = "pH1", min = 0, max = 14) %>%
+  mutate(site = "legacy") %>%
+  feather::write_feather('data/sensor_data/p1_backup/legacy_ph.feather')
+```
+
+## Turbidity
+
+```{r}
+legacy_turbidity <- first_pass(what = rawless_legacy, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "legacy") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/legacy_turbidity.feather')
+```
+
+# Clear Legacy's data
+```{r}
+rm(rawless_legacy,legacy_conductivity,legacy_depth,legacy_do,legacy_ph,legacy_temp,legacy_turbidity)
+```
+
+
+
+# Lincoln
+
+Lincoln is the newest site and is run by In-Situ. We have access to this site on HydroVu but the site's VuLink wasn't sending data. In-Situ sent us an excel spreadsheet of the data mid-season. I'm still waiting on the full data set.
+
+```{r}
+# Full Dataset:
+raw <- readxl::read_excel('data/sensor_data/2022/lincoln/lincoln.xlsx')
+
+names(raw) <- make.names(names(raw), unique = T)
+
+rawless_lincoln <- raw %>%
+  select(DT_instrument = contains('Date.Time'),
+         Water_Temp_C = as.numeric(contains('Temperature')),
+         pH = contains('pH'),
+         ORP_mV = contains('ORP'),
+         Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
+         DO_ppm = contains('RDO.Conc'),
+         Turbidity_NTU = contains('Turbidity'),
+         Depth_ft = contains('Depth')) %>%
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT_instrument = DT_instrument - lubridate::hours(1)) %>%
+  mutate(site = 'lincoln') %>%
+  arrange(ymd_hms(DT_instrument)) %>%
+  mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  # Link up field notes:
+  full_join(filter(field_notes, site == 'lincoln'), by = c('DT','site')) %>%
+  mutate(date = as_date((DT)),
+         hour = hour(DT),
+         year = year(DT),
+         month = month(DT)) %>%
+  arrange(ymd_hms(DT)) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  padr::pad(by = 'DT') 
+```
+
+## Temperature
+
+Specs for temperature: ±0.1 Celsius, -5 to 50 C
+
+```{r}
+lincoln_temp <- first_pass(what = rawless_lincoln, parama = "Water_Temp_C", min = 0, max = 50) %>%
+  mutate(site="lincoln") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/lincoln_temp.feather')
+```
+
+## Depth
+
+```{r}
+lincoln_depth <- dplyr::select(rawless_lincoln, c(DT, Depth_ft)) %>%
+  first_pass(., parama ="Depth_ft", max=7, min=0) %>%
+  mutate(site = 'lincoln') %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/lincoln_depth.feather')
+```
+
+## Conductivity
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+```{r}
+lincoln_conductivity <-  first_pass(what = rawless_lincoln, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
+  mutate(site = "lincoln") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/lincoln_conductivity.feather')
+```
+
+## DO
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+```{r}
+lincoln_do <- first_pass(what = rawless_lincoln, parama = "DO_ppm", min = 0, max = 25) %>%
+  mutate(site = "lincoln") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/lincoln_do.feather')
+```
+
+## pH
+
+```{r}
+lincoln_ph <- first_pass(what = rawless_lincoln, parama = "pH1", min = 0, max = 14) %>%
+  mutate(site = "lincoln") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/lincoln_ph.feather')
+```
+
+## Turbidity
+
+```{r}
+lincoln_turbidity <- first_pass(what = rawless_lincoln, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "lincoln") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/lincoln_turbidity.feather')
+```
+
+
+# Clear Lincoln's data
+```{r}
+rm(rawless_lincoln,lincoln_conductivity,lincoln_depth,lincoln_do,lincoln_ph,lincoln_temp,lincoln_turbidity)
+```
+
+
+# Timberline
+
+```{r}
+rawless_timberline <- going_rawless(site_name="timberline",trolled=NA) %>%
+  # remove data ranges where sensor was pulled out of field.
+  dplyr::filter(!(ymd_hms(DT) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT) <= ymd_hms('2022-04-06 08:15:00'))) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  padr::pad(by = 'DT') %>%
+  # Link up calibration data:
+  full_join(na.locf(na.locf(filter(cal_table, site == "timberline")), fromLast = TRUE),
+            by = c('site','DT'))
+```
+
+## Depth
+
+We had a couple issues with "level" calibration. Here, I am "back-calibrating" for them to match previous and/or post level when they were correct. Assumes (though subjectively verified in field) that river depth did not change during field visit. Moreover, we had to change the depth of the sonde several times due to root growth in the bank, as well as massive sediment dumps at this station. 
+
+```{r}
+timberline_depth <- dplyr::select(rawless_timberline, c(DT, Depth_ft, site)) %>%
+  # arrange(ymd_hms(DT)) %>%
+  # group_by(site,DT) %>%
+  # summarize(Depth_ft = mean((Depth_ft))) %>%
+  # ungroup() %>%
+  # distinct(DT,.keep_all=T) %>%
+  mutate(Depth_ft_p1 = ifelse(DT >= ymd_hms('2022-04-06 08:00:00') & DT < ymd_hms('2022-04-07 17:15:00'), 
+                              Depth_ft + abs(
+                                filter(dplyr::select(rawless_timberline, c(DT, Depth_ft)), DT == ymd_hms('2022-04-07 16:15:00'))$Depth_ft - 
+                                  filter(dplyr::select(rawless_timberline, c(DT, Depth_ft)), DT == ymd_hms('2022-04-07 17:15:00'))$Depth_ft
+                              ), 
+                              Depth_ft))
+
+timberline_depth <- timberline_depth %>%
+  mutate(Depth_ft_p1 = ifelse(DT > '2022-09-14 13:15:00', 
+                              Depth_ft_p1 +
+                                abs(
+                                  filter(dplyr::select(timberline_depth, c(DT, Depth_ft_p1)), DT == ymd_hms('2022-09-14 13:00:00'))$Depth_ft_p1 -
+                                    filter(dplyr::select(timberline_depth, c(DT, Depth_ft_p1)), DT == ymd_hms('2022-09-14 13:30:00'))$Depth_ft_p1
+                                ), 
+                              Depth_ft_p1)) %>%
+  first_pass(., parama ="Depth_ft_p1", max=7, min=0) %>%
+  mutate(site = 'timberline') %>%
+  feather::write_feather('data/sensor_data/p1_backup/timberline_depth.feather')
+```
+
+## Temperature
+
+Specs for temperature: ±0.1 Celsius, -5 to 50 C
+
+```{r}
+timberline_temp <- first_pass(what = rawless_timberline, parama = "Water_Temp_C", min = 0, max = 50) %>%
+  mutate(site="timberline") %>%
+  feather::write_feather('data/sensor_data/p1_backup/timberline_temp.feather')
+```
+
+## Conductivity
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+```{r}
+timberline_conductivity <-  first_pass(what = rawless_timberline, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
+  mutate(site = "timberline") %>%
+  feather::write_feather('data/sensor_data/p1_backup/timberline_conductivity.feather')
+```
+
+## DO
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+```{r}
+timberline_do <- first_pass(what = rawless_timberline, parama = "DO_ppm", min = 0, max = 25) %>%
+  mutate(site = "timberline") %>%
+  feather::write_feather('data/sensor_data/p1_backup/timberline_do.feather')
+```
+
+## pH
+
+```{r}
+timberline_ph <- first_pass(what = rawless_timberline, parama = "pH1", min = 0, max = 14) %>%
+  mutate(site = "timberline") %>%
+  feather::write_feather('data/sensor_data/p1_backup/timberline_ph.feather')
+```
+
+## Turbidity
+
+```{r}
+timberline_turbidity <- first_pass(what = rawless_timberline, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "timberline") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/timberline_turbidity.feather')
+```
+
+# Clear Timberline's data
+```{r}
+rm(rawless_timberline, timberline_conductivity, timberline_depth, timberline_do, timberline_ph, timberline_temp, timberline_turbidity)
+```
+
+# Prospect
+
+Was not deployed in 2021 due to damage to the PVC.
+
+```{r}
+# Full Dataset:
+rawless_prospect <- going_rawless(site_name = "prospect", trolled = NA) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  padr::pad(by = 'DT') %>%
+  filter(!is.na(DT)) %>%
+  # Link up calibration data:
+  full_join(na.locf(na.locf(filter(cal_table, site == "prospect")), fromLast = TRUE), 
+            by = c('site','DT'))
+```
+
+## Temperature
+
+Specs for temperature: ±0.1 Celsius, -5 to 50 C
+
+```{r}
+prospect_temp <- first_pass(what = rawless_prospect, parama = "Water_Temp_C", min = 0, max = 50) %>%
+  mutate(site="prospect")  %>%
+  feather::write_feather('data/sensor_data/p1_backup/prospect_temp.feather')
+```
+
+## Depth
+
+```{r}
+prospect_depth <- dplyr::select(rawless_prospect, c(DT, Depth_ft)) %>%
+  first_pass(., parama ="Depth_ft", max=7, min=0) %>%
+  mutate(site = 'prospect') %>%
+  feather::write_feather('data/sensor_data/p1_backup/prospect_depth.feather')
+```
+
+## Conductivity
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+```{r}
+prospect_conductivity <-  first_pass(what = rawless_prospect, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
+  mutate(site = "prospect") %>%
+  feather::write_feather('data/sensor_data/p1_backup/prospect_conductivity.feather')
+```
+
+## DO
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+```{r}
+prospect_do <- first_pass(what = rawless_prospect, parama = "DO_ppm", min = 0, max = 25) %>%
+  mutate(site = "prospect") %>%
+  feather::write_feather('data/sensor_data/p1_backup/prospect_do.feather')
+```
+
+## pH
+
+```{r}
+prospect_ph <- first_pass(what = rawless_prospect, parama = "pH1", min = 0, max = 14) %>%
+  mutate(site = "prospect") %>%
+  feather::write_feather('data/sensor_data/p1_backup/prospect_ph.feather')
+```
+
+## Turbidity
+
+```{r}
+prospect_turbidity <- first_pass(what = rawless_prospect, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "prospect") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/prospect_turbidity.feather')
+```
+
+# Clear Prospect's data
+```{r}
+rm(rawless_prospect, prospect_conductivity, prospect_depth, prospect_do, prospect_ph, prospect_temp, prospect_turbidity)
+```
+
+
+# ELC
+
+Deployed for a brief period of time this year (site became unsuitable). We moved it a few hundred yards downstream to the Boxelder WWTP. 
+
+```{r}
+# No VuLink connection during final genomic survey (water was too low for full deployment)
+raw_troll_elc <- map_dfr(grep(list.files("data/sensor_data/2022/elc/manual/", full.names = T), pattern = "trolled", invert = F, value = T), troll_reader)
+names(raw_troll_elc) <- make.names(names(raw_troll_elc), unique = T)
+
+rawless_troll_elc <- raw_troll_elc %>% 
+  select(DT_instrument = contains('Date.Time'),
+         Water_Temp_C = as.numeric(contains('Temperature...C')),
+         pH = contains('pH'),
+         ORP_mV = contains('ORP'),
+         Specific_Conductivity_µS_cm = contains('Specific.Conductivity..µS.cm.'),
+         DO_ppm = contains('RDO.concentration'),
+         Turbidity_NTU = contains('Turbidity'),
+         Depth_ft = contains('Depth..ft')) %>%
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT_instrument = ymd_hms(DT_instrument)) %>%
+  mutate(DT = DT_instrument - lubridate::hours(1)) %>% # reported in MDT >:(
+  mutate(DT = as.character(round_date(ymd_hms(DT_instrument), "15 minutes"))) %>%
+  mutate(DT = ymd_hms(DT))
+
+
+# Full Dataset:
+rawless_elc <- going_rawless(site_name = "elc", trolled = NA) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  # Dataset got swapped to Rist's sensor, so need to remove data that 
+  # is actually Rist
+  filter(!(year(DT)>=2022 & DT < ymd_hms("2022-05-30 09:00:00"))) %>%
+  bind_rows(rawless_troll_elc) %>%
+  padr::pad(by = 'DT') %>%
+  # Link up calibration data:
+  full_join(na.locf(na.locf(filter(cal_table, site == "elc")), fromLast = TRUE), 
+            by = c('site','DT'))
+rm(rawless_troll_elc,raw_troll_elc)
+```
+
+## Temperature
+
+Specs for temperature: ±0.1 Celsius, -5 to 50 C
+
+```{r}
+elc_temp <- first_pass(what = rawless_elc, parama = "Water_Temp_C", min = 0, max = 50) %>%
+  mutate(site="elc") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/elc_temp.feather')
+```
+
+## Depth
+
+```{r}
+elc_depth <- dplyr::select(rawless_elc, c(DT, Depth_ft)) %>%
+  first_pass(., parama ="Depth_ft", max=7, min=0) %>%
+  mutate(site = 'elc') %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/elc_depth.feather')
+```
+
+## Conductivity
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+```{r}
+elc_conductivity <-  first_pass(what = rawless_elc, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
+  mutate(site = "elc") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/elc_conductivity.feather')
+```
+
+## DO
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+```{r}
+elc_do <- first_pass(what = rawless_elc, parama = "DO_ppm", min = 0, max = 25) %>%
+  mutate(site = "elc") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/elc_do.feather')
+```
+
+## pH
+
+```{r}
+elc_ph <- first_pass(what = rawless_elc, parama = "pH1", min = 0, max = 14) %>%
+  mutate(site = "elc") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/elc_ph.feather')
+```
+
+## Turbidity
+
+```{r}
+elc_turbidity <- first_pass(what = rawless_elc, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "elc") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/elc_turbidity.feather')
+```
+
+# Clear ELC's data
+```{r}
+rm(rawless_elc, elc_conductivity, elc_depth, elc_do, elc_ph, elc_temp, elc_turbidity)
+```
+
+
+# Archery
+
+Sonde encountered issues (temperature, chl-a, conductivity) early in the season so we swapped the sensor out for our back-up (intended for Fossil Creek). Then, it got buried at some point between 7/1 and 7/6 and got unclogged 7/14. Otherwise no issues envcountered. 10/4-10/7 sensor capped (new tech had issues connecting and didn't know what to do).  
+
+
+```{r}
+# Full Dataset:
+rawless_archery <- going_rawless(site_name = "archery", trolled = NA) %>%
+  mutate(DT = ymd_hms(DT)) %>%
+  padr::pad(by = 'DT') %>%
+  mutate(Chl_a= ifelse(is.na(Chla), Chla_RFU, NA),
+         # 
+         Chl_a = ifelse(is.na(Chl_a), Chla_µg_L/10, NA)) %>%
+  # Link up calibration data:
+  full_join(na.locf(na.locf(filter(cal_table, site == "archery")), fromLast = TRUE), 
+            by = c('site','DT'))
+```
+
+## Temperature
+
+Specs for temperature: ±0.1 Celsius, -5 to 50 C
+
+```{r}
+archery_temp <- first_pass(what = rawless_archery, parama = "Water_Temp_C", min = 0, max = 50) %>%
+  mutate(site="archery") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_temp.feather')
+```
+
+## Depth
+
+```{r}
+archery_depth <- dplyr::select(rawless_archery, c(DT, Depth_ft)) %>%
+  first_pass(., parama ="Depth_ft", max=7, min=0) %>%
+  mutate(site = 'archery') %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_depth.feather')
+```
+
+## Conductivity
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+```{r}
+archery_conductivity <-  first_pass(what = rawless_archery, parama = "Specific_Conductivity_µS_cm", min = 40, max = 10000) %>%
+  mutate(site = "archery") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_conductivity.feather')
+```
+
+## DO
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+```{r}
+archery_do <- first_pass(what = rawless_archery, parama = "DO_ppm", min = 0, max = 25) %>%
+  mutate(site = "archery") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_do.feather')
+```
+
+## pH
+
+```{r}
+archery_ph <- first_pass(what = rawless_archery, parama = "pH1", min = 0, max = 14) %>%
+  mutate(site = "archery") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_ph.feather')
+```
+
+## Turbidity
+
+```{r}
+archery_turbidity <- first_pass(what = rawless_archery, parama = "Turbidity_NTU", min = 0, max = 2000) %>%
+  mutate(site = "archery") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_turbidity.feather')
+```
+
+## Chl-a
+
+```{r}
+archery_chla <- first_pass(what = rawless_archery, parama = "Chla", min = 0, max = 2000) %>%
+  mutate(site = "archery") %>%
+  filter(!is.na(DT)) %>%
+  feather::write_feather('data/sensor_data/p1_backup/archery_chla.feather')
+```
+
+## Binding all datasets together
+```{r}
+depth <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*depth.feather', 
+                                full.names = TRUE), feather::read_feather) %>%
+  select(DT, Depth_ft = p1, site)
+
+temperature <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*temp.feather',
+                                      full.names = TRUE), feather::read_feather) %>%
+  select(DT, Temperature_C = p1, site)
+
+conductivity <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*conductivity.feather', 
+                                       full.names = TRUE), feather::read_feather) %>%
+  select(DT, Specific_Conductivity_µS_cm = p1, site)
+
+do <- plyr::ldply(list.files(path = 'data/sensor_data/p1_backup', pattern = '*do.feather', 
+                             full.names = TRUE), feather::read_feather) %>%
+  select(DT, DO_ppm = p1, site)
+
+ph <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*ph.feather',
+                             full.names = TRUE), feather::read_feather) %>%
+  select(DT, pH = p1, site)
+
+chla <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*chla.feather',
+                               full.names = TRUE), feather::read_feather) %>%
+  select(DT, Chla = p1, site)
+
+turbidity <- plyr::ldply(list.files(path='data/sensor_data/p1_backup', pattern = '*turbidity.feather',
+                                    full.names = TRUE), feather::read_feather) %>%
+  select(DT, Turbidity_NTU = p1, site)
+
+all_data <- list(depth, temperature, conductivity, do, ph, turbidity, chla) %>%
+  reduce(full_join, by = c('site','DT')) %>%
+  mutate(tracer = case_when(site == "rist" ~ "1 Rist",
+                            site == "legacy" ~ "2 Legacy",
+                            site == "lincoln" ~ "3 Lincoln",
+                            site == "timberline" ~ "4 Timberline",
+                            site == "prospect" ~ "5 Prospect",
+                            site == "elc" ~ "6 ELC",
+                            site == "archery" ~ "7 Archery")) %>%
+  feather::write_feather('data/pretty/all_data_15min.feather')
+
+daily <- all_data %>%
+  mutate(daily = as_date(ymd_hms(DT))) %>%
+  group_by(site, tracer, daily) %>%
+  summarize_all(., mean, na.rm = T) %>%
+  feather::write_feather('data/pretty/all_data_daily.feather')
+
+hourly <- all_data %>%
+  mutate(hourly = ymd_hms(as.character(round_date(ymd_hms(DT), "1 hour")))) %>%
+  group_by(site, tracer, hourly) %>%
+  summarize_all(., mean, na.rm = T) %>%
+  feather::write_feather('data/pretty/all_data_hourly.feather')
+```
