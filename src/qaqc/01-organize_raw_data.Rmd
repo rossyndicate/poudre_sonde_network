@@ -150,28 +150,34 @@ Load field notes and define the start time as the 15 minute preceding the field 
 ```{r}
 field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
   mutate(start_DT = ymd_hm(paste(date, start_time_mst, tz = "MST")),
-         start_DT = floor_date(start_DT, "15 minutes"),
+         DT_round = floor_date(start_DT, "15 minutes"),
          site = tolower(site),
-         season = year(start_DT)) %>%
-  arrange(start_DT)
+         season = year(DT_round)) %>%
+  arrange(DT_round) %>%
+  # binary version of deployed/pulled options. may need to play around with this som
+  # more
+  mutate(where = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+                           !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
+                           is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ 0))
 ```
 
 Munge field notes
 
 ```{r}
-field_notes_clean <- field_notes %>% 
-  mutate(sonde_impact = case_when(grepl('sonde', visit_comments, ignore.case = T) ~ 'y',
-                                  grepl('calib', visit_comments, ignore.case = T) ~ 'y',
-                                  sensor_pulled == 'x' ~ 'y',
-                                  sensor_deployed == 'x' ~ 'y',
-                                  grepl('yes', sensors_cleaned, ignore.case = T) ~ 'y'
-                                  ),
-          end_DT = case_when(sensor_pulled == 'x' ~ ymd_hm(paste0(season, '-12-31 23:59'), tz = 'MST'),
-                               sensor_deployed == 'x' ~ start_DT,
-                               TRUE ~ start_DT + minutes(15)),
-         start_DT = case_when(sensor_deployed == 'x' ~ ymd_hm(paste0(season, '-01-01 00:00'), tz = 'MST'),
-                                    TRUE ~ start_DT)) %>% 
-  filter(sonde_impact == 'y', !is.na(start_DT))
+# field_notes_clean <- field_notes %>% 
+#   mutate(sonde_impact = case_when(grepl('sonde', visit_comments, ignore.case = T) ~ 'y',
+#                                   grepl('calib', visit_comments, ignore.case = T) ~ 'y',
+#                                   sensor_pulled == 'x' ~ 'y',
+#                                   sensor_deployed == 'x' ~ 'y',
+#                                   grepl('yes', sensors_cleaned, ignore.case = T) ~ 'y'
+#   ),
+#   end_DT = case_when(sensor_pulled == 'x' ~ ymd_hm(paste0(season, '-12-31 23:59'), tz = 'MST'),
+#                      sensor_deployed == 'x' ~ start_DT,
+#                      TRUE ~ start_DT + minutes(15)),
+#   start_DT = case_when(sensor_deployed == 'x' ~ ymd_hm(paste0(season, '-01-01 00:00'), tz = 'MST'),
+#                        TRUE ~ start_DT)) %>% 
+#   filter(sonde_impact == 'y', !is.na(start_DT))
 ```
 
 Merge the data sets from all API pulls:
@@ -207,24 +213,25 @@ filter in case a sonde was pulled out of water but the log didn't get stopped)
 
 ```{r}
 #this function is not working... not going to debug right now, but this is meant to do the lifting of this code block, but in an automated way... 
-
+# 
 # recode_for_maintenance = function(start, end, site) {
 #   # start_DT = ymd_hm(start, tz = 'MST')
 #   # end_DT = ymd_hm(end, tz = 'MST')
-#   all_data %>% 
-#     setDT(.) %>% 
-#     mutate(value = if_else(ymd_hms(DT) >= ymd_hms(start) & 
-#                              ymd_hms(DT) <= ymd_hms(end) & 
+#   all_data %>%
+#     setDT(.) %>%
+#     mutate(value = if_else(ymd_hms(DT) >= ymd_hms(start) &
+#                              ymd_hms(DT) <= ymd_hms(end) &
 #                              site == site,
 #                            NA_real_,
 #                            value),
-#            flag = if_else(ymd_hms(DT) >= ymd_hms(start) & 
-#                              ymd_hms(DT) <= ymd_hms(end) & 
-#                              site == site,
-#                            'recoded for sensor maintenance',
-#                            NA_character_))
+#            flag = if_else(ymd_hms(DT) >= ymd_hms(start) &
+#                             ymd_hms(DT) <= ymd_hms(end) &
+#                             site == site,
+#                           'recoded for sensor maintenance',
+#                           NA_character_))
 # }
 
+# preserving this for now.
 all_data <- all_data %>% 
   setDT(.) %>%
   # Rist
@@ -263,7 +270,11 @@ temperature_archery <- all_data %>%
             n_obs = n()) %>% 
   ungroup() %>%
   # pad the dataset so that all 15-min timestamps are present
-  pad(by = "DT_round") %>% 
+  pad(by = "DT_round") %>%
+  full_join(filter(dplyr::select(field_notes, where, DT_round, site), site == "archery"), 
+            by = c('DT_round'))
+
+temperature_archery <- cbind(select(temperature_archery, -where), data.table::setnafill(x = temperature_archery[,5], type = "locf")) %>%
   # add flag for no data times
   mutate(flag = if_else(is.na(p1), 'no data', NA_character_)) %>% 
   # ... so that we can get the proper leading/lagging values across our entire timeseries:
@@ -277,6 +288,7 @@ temperature_archery <- all_data %>%
          quarter = quarter(DT_round),
          year = year(DT_round),
          y_q = paste(year, '-', quarter))
+
 ggplot(temperature_archery, aes(x = DT_round, y = p1)) + 
   geom_point() +
   labs('Raw Temperature at Archery') +
@@ -330,10 +342,10 @@ temperature_archery <- temperature_archery %>%
 # flag data that repeat across time:
 temperature_archery <- temperature_archery %>% 
   mutate(flag = if_else((p1 == front1 | p1 == back1), 
-                       if_else(is.na(flag),
-                               "Repeated value",
-                               paste(flag, "Repeated value", sep = "; ")),
-                       flag))
+                        if_else(is.na(flag),
+                                "Repeated value",
+                                paste(flag, "Repeated value", sep = "; ")),
+                        flag))
 
 ```
 
@@ -342,8 +354,8 @@ temperature_archery <- temperature_archery %>%
 temperature_archery <- temperature_archery %>% 
   mutate(flag = if_else(slope_ahead >= slope_thresh | slope_behind >= slope_thresh, 
                         if_else(is.na(flag),
-                               "Slope exceedance",
-                               paste(flag, "Slope exceedance", sep = "; ")),
+                                "Slope exceedance",
+                                paste(flag, "Slope exceedance", sep = "; ")),
                         flag)) 
 ```
 
@@ -357,7 +369,7 @@ temperature_archery <- temperature_archery %>%
 # Current vis:
 ggplot() +
   geom_point(data = filter(temperature_archery, is.na(flag)), 
-            aes(x=DT_round, y = p1)) +
+             aes(x=DT_round, y = p1)) +
   geom_point(data = filter(temperature_archery, !is.na(flag)), 
              aes(x=DT_round, y = p1, color = flag)) +
   theme_bw() +
