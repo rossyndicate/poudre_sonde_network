@@ -156,12 +156,12 @@ field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
          site = tolower(site),
          season = year(DT_round)) %>%
   arrange(DT_round) %>%
-  # binary version of deployed/pulled options. may need to play around with this som
+  # binary version of deployed/pulled options. may need to play around with this some
   # more
   mutate(where = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
                            !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
                            is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ 0))
+                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ 0)) 
 ```
 
 Munge field notes
@@ -260,6 +260,8 @@ processing speed (targets?). Here I am starting a pipeline for Archery's tempera
 #### Format data
 
 ```{r}
+# This chunk is giving me issues...
+# What I want to happen is to keep the flag comment as a site visit from all_data
 temperature_archery <- all_data %>%
   filter(parameter == "Temperature" & site == "archery") %>%
   select(-name) %>%
@@ -267,21 +269,21 @@ temperature_archery <- all_data %>%
   group_by(DT_round) %>%
   # I WOULD LIKE TO PRESERVE THE RAW VALS THAT WENT INTO MAKING THIS AVERAGE
   # IN A NESTED DATAFRAME VIA NEST(). IT WON'T WORK >:(
-  summarize(p1 = as.numeric(mean(value, na.rm = T)),
+  summarize(p1 = as.numeric(mean(value, na.rm = T)), 
             diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
             n_obs = n()) %>% 
   ungroup() %>%
-    arrange(DT_round) %>%
+  arrange(DT_round) %>%
   # pad the dataset so that all 15-min timestamps are present
   pad(by = "DT_round", interval = "15 min") %>%
   mutate(DT_join = as.character(DT_round)) %>%
   full_join(filter(dplyr::select(field_notes, where, visit_comments, sensor_malfunction, DT_join, site), site == "archery"), 
-            by = c('DT_join'))
+            by = c('DT_join')) # adding from DT_join here adds things that are not necessarily from temperature data
 
 temperature_archery <- cbind(select(temperature_archery, -where), data.table::setnafill(x = temperature_archery[,6], type = "locf")) %>%
   # add flag for no data times
   mutate(flag = if_else(is.na(p1) | where == 1, 'no data', NA_character_)) %>%
-  dplyr::filter(is.na(flag)) %>%
+  dplyr::filter(is.na(flag)) %>% # what does this do?
   pad(by = "DT_round", interval = "15 min") %>%
   # ... so that we can get the proper leading/lagging values across our entire timeseries:
   mutate(front1 = lead(p1, n = 1),
@@ -301,6 +303,70 @@ ggplot(temperature_archery, aes(x = DT_round, y = p1)) +
   theme_bw()
 ```
 
+```{r}
+# Determine each site and parameter in all_data 
+sites <- unique(all_data$site)
+params <- unique(all_data$parameter)
+# Constructing a df to iterate over each site-parameter combination
+combinations <- crossing(sites, params)
+
+# Function to summarize site-parameter combinations
+summarize_site_param <- function(site_arg, parameter_arg, api_data) {
+  
+  print(paste0('Trying site ', site_arg, " with parameter ", parameter_arg, "."))
+  
+  # filtering the data and generating results
+  summary <- tryCatch({ 
+    api_data %>%
+    filter(site == site_arg & parameter == parameter_arg) %>% 
+    select(-name) %>%
+    distinct() %>%
+    group_by(DT_round, site, parameter) %>%
+    # to do: preserve values used with nest()
+    summarize(mean = as.numeric(mean(value, na.rm = T)),
+              diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
+              n_obs = n()) %>%
+    ungroup() %>%
+    arrange(DT_round) %>%
+    # pad the dataset so that all 15-min timestamps are present
+    pad(by = "DT_round", interval = "15 min") %>%
+    mutate(DT_join = as.character(DT_round),
+           site = site_arg,
+           parameter = parameter_arg) %>% 
+    full_join(filter(dplyr::select(field_notes, where, visit_comments, sensor_malfunction, DT_join, site)),
+                 by = c('DT_join', 'site'))
+    },
+    error = function(err) {
+      # error message
+      cat("An error occurred with site ", site_arg, " parameter ", parameter_arg, ".\n")
+      cat("Error message:", conditionMessage(err), "\n")
+      flush.console() # Immediately print the error messages
+      NULL  # Return NULL in case of an error
+    })
+  
+  # Determine if the sonde was deployed or not.
+  try({
+    summary <- cbind(select(summary, -where), data.table::setnafill(x = summary[,8], type = "locf")) 
+  })
+    
+    return(summary)
+}
+
+# Make a list of the summarized data
+all_data_summary_list <- map2(combinations$sites, 
+                         combinations$params, 
+                         summarize_site_param,
+                         api_data = all_data)
+
+# Remove null values from list
+all_data_summary_list <- all_data_summary_list %>% 
+  keep(~ !is.null(.))
+
+# Bind rows for each df in list
+all_data_summary_df <- bind_rows(all_data_summary_list)
+```
+
+
 #### Set thresholds
 
 ```{r}
@@ -314,6 +380,16 @@ slope_thresh = 1/15
 
 #### Add the flags
 
+```{r}
+# Add flag column to all_data_summary_df and begin flagging data
+all_data_summary_df <- all_data_summary_df %>%
+  mutate(flag = if_else(is.na(mean) | where == 1, 'no data', NA_character_)) %>% 
+  mutate(flag = if_else((!is.na(visit_comments)),
+                if_else(is.na(flag), "Site visit", 
+                                paste(flag, "Site visit", sep = "; ")),
+                        flag))
+```
+
 Data out of range:
 
 ```{r}
@@ -322,14 +398,24 @@ temperature_archery <- temperature_archery %>%
   mutate(flag = if_else(p1 >= temp_max | p1 <= temp_min, "Out of bounds", flag),
          p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
 
+temperature_archery <- temperature_archery %>%
+  mutate(flag = if_else(p1 >= temp_max | p1 <= temp_min,
+    # true
+    ifelse(is.na(flag), "Out of bounds",
+           paste(flag, "Out of bounds", sep = "; ")),
+    # false
+    flag),
+         p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
+
+# Here is where I would need to add the paste so that it doesn't replace what is already in the flag column completely
 ```
 
 Site visits: 
 
-```{r}
+```{r site visits}
 # flag the start time of a site visit
 temperature_archery <- temperature_archery %>%
-  mutate(flag = if_else((!is.na(visit_comments)), 
+  mutate(flag = if_else((!is.na(visit_comments)),
                 if_else(is.na(flag), "Site visit",
                                 paste(flag, "Site visit", sep = "; ")),
                         flag))
