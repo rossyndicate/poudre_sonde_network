@@ -157,7 +157,7 @@ field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
          season = year(DT_round)) %>%
   arrange(site, DT_round) %>% 
   group_by(site) %>%
-  # this will pad DT_round grouped by site to determine when the sonde was deployed for that site
+  # pad DT_round grouped by site to determine when the sonde was deployed for that site
   pad(by = "DT_round", interval = "15 min") %>%
   # `where` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
   mutate(where = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
