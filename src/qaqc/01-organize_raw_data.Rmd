@@ -176,7 +176,8 @@ deployment_record <- field_notes %>%
   mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
                            !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
                            is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) 
+                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA),
+         last_site_visit = DT_round) 
 ```
 
 Munge field notes
@@ -226,7 +227,7 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
 
 # Level 1 QA-QC
 
-### Recoding data sonde_employed sonde was out of water
+### Recoding data where sonde was out of water
 
 Filter instances in which a sonde was pulled out of field mid-season (basically a backup filter in case a sonde was pulled out of water but the log didn't get stopped)
 
@@ -350,10 +351,10 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
     mutate(DT_join = as.character(DT_round),
            site = site_arg,
            parameter = parameter_arg) %>% 
-    full_join(filter(dplyr::select(deployment_record, sonde_employed, visit_comments, sensor_malfunction, DT_join, site)),
+    full_join(filter(dplyr::select(deployment_record, sonde_employed, last_site_visit, visit_comments, sensor_malfunction, DT_join, site)),
                  by = c('DT_join', 'site')) %>% 
-    # determine if sonde was in the field or not
-    fill(sonde_employed)
+    # Use fill() to determine when sonde was in the field, and when the last site visit was. 
+    fill(c(sonde_employed, last_site_visit))
     },
     
     error = function(err) {
@@ -422,7 +423,7 @@ temperature_archery <- temperature_archery %>%
     flag),
          p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
 
-# Here is sonde_employed I would need to add the paste so that it doesn't replace what is already in the flag column completely
+# Here is where I would need to add the paste so that it doesn't replace what is already in the flag column completely
 ```
 
 Site visits: 
@@ -464,10 +465,10 @@ temperature_archery <- temperature_archery %>%
                         flag))
 ```
 
-For instances sonde_employed change in a 15m period is > 1degC
+For instances where change in a 15m period is > 1degC
 
 ```{r}
-# flag data sonde_employed change in a 15m period is > 1degC
+# flag data where change in a 15m period is > 1degC
 temperature_archery <- temperature_archery %>% 
   mutate(flag = if_else(slope_ahead >= slope_thresh | slope_behind >= slope_thresh, 
                         if_else(is.na(flag),
