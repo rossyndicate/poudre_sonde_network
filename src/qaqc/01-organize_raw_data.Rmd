@@ -1,0 +1,490 @@
+---
+title: "Organizing raw data"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
+```
+
+Load necessary packages:
+
+```{r}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll"), package_loader)
+```
+
+# Import and collate data
+
+Load and munge field calibration files:
+
+```{r}
+cal_files <- list.files("data/calibration_reports", pattern=".html")
+
+cal_tabler <- function(cal_files){
+  
+  cal <- read_html(file.path("data/calibration_reports/", cal_files)) %>%
+    html_nodes("div") %>%
+    html_text() %>%
+    as_tibble()
+  
+  rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
+  
+  ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
+  
+  conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
+  
+  turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
+  
+  # Always the fifth sensor when depth is available:
+  try(depth <- cal %>% .[5,] %>% pull() %>% str_replace_all(., " ", "") %>% tolower())
+  
+  time_mst <- paste0(str_sub(cal_files, -13, -12),":", str_sub(cal_files, -11, -10))
+  
+  date <- paste0(str_sub(cal_files, -22, -19),"-", str_sub(cal_files, -18, -17),"-", str_sub(cal_files, -16, -15))
+  
+  cal_table <- tibble(site = sub("\\_.*", "", cal_files),
+                      
+                      DT = ymd_hm(paste(date, time_mst, tz = "MST")),
+                      
+                      # Depth
+                      depth_cal_date = "None",
+                      depth_offset = "None",
+                      depth_ref_depth = "None",
+                      depth_ref_offset = "None",
+                      depth_pre_psi = "None",
+                      depth_post_psi = "None",
+                      
+                      # Dissolved Oxygen
+                      rdo_slope = str_match(rdo, "slope\\s*(.*?)\\s*offset")[,2],
+                      rdo_offset = str_match(rdo, "offset\\s*(.*?)\\s*mg/l")[,2],
+                      rdo_100 = str_match(rdo, "premeasurement\\s*(.*?)\\s*%satpost")[,2],
+                      rdo_conc = str_match(rdo, "concentration\\s*(.*?)\\s*mg/lpremeasurement")[,2],
+                      rdo_temp = str_match(rdo, "temperature\\s*(.*?)\\s*°c")[,2],
+                      rdo_pressure = str_match(rdo, "pressure\\s*(.*?)\\s*mbar")[,2],
+                      
+                      # pH
+                      ph_slope_pre = str_match(ph_orp, "offset1slope\\s*(.*?)\\s*mv/ph")[,2],
+                      ph_offset_pre = str_match(ph_orp, "mv/phoffset\\s*(.*?)\\s*mvslopeandoffset2")[,2],
+                      ph_slope_post = str_match(ph_orp, "offset2slope\\s*(.*?)\\s*mv/ph")[,2],
+                      ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mv/phoffset\\s*(.*?)\\s*mvorporp"))[,2],
+                      # Sometimes, the post value can actually be in the high 6 pH... therefore the post measurement regex matching text is conditional
+                      ph_7_nice = str_sub(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2])),
+                      ph_7_other = str_sub(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2])),
+                      ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
+                      
+                      # ORP
+                      #Newly encountered thing: sometimes the calibration report calls the ORP standard Zobell's, sometimes it's just called "ORP Standard":
+                      orp_offset = ifelse(is.na(str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
+                                          str_match(ph_orp, "orpstandardoffset\\s*(.*?)\\s*mvtemperature")[,2],
+                                          str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
+                      
+                      # Conductivity
+                      tds_conversion_ppm = str_sub(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2], 6, nchar(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2])),
+                      cond_cell_constant = str_match(conductivity, "cellconstant\\s*(.*?)\\s*referencetemperature")[,2],
+                      cond_pre = str_match(conductivity,paste0(str_match(conductivity,
+                                                                         "premeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cmpost"))[,2],
+                      cond_post = str_match(conductivity,paste0(str_match(conductivity,
+                                                                          "postmeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cm"))[,2],
+                      
+                      # Turbidity
+                      ntu_slope = "None",
+                      ntu_offset = "None",
+                      ntu_10 = "None",
+                      ntu_100 = "None") %>%
+    
+    select(-c(ph_7_nice, ph_7_other))
+  
+  # Not all sondes have depth. So, we "try" to get the values.
+  try(cal_table <- cal_table %>%
+        mutate(
+          # Depth
+          depth_cal_date = str_match(depth, "lastcalibrated\\s*(.*?)\\s*calibrationdetails")[,2],
+          depth_offset = str_match(depth, "zerooffset\\s*(.*?)\\s*psireferencedepth")[,2],
+          depth_ref_depth = str_match(depth, "psireferencedepth\\s*(.*?)\\s*ftreferenceoffset")[,2],
+          depth_ref_offset = str_match(depth, "ftreferenceoffset\\s*(.*?)\\s*psipremeasurement")[,2],
+          depth_pre_psi = str_match(depth, "psipremeasurement\\s*(.*?)\\s*psipostmeasurement")[,2],
+          depth_post_psi = str_match(depth, "psipostmeasurement\\s*(.*?)\\s*psi")[,2]))
+  
+  
+  
+  # Not all sondes have turbidity. So, we "try" to get the values.
+  try(cal_table <- cal_table %>%
+        mutate(     
+          # Turbidity
+          ntu_slope = str_match(turbidity, "slope\\s*(.*?)\\s*offset")[,2],
+          ntu_offset = str_match(turbidity, "offset\\s*(.*?)\\s*ntu")[,2],
+          ntu_10 = str_match(turbidity, "calibrationpoint1premeasurement\\s*(.*?)\\s*ntupost")[,2],
+          ntu_100 = str_match(turbidity, "calibrationpoint2premeasurement\\s*(.*?)\\s*ntupost")[,2]))
+  
+  cal_table <- cal_table %>%
+    mutate(
+      #Factory Defaults
+      factory_defaults = paste0(ifelse(is.na(ntu_slope), "Turbidity ", ""),
+                                ifelse(is.na(rdo_slope), "RDO ", ""),
+                                ifelse(is.na(ph_slope_post), "pH ", ""),
+                                ifelse(is.na(orp_offset), "ORP ", ""),
+                                ifelse(is.na(cond_post), "Conductivity ", ""),
+                                ifelse(is.na(depth_cal_date), "Depth ", "")))
+  cal_table
+  
+}
+
+cal_table <- map_dfr(cal_files, cal_tabler) %>%
+  distinct(.keep_all = TRUE) %>%
+  group_by(site) %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  # filter for years that are 2022 and greater 
+  filter(year(DT) >= 2022)
+# this creates a lot of errors, is it okay to ignore them all? Just make a note that these will create a lot of errors.
+
+rm(cal_files, cal_tabler, package_loader)
+```
+
+Load field notes and define the start time as the 15 minute preceding the field time
+
+```{r}
+# Pulling in field notes and adding relevant datetime columns
+field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
+  mutate(start_DT = ymd_hm(paste(date, start_time_mst, tzone = "MST"))) %>%
+  mutate(#start_DT = with_tz(start_DT, tzone = "MST"),
+         DT_round = floor_date(start_DT, "15 minutes"),
+         DT_join = as.character(DT_round),
+         site = tolower(site),
+         season = year(DT_round))
+
+# Determining when the sonde was employed (SE) based on `sensor_pulled` (SP) and `sensor_deployed` (SD) columns.
+## when (SP & SD) columns are NOT empty, SE = 0 (employed).
+## when (SP) column is NOT empty, but (SD) column is empty, SE = 1 (NOT employed).
+## when (SP) column is empty, but (SD) column is NOT empty, SE = 0 (employed).
+## when (SP & SD) columns are empty, SE = NA (unknown).
+
+## Downstream, fill() (fill in missing values with previous value)
+## is used on the sonde_employed column after it has been joined
+## to the pulled API data to determine if the sonde was employed for that data.
+deployment_record <- field_notes %>%
+  # filter for years that are 2022 and greater 
+  filter(year(DT_round) >= 2022) %>% 
+  arrange(site, DT_round) %>% 
+  group_by(site) %>%
+  # `sonde_employed` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
+  mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+                           !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
+                           is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) 
+```
+
+Munge field notes
+
+```{r}
+# field_notes_clean <- field_notes %>% 
+#   mutate(sonde_impact = case_when(grepl('sonde', visit_comments, ignore.case = T) ~ 'y',
+#                                   grepl('calib', visit_comments, ignore.case = T) ~ 'y',
+#                                   sensor_pulled == 'x' ~ 'y',
+#                                   sensor_deployed == 'x' ~ 'y',
+#                                   grepl('yes', sensors_cleaned, ignore.case = T) ~ 'y'
+#   ),
+#   end_DT = case_when(sensor_pulled == 'x' ~ ymd_hm(paste0(season, '-12-31 23:59'), tz = 'MST'),
+#                      sensor_deployed == 'x' ~ start_DT,
+#                      TRUE ~ start_DT + minutes(15)),
+#   start_DT = case_when(sensor_deployed == 'x' ~ ymd_hm(paste0(season, '-01-01 00:00'), tz = 'MST'),
+#                        TRUE ~ start_DT)) %>% 
+#   filter(sonde_impact == 'y', !is.na(start_DT))
+```
+
+Merge the data sets from all API pulls:
+
+```{r}
+all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv") %>%
+  map_dfr(~data.table::fread(.) %>% select(-id)) %>%
+  # remove overlapping API-pull data
+  distinct() %>%
+  # remove VuLink data
+  filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
+  # Convert DT to MST:
+  mutate(DT = as_datetime(timestamp, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"),
+         DT_round = round_date(DT, "15 minutes"),
+         DT_join = as.character(DT_round),
+         site = tolower(site)) %>%
+  # filter for years that are 2022 and greater 
+  filter(year(DT_round) >= 2022) %>% 
+  # Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
+  mutate(site = ifelse(site == "rist" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
+```
+
+### Export collated raw file
+
+```{r}
+#write_feather(all_data, paste0('data/SOME_FOLDER_FOR_POSTERITY/collated_raw_sonde_v', Sys.Date(), '.feather'))
+```
+
+# Level 1 QA-QC
+
+### Recoding data sonde_employed sonde was out of water
+
+Filter instances in which a sonde was pulled out of field mid-season (basically a backup filter in case a sonde was pulled out of water but the log didn't get stopped)
+
+```{r}
+#this function is not working... not going to debug right now, but this is meant to do the lifting of this code block, but in an automated way... 
+# 
+# recode_for_maintenance = function(start, end, site) {
+#   # start_DT = ymd_hm(start, tz = 'MST')
+#   # end_DT = ymd_hm(end, tz = 'MST')
+#   all_data %>%
+#     setDT(.) %>%
+#     mutate(value = if_else(ymd_hms(DT) >= ymd_hms(start) &
+#                              ymd_hms(DT) <= ymd_hms(end) &
+#                              site == site,
+#                            NA_real_,
+#                            value),
+#            flag = if_else(ymd_hms(DT) >= ymd_hms(start) &
+#                             ymd_hms(DT) <= ymd_hms(end) &
+#                             site == site,
+#                           'recoded for sensor maintenance',
+#                           NA_character_))
+# }
+
+# preserving this for now.
+# all_data <- all_data %>% 
+#   setDT(.) %>%
+#   # Rist
+#   filter(!(ymd_hms(DT_round) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT_round) <= ymd_hms("2022-04-22 14:00:00") & site == "rist"),
+#          !(ymd_hms(DT_round) <= ymd_hms("2022-05-30 09:00:00") & site == "rist"),
+#          !(ymd_hms(DT_round) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT_round) <= ymd_hms('2022-05-09 14:30:00') & site == "rist"),
+#          # Legacy
+#          !(ymd_hms(DT_round) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT_round) < ymd_hms('2022-04-06 17:30:00') & site == "legacy"),
+#          !(ymd_hms(DT_round) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT_round) < ymd_hms('2022-06-01 13:30:00') & site == "legacy"),
+#          !(ymd_hms(DT_round) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT_round) <= ymd_hms('2022-07-12 10:00:00') & site == "legacy"),
+#          !(ymd_hms(DT_round) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT_round) <= ymd_hms('2022-08-25 16:15:00') & site == "legacy"),
+#          !(ymd_hms(DT_round) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT_round) <= ymd_hms('2022-09-18 07:00:00') & site == "legacy"),
+#          # Timberline
+#          !(ymd_hms(DT_round) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT_round) <= ymd_hms('2022-04-06 08:15:00') & site == "timberline"),
+#          # Archery
+#          !(ymd_hms(DT_round) > ymd_hms('2022-10-04 15:00:00') & ymd_hms(DT_round) <= ymd_hms('2022-10-07 16:00:00') & site == "archery"))
+```
+
+### Temperature at Archery
+
+I think we will want to develop pipelines specific for each site and parameter for
+processing speed (targets?). Here I am starting a pipeline for Archery's temperature:
+
+#### Format data
+
+```{r}
+# This chunk is giving me issues...
+# What I want to happen is to keep the flag comment as a site visit from all_data
+temperature_archery <- all_data %>%
+  filter(parameter == "Temperature" & site == "archery") %>%
+  select(-name) %>%
+  distinct() %>%
+  group_by(DT_round) %>%
+  # I WOULD LIKE TO PRESERVE THE RAW VALS THAT WENT INTO MAKING THIS AVERAGE
+  # IN A NESTED DATAFRAME VIA NEST(). IT WON'T WORK >:(
+  summarize(p1 = as.numeric(mean(value, na.rm = T)), 
+            diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
+            n_obs = n()) %>% 
+  ungroup() %>%
+  arrange(DT_round) %>%
+  # pad the dataset so that all 15-min timestamps are present
+  pad(by = "DT_round", interval = "15 min") %>%
+  mutate(DT_join = as.character(DT_round)) %>%
+  full_join(filter(dplyr::select(field_notes, sonde_employed, visit_comments, sensor_malfunction, DT_join, site), site == "archery"), 
+            by = c('DT_join')) # adding from DT_join here adds things that are not necessarily from temperature data
+
+temperature_archery <- cbind(select(temperature_archery, -sonde_employed), data.table::setnafill(x = temperature_archery[,6], type = "locf")) %>%
+  # add flag for no data times
+  mutate(flag = if_else(is.na(p1) | sonde_employed == 1, 'no data', NA_character_)) %>%
+  dplyr::filter(is.na(flag)) %>% # what does this do?
+  pad(by = "DT_round", interval = "15 min") %>%
+  # ... so that we can get the proper leading/lagging values across our entire timeseries:
+  mutate(front1 = lead(p1, n = 1),
+         back1 = lag(p1, n = 1),
+         rollavg = roll_mean(p1, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+         rollsd = roll_sd(p1, n = 7, align = 'center', na.rm = F, fill = NA_real_)) %>% 
+  mutate(slope_ahead = abs(front1 - p1)/15,
+         slope_behind = abs(p1 - back1)/15,
+         # add some summary info for future us
+         month = month(DT_round),
+         year = year(DT_round),
+         y_m = paste(year, '-', month))
+
+ggplot(temperature_archery, aes(x = DT_round, y = p1)) + 
+  geom_point() +
+  labs('Raw Temperature at Archery') +
+  theme_bw()
+```
+
+```{r}
+# Determine each site and parameter in all_data 
+sites <- unique(all_data$site)
+params <- unique(all_data$parameter)
+# Constructing a df to iterate over each site-parameter combination
+combinations <- crossing(sites, params)
+
+# Function to summarize site-parameter combinations
+summarize_site_param <- function(site_arg, parameter_arg, api_data) {
+  
+  print(paste0('Trying site ', site_arg, " with parameter ", parameter_arg, "."))
+  
+  # filtering the data and generating results
+  summary <- tryCatch({ 
+    api_data %>%
+    filter(site == site_arg & parameter == parameter_arg) %>% 
+    select(-name) %>%
+    distinct() %>%
+    group_by(DT_round, site, parameter) %>%
+    # to do: preserve values used with nest()
+    summarize(mean = as.numeric(mean(value, na.rm = T)),
+              diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
+              n_obs = n()) %>%
+    ungroup() %>%
+    arrange(DT_round) %>%
+    # pad the dataset so that all 15-min timestamps are present
+    pad(by = "DT_round", interval = "15 min") %>%
+    mutate(DT_join = as.character(DT_round),
+           site = site_arg,
+           parameter = parameter_arg) %>% 
+    full_join(filter(dplyr::select(deployment_record, sonde_employed, visit_comments, sensor_malfunction, DT_join, site)),
+                 by = c('DT_join', 'site')) %>% 
+    # determine if sonde was in the field or not
+    fill(sonde_employed)
+    },
+    
+    error = function(err) {
+      # error message
+      cat("An error occurred with site ", site_arg, " parameter ", parameter_arg, ".\n")
+      cat("Error message:", conditionMessage(err), "\n")
+      flush.console() # Immediately print the error messages
+      NULL  # Return NULL in case of an error
+    })
+    
+    return(summary)
+}
+
+# Make a list of the summarized data
+all_data_summary_list <- map2(combinations$sites, 
+                         combinations$params, 
+                         summarize_site_param,
+                         api_data = all_data)
+
+# Remove null values from list
+all_data_summary_list <- all_data_summary_list %>% 
+  keep(~ !is.null(.))
+
+# Bind rows for each df in list
+all_data_summary_df <- bind_rows(all_data_summary_list)
+```
+
+
+#### Set thresholds
+
+```{r}
+# value range
+temp_max = 30
+temp_min = 0
+
+# slope threshold
+slope_thresh = 1/15
+```
+
+#### Add the flags
+
+```{r}
+# Add flag column to all_data_summary_df and begin flagging data
+all_data_summary_df <- all_data_summary_df %>%
+  mutate(flag = if_else(is.na(mean) | sonde_employed == 1, 'no data', NA_character_)) %>% 
+  mutate(flag = if_else((!is.na(visit_comments)),
+                if_else(is.na(flag), "Site visit", 
+                                paste(flag, "Site visit", sep = "; ")),
+                        flag))
+```
+
+Data out of range:
+
+```{r}
+# flag for values out of acceptable range
+temperature_archery <- temperature_archery %>%
+  mutate(flag = if_else(p1 >= temp_max | p1 <= temp_min, "Out of bounds", flag),
+         p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
+
+temperature_archery <- temperature_archery %>%
+  mutate(flag = if_else(p1 >= temp_max | p1 <= temp_min,
+    # true
+    ifelse(is.na(flag), "Out of bounds",
+           paste(flag, "Out of bounds", sep = "; ")),
+    # false
+    flag),
+         p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
+
+# Here is sonde_employed I would need to add the paste so that it doesn't replace what is already in the flag column completely
+```
+
+Site visits: 
+
+```{r site visits}
+# flag the start time of a site visit
+temperature_archery <- temperature_archery %>%
+  mutate(flag = if_else((!is.na(visit_comments)),
+                if_else(is.na(flag), "Site visit",
+                                paste(flag, "Site visit", sep = "; ")),
+                        flag))
+```
+
+For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
+
+```{r}
+temperature_summary <- temperature_archery %>% 
+  group_by(y_m) %>% 
+  summarise(ym_sd = sd(p1, na.rm = T))
+
+# flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
+temperature_archery <- temperature_archery %>%
+  left_join(temperature_summary) %>% 
+  # Do we want to play around with using the monthly sd instead of the rolling sd?
+    mutate(flag = if_else((p1 <= rollavg - (3 * ym_sd) | p1 >= rollavg + (3 * ym_sd)), 
+                if_else(is.na(flag), "Outside SD range",
+                                paste(flag, "Outside sd range", sep = "; ")),
+                        flag))
+```
+
+For data that repeats:
+
+```{r}
+# flag data that repeat across time:
+temperature_archery <- temperature_archery %>% 
+  mutate(flag = if_else((p1 == front1 | p1 == back1), 
+                if_else(is.na(flag), "Repeated value",
+                                paste(flag, "Repeated value", sep = "; ")),
+                        flag))
+```
+
+For instances sonde_employed change in a 15m period is > 1degC
+
+```{r}
+# flag data sonde_employed change in a 15m period is > 1degC
+temperature_archery <- temperature_archery %>% 
+  mutate(flag = if_else(slope_ahead >= slope_thresh | slope_behind >= slope_thresh, 
+                        if_else(is.na(flag),
+                                "Slope exceedance",
+                                paste(flag, "Slope exceedance", sep = "; ")),
+                        flag)) 
+```
+
+#### Visualize the flags
+
+```{r}
+# Current vis:
+ggplot() +
+  geom_point(data = filter(temperature_archery, is.na(flag)), 
+             aes(x=DT_round, y = p1)) +
+  geom_point(data = filter(temperature_archery, !is.na(flag)), 
+             aes(x=DT_round, y = p1, color = flag)) +
+  theme_bw() +
+  theme(legend.position = 'bottom') 
+```

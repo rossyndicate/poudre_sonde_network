@@ -1,0 +1,82 @@
+---
+title: "Tidying Tamasag Data"
+author: "Katie Willi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(rvest)
+library(dygraphs)
+library(labelled)
+library(zoo)
+library(anomalize)
+```
+
+Load in all the functions for this repo:
+```{r}
+list.files(path = "functions/",
+                 pattern = "*.R",
+                 full.names = TRUE) %>%
+  map(~ source(file = .))
+```
+
+Loading in field notes and calibration reports
+```{r}
+field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
+  mutate(DT = (paste0(date, " ", start_time_mst))) %>%
+  mutate(DT = ymd_hm(DT)) %>%
+  arrange(DT) %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  filter(grepl("tamasag", site)) %>%
+  select(-c(date, start_time_mst))
+
+cal_table <- cal_tabler() %>%
+  filter(grepl("tamasag",site))
+```
+
+Pulling in sonde data
+```{r}
+# Pull in all datasets that were downloaded from the field using the VuLink reader
+rawless_tamasag <- list.files("data/sensor_data/2023/tamasag/",
+                                      pattern = "*htm", 
+                                      full.names = T) %>% 
+  map_dfr(~ vulink_reader(file = ., row = -31)) %>%
+  mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  mutate(DT = as.POSIXct(DT_instrument, tz = "UTC", format = "%Y-%m-%d %H:%M:%S")) %>%
+  arrange(ymd_hms(DT)) %>%
+  rename(Water_Temp_C = Water_Temp_C2,
+         Air_Temp_C = Water_Temp_C1,
+         pH = pH1,
+         pH_mV = pH2) %>%
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  # for removing duplicates that come from accidental downloads from the field:
+  distinct(.keep_all = TRUE) %>%
+  mutate(date = as_date((DT))) %>%
+         #hour = hour(DT),
+         #year = year(DT),
+         #month = month(DT),
+         #site = "tamasag") %>%
+  # time of deployment
+  filter(DT >= ymd_hms('2023-04-01 13:45:00') & DT <= ymd_hms('2025-10-21 09:20:00')) %>%
+  padr::pad(by = 'DT') %>%
+  #full_join(filter(field_notes, site == "tamasag"), by = c('DT','site')) %>%
+  # Link up calibration data, and propagate that value until next cal
+  #full_join(na.locf(na.locf(filter(cal_table, site == "tamasag")), fromLast = TRUE), 
+  #          by = c('site','DT')) %>%
+  #distinct(.keep_all = TRUE)
+  select(-c(DT_instrument, date)) %>%
+  pivot_longer(data = ., cols = -DT) 
+
+plotly::ggplotly(
+  ggplot(rawless_tamasag) +
+    geom_line(aes(x = DT, y = value, color = name)) +
+    facet_wrap(~name, ncol = 1, scales = "free_y") +
+    theme_bw()
+  )
+
+
+```
