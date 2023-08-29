@@ -131,7 +131,6 @@ cal_tabler <- function(cal_files){
                                 ifelse(is.na(orp_offset), "ORP ", ""),
                                 ifelse(is.na(cond_post), "Conductivity ", ""),
                                 ifelse(is.na(depth_cal_date), "Depth ", "")))
-  
   cal_table
   
 }
@@ -139,7 +138,9 @@ cal_tabler <- function(cal_files){
 cal_table <- map_dfr(cal_files, cal_tabler) %>%
   distinct(.keep_all = TRUE) %>%
   group_by(site) %>%
-  mutate(DT = round_date(DT, "15 minutes"))
+  mutate(DT = round_date(DT, "15 minutes")) %>%
+  # filter for years that are 2022 and greater 
+  filter(year(DT) >= 2022)
 # this creates a lot of errors, is it okay to ignore them all? Just make a note that these will create a lot of errors.
 
 rm(cal_files, cal_tabler, package_loader)
@@ -148,24 +149,34 @@ rm(cal_files, cal_tabler, package_loader)
 Load field notes and define the start time as the 15 minute preceding the field time
 
 ```{r}
+# Pulling in field notes and adding relevant datetime columns
 field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
   mutate(start_DT = ymd_hm(paste(date, start_time_mst, tzone = "MST"))) %>%
   mutate(#start_DT = with_tz(start_DT, tzone = "MST"),
          DT_round = floor_date(start_DT, "15 minutes"),
          DT_join = as.character(DT_round),
          site = tolower(site),
-         season = year(DT_round)) %>%
+         season = year(DT_round))
+
+# Determining when the sonde was employed (SE) based on `sensor_pulled` (SP) and `sensor_deployed` (SD) columns.
+## when (SP & SD) columns are NOT empty, SE = 0 (employed).
+## when (SP) column is NOT empty, but (SD) column is empty, SE = 1 (NOT employed).
+## when (SP) column is empty, but (SD) column is NOT empty, SE = 0 (employed).
+## when (SP & SD) columns are empty, SE = NA (unknown).
+
+## Downstream, fill() (fill in missing values with previous value)
+## is used on the sonde_employed column after it has been joined
+## to the pulled API data to determine if the sonde was employed for that data.
+deployment_record <- field_notes %>%
+  # filter for years that are 2022 and greater 
+  filter(year(DT_round) >= 2022) %>% 
   arrange(site, DT_round) %>% 
   group_by(site) %>%
-  # this will pad DT_round grouped by site to determine when the sonde was deployed for that site
-  pad(by = "DT_round", interval = "15 min") %>%
-  # `where` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
-  mutate(where = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+  # `sonde_employed` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
+  mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
                            !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
                            is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) %>% # NA will get filled with previous record
-  # Fill in NA's with the same rules as locf.
-  fill(where) 
+                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) 
 ```
 
 Munge field notes
@@ -201,6 +212,8 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
          DT_round = round_date(DT, "15 minutes"),
          DT_join = as.character(DT_round),
          site = tolower(site)) %>%
+  # filter for years that are 2022 and greater 
+  filter(year(DT_round) >= 2022) %>% 
   # Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
   mutate(site = ifelse(site == "rist" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
 ```
@@ -213,7 +226,7 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
 
 # Level 1 QA-QC
 
-### Recoding data where sonde was out of water
+### Recoding data sonde_employed sonde was out of water
 
 Filter instances in which a sonde was pulled out of field mid-season (basically a backup filter in case a sonde was pulled out of water but the log didn't get stopped)
 
@@ -281,12 +294,12 @@ temperature_archery <- all_data %>%
   # pad the dataset so that all 15-min timestamps are present
   pad(by = "DT_round", interval = "15 min") %>%
   mutate(DT_join = as.character(DT_round)) %>%
-  full_join(filter(dplyr::select(field_notes, where, visit_comments, sensor_malfunction, DT_join, site), site == "archery"), 
+  full_join(filter(dplyr::select(field_notes, sonde_employed, visit_comments, sensor_malfunction, DT_join, site), site == "archery"), 
             by = c('DT_join')) # adding from DT_join here adds things that are not necessarily from temperature data
 
-temperature_archery <- cbind(select(temperature_archery, -where), data.table::setnafill(x = temperature_archery[,6], type = "locf")) %>%
+temperature_archery <- cbind(select(temperature_archery, -sonde_employed), data.table::setnafill(x = temperature_archery[,6], type = "locf")) %>%
   # add flag for no data times
-  mutate(flag = if_else(is.na(p1) | where == 1, 'no data', NA_character_)) %>%
+  mutate(flag = if_else(is.na(p1) | sonde_employed == 1, 'no data', NA_character_)) %>%
   dplyr::filter(is.na(flag)) %>% # what does this do?
   pad(by = "DT_round", interval = "15 min") %>%
   # ... so that we can get the proper leading/lagging values across our entire timeseries:
@@ -337,9 +350,12 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
     mutate(DT_join = as.character(DT_round),
            site = site_arg,
            parameter = parameter_arg) %>% 
-    full_join(filter(dplyr::select(field_notes, where, visit_comments, sensor_malfunction, DT_join, site)),
-                 by = c('DT_join', 'site'))
+    full_join(filter(dplyr::select(deployment_record, sonde_employed, visit_comments, sensor_malfunction, DT_join, site)),
+                 by = c('DT_join', 'site')) %>% 
+    # determine if sonde was in the field or not
+    fill(sonde_employed)
     },
+    
     error = function(err) {
       # error message
       cat("An error occurred with site ", site_arg, " parameter ", parameter_arg, ".\n")
@@ -347,11 +363,6 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
       flush.console() # Immediately print the error messages
       NULL  # Return NULL in case of an error
     })
-  
-  # Determine if the sonde was deployed or not.
-  try({
-    summary <- cbind(select(summary, -where), data.table::setnafill(x = summary[,8], type = "locf")) 
-  })
     
     return(summary)
 }
@@ -387,7 +398,7 @@ slope_thresh = 1/15
 ```{r}
 # Add flag column to all_data_summary_df and begin flagging data
 all_data_summary_df <- all_data_summary_df %>%
-  mutate(flag = if_else(is.na(mean) | where == 1, 'no data', NA_character_)) %>% 
+  mutate(flag = if_else(is.na(mean) | sonde_employed == 1, 'no data', NA_character_)) %>% 
   mutate(flag = if_else((!is.na(visit_comments)),
                 if_else(is.na(flag), "Site visit", 
                                 paste(flag, "Site visit", sep = "; ")),
@@ -411,7 +422,7 @@ temperature_archery <- temperature_archery %>%
     flag),
          p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
 
-# Here is where I would need to add the paste so that it doesn't replace what is already in the flag column completely
+# Here is sonde_employed I would need to add the paste so that it doesn't replace what is already in the flag column completely
 ```
 
 Site visits: 
@@ -453,10 +464,10 @@ temperature_archery <- temperature_archery %>%
                         flag))
 ```
 
-For instances where change in a 15m period is > 1degC
+For instances sonde_employed change in a 15m period is > 1degC
 
 ```{r}
-# flag data where change in a 15m period is > 1degC
+# flag data sonde_employed change in a 15m period is > 1degC
 temperature_archery <- temperature_archery %>% 
   mutate(flag = if_else(slope_ahead >= slope_thresh | slope_behind >= slope_thresh, 
                         if_else(is.na(flag),
