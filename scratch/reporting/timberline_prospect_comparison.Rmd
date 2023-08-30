@@ -39,6 +39,15 @@ timberline <- read_csv_arrow(file = "data/api/Timberline_2023-08-07.csv")%>%
   filter(!grepl("vulink", name, ignore.case = TRUE))%>%
   pivot_wider(id_cols = c("site", "id", "name", "timestamp"),names_from = parameter, values_from = value)
 
+archery <- read_csv_arrow(file = "data/api/Archery_2023-08-07.csv")%>%
+  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+  pivot_wider(id_cols = c("site", "id", "name", "timestamp"),names_from = parameter, values_from = value)
+
+lincoln <- read_csv_arrow(file = "data/api/lincoln_2023-08-07.csv")%>%
+  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+  pivot_wider(id_cols = c("site", "id", "name", "timestamp"),names_from = parameter, values_from = value)%>%
+  select(-c(Baro, 'Battery Level'))
+  #select(-c(Baro, 'Battery Level'))
 pros_timb <- rbind(prospect, timberline)
 
 ```
@@ -47,6 +56,10 @@ pros_timb <- rbind(prospect, timberline)
 
 # Assuming ts1 and ts2 are your time series data for parameter 1
 make_comparison <- function(parameter, site1, site2){
+  
+  site1_name <- site1$name[1]
+  site2_name <- site2$name[1]
+  
   ts1 <- site1%>%
     select(timestamp, param_site1 = parameter)
   ts2 <- site2%>%
@@ -66,32 +79,32 @@ residuals <- residuals(model)
 
 # Create a data frame
 data <- data.frame(TS2 = ts_comb$param_site2, Residuals = residuals)
+  
+param_range <- range(min(ts_comb$param_site1, ts_comb$param_site2),max(ts_comb$param_site1, ts_comb$param_site2))
 
-
-# Create the scatter plot
-ggplot(data, aes(x = TS2, y = Residuals)) +
+ggplot(ts_comb, aes(x = param_site1, y = param_site2)) +
   geom_point() +
+   geom_smooth(method = "lm", se = FALSE, color = "blue") + 
+   geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
   labs(
-    title = "Residuals Between Two Time Series",
-    x = "Time Series 2",
-    y = "Residuals"
-  )
-
-ggplot(data, aes(x = ts_comb$param_site1, y = ts_comb$param_site2)) +
-  geom_point() +
-  labs(
-    title = paste0(parameter, " differences between prospect and timberline"),
-    x = "site1",
-    y = "site2"
+    title = parameter,
+    x = site1_name,
+    y = site2_name
   )+
   coord_fixed(ratio = 1)+
+  xlim(param_range)+
+  ylim(param_range)+
   theme_bw()
 }
 ```
 
 Making comparisons 
 ```{r making_comps}
-make_comparison("pH", site1 = prospect, site2 = timberline)
+timb_linc <- make_comparison("Temperature", site1 = timberline, site2 = lincoln)
+timb_pros <- make_comparison("Temperature", site1 = timberline, site2 = prospect)
+timb_arch <- make_comparison("Temperature", site1 = timberline, site2 = archery)
 
+timb_comp <- ggpubr::ggarrange(timb_linc, timb_pros, timb_arch, nrow = 1)
+ggsave("images/timberline_temp_comparison.png",plot = timb_comp, dpi = 300)
 ```
 
