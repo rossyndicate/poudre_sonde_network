@@ -277,49 +277,6 @@ processing speed (targets?). Here I am starting a pipeline for Archery's tempera
 
 #### Format data
 
-```{r}
-# This chunk is giving me issues...
-# What I want to happen is to keep the flag comment as a site visit from all_data
-temperature_archery <- all_data %>%
-  filter(parameter == "Temperature" & site == "archery") %>%
-  select(-name) %>%
-  distinct() %>%
-  group_by(DT_round) %>%
-  # I WOULD LIKE TO PRESERVE THE RAW VALS THAT WENT INTO MAKING THIS AVERAGE
-  # IN A NESTED DATAFRAME VIA NEST(). IT WON'T WORK >:(
-  summarize(p1 = as.numeric(mean(value, na.rm = T)), 
-            diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
-            n_obs = n()) %>% 
-  ungroup() %>%
-  arrange(DT_round) %>%
-  # pad the dataset so that all 15-min timestamps are present
-  pad(by = "DT_round", interval = "15 min") %>%
-  mutate(DT_join = as.character(DT_round)) %>%
-  full_join(filter(dplyr::select(field_notes, sonde_employed, visit_comments, sensor_malfunction, DT_join, site), site == "archery"), 
-            by = c('DT_join')) # adding from DT_join here adds things that are not necessarily from temperature data
-
-temperature_archery <- cbind(select(temperature_archery, -sonde_employed), data.table::setnafill(x = temperature_archery[,6], type = "locf")) %>%
-  # add flag for no data times
-  mutate(flag = if_else(is.na(p1) | sonde_employed == 1, 'no data', NA_character_)) %>%
-  dplyr::filter(is.na(flag)) %>% # what does this do?
-  pad(by = "DT_round", interval = "15 min") %>%
-  # ... so that we can get the proper leading/lagging values across our entire timeseries:
-  mutate(front1 = lead(p1, n = 1),
-         back1 = lag(p1, n = 1),
-         rollavg = roll_mean(p1, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-         rollsd = roll_sd(p1, n = 7, align = 'center', na.rm = F, fill = NA_real_)) %>% 
-  mutate(slope_ahead = abs(front1 - p1)/15,
-         slope_behind = abs(p1 - back1)/15,
-         # add some summary info for future us
-         month = month(DT_round),
-         year = year(DT_round),
-         y_m = paste(year, '-', month))
-
-ggplot(temperature_archery, aes(x = DT_round, y = p1)) + 
-  geom_point() +
-  labs('Raw Temperature at Archery') +
-  theme_bw()
-```
 
 ```{r}
 # Determine each site and parameter in all_data 
@@ -339,7 +296,7 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
     filter(site == site_arg & parameter == parameter_arg) %>% 
     select(-name) %>%
     distinct() %>%
-    group_by(DT_round, site, parameter) %>%
+    group_by(DT_round) %>% # site & parameter does not need to be here anymore
     # to do: preserve values used with nest()
     summarize(mean = as.numeric(mean(value, na.rm = T)),
               diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
@@ -350,7 +307,8 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
     pad(by = "DT_round", interval = "15 min") %>%
     mutate(DT_join = as.character(DT_round),
            site = site_arg,
-           parameter = parameter_arg) %>% 
+           parameter = parameter_arg,
+           flag = rep(list(NULL), n())) %>% 
     full_join(filter(dplyr::select(deployment_record, sonde_employed, last_site_visit, visit_comments, sensor_malfunction, DT_join, site)),
                  by = c('DT_join', 'site')) %>% 
     # Use fill() to determine when sonde was in the field, and when the last site visit was. 
@@ -372,16 +330,65 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
 all_data_summary_list <- map2(combinations$sites, 
                          combinations$params, 
                          summarize_site_param,
-                         api_data = all_data)
-
-# Remove null values from list
-all_data_summary_list <- all_data_summary_list %>% 
+                         api_data = all_data) %>% 
+  # set the names for the dfs in the list
+  set_names(paste0(combinations$sites, "-", combinations$params)) %>% 
+  # remove NULL values from the list
   keep(~ !is.null(.))
 
 # Bind rows for each df in list
 all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
+```{r}
+temperature_archery <- all_data_summary_list[["archery-Temperature"]] 
+
+ggplot(temperature_archery, aes(x = DT_round, y = mean)) + 
+  geom_point() +
+  labs('Raw Temperature at Archery') +
+  theme_bw()
+```
+
+```{r}
+temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature"]] %>%
+  # ... so that we can get the proper leading/lagging values across our entire timeseries:
+  mutate(
+    # Add the next value and previous value for mean.
+    front1 = lead(mean, n = 1),
+    back1 = lag(mean, n = 1),
+    # Add the median for a point centered in a rolling median of 7 points.
+    rollmed = roll_median(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+    # Add the mean for a point centered in a rolling mean of 7 points.
+    rollavg = roll_mean(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+    # Add the standard deviation for a point centered in a rolling mean of 7 points.
+    rollsd = roll_sd(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+    # Determine the slope of a point in relation to the point ahead and behind.
+    slope_ahead = abs(front1 - mean)/15,
+    slope_behind = abs(mean - back1)/15,
+    # add some summary info for future us
+    month = month(DT_round),
+    year = year(DT_round),
+    y_m = paste(year, '-', month))
+
+sample_temp_stats <- temperature_archery_summary_stats %>% 
+  filter(year(DT_round) == 2022,
+         month == 4,
+         day(DT_round) == 7)
+         #hour(DT_round) >= 4 & hour(DT_round) <= 12)
+
+ggplot(data = sample_temp_stats, aes(x = DT_round, y = mean)) +
+  geom_point() +
+  # geom_point(data = sample_temp_stats, aes(x = DT_round, y = rollavg, color = "red")) +
+  # geom_point(data = sample_temp_stats, aes(x = DT_round, y = rollmed, color = "blue")) +
+  # adding standard deviations 1, 2, 3
+  geom_ribbon(aes(ymin = mean - rollsd, ymax = mean + rollsd), alpha = 0.1) +
+  geom_ribbon(aes(ymin = mean - (rollsd*2), ymax = mean + (rollsd*2)), alpha = 0.1) +
+  geom_ribbon(aes(ymin = mean - (rollsd*3), ymax = mean + (rollsd*3)), alpha = 0.1) + 
+  geom_smooth(method='loess', formula= y~x)
+
+# flags added later:
+# mutate(flag = if_else(is.na(p1) | sonde_employed == 1, 'no data', NA_character_)) %>%
+```
 
 #### Set thresholds
 
@@ -391,20 +398,46 @@ temp_max = 30
 temp_min = 0
 
 # slope threshold
+## 1C/15min
 slope_thresh = 1/15
 ```
 
 #### Add the flags
+Add flagging functions for each df in all_data_summary_list
 
 ```{r}
+# function to add flag description to flag column
+flag_description <- function(flag, description_arg) {
+  # check if it is empty
+  flag_addition <- ifelse(is.null(flag), description_arg, 
+                          paste(flag, description_arg, sep = ";"))
+  return(flag_addition)
+}
+
 # Add flag column to all_data_summary_df and begin flagging data
-all_data_summary_df <- all_data_summary_df %>%
-  mutate(flag = if_else(is.na(mean) | sonde_employed == 1, 'no data', NA_character_)) %>% 
-  mutate(flag = if_else((!is.na(visit_comments)),
-                if_else(is.na(flag), "Site visit", 
-                                paste(flag, "Site visit", sep = "; ")),
-                        flag))
+field_flags <- function(df) {
+  df %>%
+    mutate(flag = case_when(
+      sonde_employed == 1 ~ flag_description(flag, "sonde not employed"),
+      !is.na(visit_comments) ~ flag_description(flag, "site visit"),
+      TRUE ~ NA
+    ))
+}
+
+
+test <- field_flags(temperature_archery_summary_stats)
+
+View(test %>% filter(!is.na(visit_comments),
+                                                  sonde_employed ==1))
+
 ```
+
+```{r}
+summary_stats_flags <- function(df) {
+  flag = if_else(is.na(mean), 'no data', NA_character_)
+}
+```
+
 
 Data out of range:
 
@@ -470,11 +503,20 @@ For instances where change in a 15m period is > 1degC
 ```{r}
 # flag data where change in a 15m period is > 1degC
 temperature_archery <- temperature_archery %>% 
-  mutate(flag = if_else(slope_ahead >= slope_thresh | slope_behind >= slope_thresh, 
+  mutate(flag = if_else(slope_ahead >= slope_thresh | slope_behind >= slope_thresh,
                         if_else(is.na(flag),
                                 "Slope exceedance",
                                 paste(flag, "Slope exceedance", sep = "; ")),
                         flag)) 
+
+# There are some situations to consider:
+# slope_ahead >= slope_thresh | slope_behind >= slope_thresh
+  # Based on the current point, either the point behind or point ahead exceeds the slope threshold.
+    # This can mean that the forward threshold is broke, but the previous threshold is not, and vice versa.
+    # in both of these situations points will be marked, though they are not to be marked. Maybe there should be some sort of all day regression?
+# slope_ahead >= slope_thresh & slope_behind >= slope_thresh
+  # Based on the current point, both the point behind and point ahead exceeds the slope threshold.
+
 ```
 
 #### Visualize the flags
