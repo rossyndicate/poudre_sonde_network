@@ -308,7 +308,7 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
     mutate(DT_join = as.character(DT_round),
            site = site_arg,
            parameter = parameter_arg,
-           flag = rep(list(NULL), n())) %>% 
+           flag = NA) %>% 
     full_join(filter(dplyr::select(deployment_record, sonde_employed, last_site_visit, visit_comments, sensor_malfunction, DT_join, site)),
                  by = c('DT_join', 'site')) %>% 
     # Use fill() to determine when sonde was in the field, and when the last site visit was. 
@@ -369,25 +369,6 @@ temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature
     month = month(DT_round),
     year = year(DT_round),
     y_m = paste(year, '-', month))
-
-sample_temp_stats <- temperature_archery_summary_stats %>% 
-  filter(year(DT_round) == 2022,
-         month == 4,
-         day(DT_round) == 7)
-         #hour(DT_round) >= 4 & hour(DT_round) <= 12)
-
-ggplot(data = sample_temp_stats, aes(x = DT_round, y = mean)) +
-  geom_point() +
-  # geom_point(data = sample_temp_stats, aes(x = DT_round, y = rollavg, color = "red")) +
-  # geom_point(data = sample_temp_stats, aes(x = DT_round, y = rollmed, color = "blue")) +
-  # adding standard deviations 1, 2, 3
-  geom_ribbon(aes(ymin = mean - rollsd, ymax = mean + rollsd), alpha = 0.1) +
-  geom_ribbon(aes(ymin = mean - (rollsd*2), ymax = mean + (rollsd*2)), alpha = 0.1) +
-  geom_ribbon(aes(ymin = mean - (rollsd*3), ymax = mean + (rollsd*3)), alpha = 0.1) + 
-  geom_smooth(method='loess', formula= y~x)
-
-# flags added later:
-# mutate(flag = if_else(is.na(p1) | sonde_employed == 1, 'no data', NA_character_)) %>%
 ```
 
 #### Set thresholds
@@ -406,29 +387,28 @@ slope_thresh = 1/15
 Add flagging functions for each df in all_data_summary_list
 
 ```{r}
-# function to add flag description to flag column
-flag_description <- function(flag, description_arg) {
-  # check if it is empty
-  flag_addition <- ifelse(is.null(flag), description_arg, 
-                          paste(flag, description_arg, sep = ";"))
-  return(flag_addition)
+# flag addition function
+# This function will be called inside of add_x_flags() functions (ex. add_field_flags())
+# This function will be used to simply add flags into the flag column
+add_flag <- function(df, condition_arg, description_arg) {
+  df <- df %>% mutate(flag = case_when(
+    {{condition_arg}} ~ if_else(is.na(flag), description_arg, paste(flag, description_arg, sep = "; ")),
+    TRUE ~ flag))
+  return(df)
 }
 
-# Add flag column to all_data_summary_df and begin flagging data
-field_flags <- function(df) {
-  df %>%
-    mutate(flag = case_when(
-      sonde_employed == 1 ~ flag_description(flag, "sonde not employed"),
-      !is.na(visit_comments) ~ flag_description(flag, "site visit"),
-      TRUE ~ NA
-    ))
+# Example with field flags
+add_field_flags <- function(df) {
+  df <- df %>% 
+    # To use add_flag in a pipeline just input a condition for a flag and your description for the flag.
+    add_flag(sonde_employed == 1, "sonde not employed") %>% 
+    add_flag(!is.na(visit_comments), "site visit")
+  return(df)
 }
 
+temperature_archery_field_flags <- add_field_flags(temperature_archery_summary_stats)
 
-test <- field_flags(temperature_archery_summary_stats)
-
-View(test %>% filter(!is.na(visit_comments),
-                                                  sonde_employed ==1))
+View(temperature_archery_field_flags)
 
 ```
 
@@ -531,3 +511,4 @@ ggplot() +
   theme_bw() +
   theme(legend.position = 'bottom') 
 ```
+
