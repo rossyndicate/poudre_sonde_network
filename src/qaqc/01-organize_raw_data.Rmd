@@ -371,10 +371,28 @@ temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature
     y_m = paste(year, '-', month))
 ```
 
+```{r}
+sample_temp_stats <- temperature_archery_summary_stats %>% 
+  filter(year(DT_round) == 2022,
+         month == 4,
+         day(DT_round) == 7)
+        # hour(DT_round) >= 4 & hour(DT_round) <= 5)
+
+ggplot(data = sample_temp_stats, aes(x = DT_round, y = mean)) +
+  geom_point() +
+  # geom_point(data = sample_temp_stats, aes(x = DT_round, y = rollavg, color = "red")) +
+  # geom_point(data = sample_temp_stats, aes(x = DT_round, y = rollmed, color = "blue")) +
+  # adding standard deviations 1, 2, 3
+  geom_ribbon(aes(ymin = mean - rollsd, ymax = mean + rollsd), alpha = 0.1) +
+  geom_ribbon(aes(ymin = mean - (rollsd*2), ymax = mean + (rollsd*2)), alpha = 0.1) +
+  geom_ribbon(aes(ymin = mean - (rollsd*3), ymax = mean + (rollsd*3)), alpha = 0.1) + 
+  geom_smooth(method='loess', formula= y~x)
+```
+
 #### Set thresholds
 
 ```{r}
-# value range
+# value range df
 temp_max = 30
 temp_min = 0
 
@@ -409,7 +427,6 @@ add_field_flags <- function(df) {
 temperature_archery_field_flags <- add_field_flags(temperature_archery_summary_stats)
 
 View(temperature_archery_field_flags)
-
 ```
 
 ```{r}
@@ -420,34 +437,117 @@ summary_stats_flags <- function(df) {
 
 
 Data out of range:
+listed accuracy and range for sensors:
+
+Temperature: ±0.1 Celsius, -5 to 50 C
+
+Barometric Pressure: ±1.0 mbars, 300 to 1,100 mbars
+
+pH: ±0.1 pH, 0 to 14 pH
+
+ORP: ±5 mV
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+TDS/Salinity: range of 0 to 350 ppt/0 to 350 PSU
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+Turbidity: ±2% of reading or ±0.5 NTU (whichever is greater)
+
+TSS: range of 1 to 1,500 mg/L
+
+Pressure: ±0.1% FS from -5 to 50°C
+
+Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
 
 ```{r}
-# flag for values out of acceptable range
-temperature_archery <- temperature_archery %>%
-  mutate(flag = if_else(p1 >= temp_max | p1 <= temp_min, "Out of bounds", flag),
-         p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
+# sensor spec ranges flagging function
+add_sensor_spec_range_flags <- function(df) {
+  df <- df %>% 
+  # "Temperature" 
+    add_flag(parameter == "Temperature" & (mean < -5 | mean > 50), "out of (temperature) sensor specification range") %>% 
+  # "% Saturation O₂"
+  # "Actual Conductivity"
+    add_flag(parameter == "Actual Conductivity" & (mean < 0 | mean > 350000), "out of (actual conductivity) sensor specification range") %>% 
+  # "Baro" 
+    add_flag(parameter == "Baro" & (mean < 4.35113 | mean > 15.95415 ), "out of (barometric pressure) sensor specification range") %>% 
+  # "Battery Level" 
+    add_flag(parameter == "Battery Level" & (mean < 0 | mean > 100 ), "out of (battery level) sensor specification range") %>%
+  # "Chl-a Fluorescence"    
+    add_flag(parameter == "Chl-a Fluorescence" & (mean < 0 | mean > 100 ), "out of (chl-a fluorescence) sensor specification range") %>%
+  # "Density"               
+  # "Depth"                  
+  # "DO" (is RDO and DO the same thing?)
+    add_flag(parameter == "DO" & (mean < 0 | mean > 60 ), "out of (battery level) sensor specification range") %>%
+  # "External Voltage"       
+  # "Level: Depth to Water" 
+  # "Level: Elevation"       
+  # "ORP"
+    add_flag(parameter == "ORP" & (mean < -1.4 | mean > 1.4 ), "out of (ORP) sensor specification range") %>% 
+  # "Partial Pressure O₂"    
+  # "pH"
+    add_flag(parameter == "pH" & (mean < 0 | mean > 14), "out of (pH) sensor specification range") %>% 
+  # "pH MV"                 
+  # "Pressure"               
+  # "Pulse"                  
+  # "Resistivity"            
+  # "Salinity"
+    add_flag(parameter == "Salinity" & (mean < 0 | mean > 350), "out of (salinity) sensor specification range") %>% 
+  # "Specific Conductivity" 
+  # "Total Dissolved Solids" 
+  # "Turbidity"
+    add_flag(parameter == "Turbidity" & (mean < 0 | mean > 4000), "out of (turbidity) sensor specification range")
+  
+  return(df)
+}
 
-temperature_archery <- temperature_archery %>%
-  mutate(flag = if_else(p1 >= temp_max | p1 <= temp_min,
-    # true
-    ifelse(is.na(flag), "Out of bounds",
-           paste(flag, "Out of bounds", sep = "; ")),
-    # false
-    flag),
-         p1 = if_else(p1 >= temp_max | p1 <= temp_min, NA_real_, p1))
+# Use grep to find elements with "archery" in their title
+archery_objects <- all_data_summary_list[grep("archery", names(all_data_summary_list), ignore.case = TRUE)]
 
-# Here is where I would need to add the paste so that it doesn't replace what is already in the flag column completely
+# Resulting list of objects with "archery" in the title
+archery_objects_df <- bind_rows(archery_objects)
+
+View(add_sensor_spec_range_flags(archery_objects_df))
 ```
 
-Site visits: 
 
-```{r site visits}
-# flag the start time of a site visit
-temperature_archery <- temperature_archery %>%
-  mutate(flag = if_else((!is.na(visit_comments)),
-                if_else(is.na(flag), "Site visit",
-                                paste(flag, "Site visit", sep = "; ")),
-                        flag))
+```{r}
+# sensor spec ranges flagging function
+# this should be done after the dfs for every site are joined ?
+add_parameter_bound_flags <- function(df) {
+  df <- df %>% 
+  # "Temperature" 
+    add_flag(parameter == "Temperature" & (mean <= 0 | mean >= 30), "out of (temperature) bounds") %>% 
+  # "% Saturation O₂"
+  # "Actual Conductivity"    
+  # "Baro"                   
+  # "Battery Level"          
+  # "Chl-a Fluorescence"    
+  # "Density"               
+  # "Depth"                  
+  # "DO"                     
+  # "External Voltage"       
+  # "Level: Depth to Water" 
+  # "Level: Elevation"       
+  # "ORP"                    
+  # "Partial Pressure O₂"    
+  # "pH"
+    add_flag(parameter == "pH" & (mean <= 0 | mean >= 14), "out of (pH) bounds")
+  # "pH MV"                 
+  # "Pressure"               
+  # "Pulse"                  
+  # "Resistivity"            
+  # "Salinity"               
+  # "Specific Conductivity" 
+  # "Temperature"            
+  # "Total Dissolved Solids" 
+  # "Turbidity"
+  
+  return(df)
+}
+
+View(add_parameter_bound_flags(archery_objects_df))
 ```
 
 For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
