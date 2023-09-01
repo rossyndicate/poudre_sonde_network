@@ -488,15 +488,6 @@ temperature_archery <- temperature_archery %>%
                                 "Slope exceedance",
                                 paste(flag, "Slope exceedance", sep = "; ")),
                         flag)) 
-
-# There are some situations to consider:
-# slope_ahead >= slope_thresh | slope_behind >= slope_thresh
-  # Based on the current point, either the point behind or point ahead exceeds the slope threshold.
-    # This can mean that the forward threshold is broke, but the previous threshold is not, and vice versa.
-    # in both of these situations points will be marked, though they are not to be marked. Maybe there should be some sort of all day regression?
-# slope_ahead >= slope_thresh & slope_behind >= slope_thresh
-  # Based on the current point, both the point behind and point ahead exceeds the slope threshold.
-
 ```
 
 #### Visualize the flags
