@@ -222,6 +222,7 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
 ### Export collated raw file
 
 ```{r}
+# This will be a parquet file in the future?
 #write_feather(all_data, paste0('data/SOME_FOLDER_FOR_POSTERITY/collated_raw_sonde_v', Sys.Date(), '.feather'))
 ```
 
@@ -350,6 +351,7 @@ ggplot(temperature_archery, aes(x = DT_round, y = mean)) +
 ```
 
 ```{r}
+# This will need to get done for each site-param combo separately
 temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature"]] %>%
   # ... so that we can get the proper leading/lagging values across our entire timeseries:
   mutate(
@@ -374,8 +376,8 @@ temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature
 ```{r}
 sample_temp_stats <- temperature_archery_summary_stats %>% 
   filter(year(DT_round) == 2022,
-         month == 4,
-         day(DT_round) == 7)
+         month == 5,
+         day(DT_round) >= 10 & day(DT_round) <= 10)
         # hour(DT_round) >= 4 & hour(DT_round) <= 5)
 
 ggplot(data = sample_temp_stats, aes(x = DT_round, y = mean)) +
@@ -463,6 +465,7 @@ Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
 
 ```{r}
 # sensor spec ranges flagging function
+  # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
 add_sensor_spec_range_flags <- function(df) {
   df <- df %>% 
   # "Temperature" 
@@ -553,41 +556,31 @@ View(add_parameter_bound_flags(archery_objects_df))
 For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
 
 ```{r}
-temperature_summary <- temperature_archery %>% 
+temperature_summary <- temperature_archery_summary_stats %>% 
   group_by(y_m) %>% 
-  summarise(ym_sd = sd(p1, na.rm = T))
+  summarise(ym_sd = sd(mean, na.rm = T))
 
 # flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
-temperature_archery <- temperature_archery %>%
+temperature_archery_summary_stats_2 <- temperature_archery_field_flags %>%
   left_join(temperature_summary) %>% 
   # Do we want to play around with using the monthly sd instead of the rolling sd?
-    mutate(flag = if_else((p1 <= rollavg - (3 * ym_sd) | p1 >= rollavg + (3 * ym_sd)), 
-                if_else(is.na(flag), "Outside SD range",
-                                paste(flag, "Outside sd range", sep = "; ")),
-                        flag))
+  add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range")
 ```
 
 For data that repeats:
 
 ```{r}
 # flag data that repeat across time:
-temperature_archery <- temperature_archery %>% 
-  mutate(flag = if_else((p1 == front1 | p1 == back1), 
-                if_else(is.na(flag), "Repeated value",
-                                paste(flag, "Repeated value", sep = "; ")),
-                        flag))
+temperature_archery_summary_stats_2 <- temperature_archery_summary_stats_2 %>% 
+  add_flag((mean == front1 | mean == back1), "Repeated value")
 ```
 
 For instances where change in a 15m period is > 1degC
 
 ```{r}
 # flag data where change in a 15m period is > 1degC
-temperature_archery <- temperature_archery %>% 
-  mutate(flag = if_else(slope_ahead >= slope_thresh | slope_behind >= slope_thresh,
-                        if_else(is.na(flag),
-                                "Slope exceedance",
-                                paste(flag, "Slope exceedance", sep = "; ")),
-                        flag)) 
+temperature_archery_summary_stats_2 <- temperature_archery_summary_stats_2 %>% 
+  add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "Slope exceedance")
 ```
 
 #### Visualize the flags
@@ -595,11 +588,104 @@ temperature_archery <- temperature_archery %>%
 ```{r}
 # Current vis:
 ggplot() +
-  geom_point(data = filter(temperature_archery, is.na(flag)), 
-             aes(x=DT_round, y = p1)) +
-  geom_point(data = filter(temperature_archery, !is.na(flag)), 
-             aes(x=DT_round, y = p1, color = flag)) +
+  geom_point(data = filter(temperature_archery_summary_stats_2, is.na(flag)), 
+             aes(x=DT_round, y = mean)) +
+  geom_point(data = filter(temperature_archery_summary_stats_2, !is.na(flag)), 
+             aes(x=DT_round, y = mean, color = flag)) +
   theme_bw() +
   theme(legend.position = 'bottom') 
+```
+
+```{r}
+# Visualizing slope exceedance
+plot_list <- list()
+
+flag_dates <- temperature_archery_summary_stats_2 %>% 
+  filter(str_detect(flag, "Slope exceedance")) %>%  
+  group_by(day(DT_join)) %>% 
+  slice(1)
+
+for (i in 1:nrow(flag_dates)) {
+  
+  flag_year <- flag_dates$year[i]
+  flag_month <- flag_dates$month[i]
+  flag_day <- flag_dates$DT_round[i]
+  
+  day_data <- temperature_archery_summary_stats_2 %>%
+    filter(year == flag_year,
+           month == flag_month,
+           day(DT_round) == day(flag_day))
+
+  plot <- ggplot(data = day_data, aes(x=DT_round, y = mean, color = flag)) +
+    geom_point() +
+    # exceeding sd visualized
+    # geom_ribbon(aes(ymin = rollavg - ym_sd, ymax = rollavg + ym_sd), alpha = 0.1, color = NA) +
+    # geom_ribbon(aes(ymin = rollavg - (ym_sd*2), ymax = rollavg + (ym_sd*2)), alpha = 0.1, color = NA) +
+    # geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3)), alpha = 0.1, color = NA) +
+    # geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+    # exceeding slope visualized
+    geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = "NA mean")) +
+    # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
+    theme_bw() +
+    theme(legend.position = 'bottom') +
+    ggtitle(paste("Site Visit on", as.character(flag_day)))
+  
+  plot_list[[as.character(flag_day)]] <- plot
+  
+}
+
+# for loop here because map was acting strange
+for (i in 1:length(plot_list)) {
+  print(plot_list[[i]])
+}
+```
+
+```{r}
+temperature_archery_summary_stats_3 <- temperature_archery_summary_stats_2 %>% 
+  add_flag(slope_behind >= slope_thresh, "slope (behind)")
+```
+
+```{r}
+# Visualizing slope exceedance (behind)
+plot_list <- list()
+
+flag_dates_2 <- temperature_archery_summary_stats_3 %>% 
+  filter(str_detect(flag, "slope (behind)"))#%>%   
+  # group_by(day(DT_join)) %>% 
+  # slice(1)
+
+for (i in 1:nrow(flag_dates_2)) {
+  
+  flag_year <- flag_dates_2$year[i]
+  flag_month <- flag_dates_2$month[i]
+  flag_day <- flag_dates_2$DT_round[i]
+  
+  day_data <- temperature_archery_summary_stats_3 %>%
+    filter(year == flag_year,
+           month == flag_month,
+           day(DT_round) == day(flag_day))
+
+  plot <- ggplot(data = day_data, aes(x=DT_round, y = mean, color = flag)) +
+    geom_point() +
+    # exceeding sd visualized
+    # geom_ribbon(aes(ymin = rollavg - ym_sd, ymax = rollavg + ym_sd), alpha = 0.1, color = NA) +
+    # geom_ribbon(aes(ymin = rollavg - (ym_sd*2), ymax = rollavg + (ym_sd*2)), alpha = 0.1, color = NA) +
+    # geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3)), alpha = 0.1, color = NA) +
+    # geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+    # exceeding slope visualized
+    geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = "NA mean")) +
+    # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
+    theme_bw() +
+    theme(legend.position = 'bottom') +
+    ggtitle(paste("Site Visit on", as.character(flag_day)))
+  
+  plot_list[[as.character(flag_day)]] <- plot
+  
+}
+
+# for loop here because map was acting strange
+for (i in 1:length(plot_list)) {
+  print(plot_list[[i]])
+}
 ```
 
