@@ -289,7 +289,8 @@ combinations <- crossing(sites, params)
 # Function to summarize site-parameter combinations
 summarize_site_param <- function(site_arg, parameter_arg, api_data) {
   
-  print(paste0('Trying site ', site_arg, " with parameter ", parameter_arg, "."))
+  # removing print statement
+  # print(paste0('Trying site ', site_arg, " with parameter ", parameter_arg, "."))
   
   # filtering the data and generating results
   summary <- tryCatch({ 
@@ -342,16 +343,7 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
 ```{r}
-temperature_archery <- all_data_summary_list[["archery-Temperature"]] 
-
-ggplot(temperature_archery, aes(x = DT_round, y = mean)) + 
-  geom_point() +
-  labs('Raw Temperature at Archery') +
-  theme_bw()
-```
-
-```{r}
-# This will need to get done for each site-param combo separately
+# This should get wrapped up in a function to map over all_data_summary_list
 temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature"]] %>%
   # ... so that we can get the proper leading/lagging values across our entire timeseries:
   mutate(
@@ -371,27 +363,20 @@ temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature
     month = month(DT_round),
     year = year(DT_round),
     y_m = paste(year, '-', month))
+
+temperature_summary <- temperature_archery_summary_stats %>% 
+  group_by(y_m) %>% 
+  summarise(ym_sd = sd(mean, na.rm = T))
+
+# flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
+temperature_archery_summary_stats <- temperature_archery_summary_stats %>%
+  left_join(temperature_summary) 
+
+# This will need to get done for each site-param combo separately
+# Then we can bind these tables and continue adding flags
 ```
 
-```{r}
-sample_temp_stats <- temperature_archery_summary_stats %>% 
-  filter(year(DT_round) == 2022,
-         month == 5,
-         day(DT_round) >= 10 & day(DT_round) <= 10)
-        # hour(DT_round) >= 4 & hour(DT_round) <= 5)
-
-ggplot(data = sample_temp_stats, aes(x = DT_round, y = mean)) +
-  geom_point() +
-  # geom_point(data = sample_temp_stats, aes(x = DT_round, y = rollavg, color = "red")) +
-  # geom_point(data = sample_temp_stats, aes(x = DT_round, y = rollmed, color = "blue")) +
-  # adding standard deviations 1, 2, 3
-  geom_ribbon(aes(ymin = mean - rollsd, ymax = mean + rollsd), alpha = 0.1) +
-  geom_ribbon(aes(ymin = mean - (rollsd*2), ymax = mean + (rollsd*2)), alpha = 0.1) +
-  geom_ribbon(aes(ymin = mean - (rollsd*3), ymax = mean + (rollsd*3)), alpha = 0.1) + 
-  geom_smooth(method='loess', formula= y~x)
-```
-
-#### Set thresholds
+#### Set thresholds (these thresholds need to become a yaml table)
 
 ```{r}
 # value range df
@@ -418,6 +403,8 @@ add_flag <- function(df, condition_arg, description_arg) {
 }
 
 # Example with field flags
+
+# creating add_field_flags function
 add_field_flags <- function(df) {
   df <- df %>% 
     # To use add_flag in a pipeline just input a condition for a flag and your description for the flag.
@@ -426,42 +413,9 @@ add_field_flags <- function(df) {
   return(df)
 }
 
+# applying add_field_flags() function to temperature_archery_summary_stats df
 temperature_archery_field_flags <- add_field_flags(temperature_archery_summary_stats)
-
-View(temperature_archery_field_flags)
 ```
-
-```{r}
-summary_stats_flags <- function(df) {
-  flag = if_else(is.na(mean), 'no data', NA_character_)
-}
-```
-
-
-Data out of range:
-listed accuracy and range for sensors:
-
-Temperature: ±0.1 Celsius, -5 to 50 C
-
-Barometric Pressure: ±1.0 mbars, 300 to 1,100 mbars
-
-pH: ±0.1 pH, 0 to 14 pH
-
-ORP: ±5 mV
-
-Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
-
-TDS/Salinity: range of 0 to 350 ppt/0 to 350 PSU
-
-RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
-
-Turbidity: ±2% of reading or ±0.5 NTU (whichever is greater)
-
-TSS: range of 1 to 1,500 mg/L
-
-Pressure: ±0.1% FS from -5 to 50°C
-
-Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L
 
 ```{r}
 # sensor spec ranges flagging function
@@ -505,19 +459,13 @@ add_sensor_spec_range_flags <- function(df) {
   return(df)
 }
 
-# Use grep to find elements with "archery" in their title
-archery_objects <- all_data_summary_list[grep("archery", names(all_data_summary_list), ignore.case = TRUE)]
-
-# Resulting list of objects with "archery" in the title
-archery_objects_df <- bind_rows(archery_objects)
-
-View(add_sensor_spec_range_flags(archery_objects_df))
+# applying add_sensor_spec_range_flags() function to temperature_archery_field_flags df
+temperature_archery_range_flags <- add_sensor_spec_range_flags(temperature_archery_field_flags)
 ```
 
 
 ```{r}
-# sensor spec ranges flagging function
-# this should be done after the dfs for every site are joined ?
+# internal lab bounds for parameters
 add_parameter_bound_flags <- function(df) {
   df <- df %>% 
   # "Temperature" 
@@ -550,20 +498,20 @@ add_parameter_bound_flags <- function(df) {
   return(df)
 }
 
-View(add_parameter_bound_flags(archery_objects_df))
+# applying add_parameter_bound_flags() function to temperature_archery_field_flags df
+temperature_archery_bound_flags <- add_parameter_bound_flags(temperature_archery_range_flags)
 ```
 
 For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
 
 ```{r}
-temperature_summary <- temperature_archery_summary_stats %>% 
-  group_by(y_m) %>% 
-  summarise(ym_sd = sd(mean, na.rm = T))
-
 # flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
-temperature_archery_summary_stats_2 <- temperature_archery_field_flags %>%
-  left_join(temperature_summary) %>% 
   # Do we want to play around with using the monthly sd instead of the rolling sd?
+
+  # keep this df name temperature_archery_bound_flags bc the bounding flagging
+  # function was the last one that was applied
+
+temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
   add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range")
 ```
 
@@ -571,16 +519,22 @@ For data that repeats:
 
 ```{r}
 # flag data that repeat across time:
-temperature_archery_summary_stats_2 <- temperature_archery_summary_stats_2 %>% 
+temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
   add_flag((mean == front1 | mean == back1), "Repeated value")
 ```
 
-For instances where change in a 15m period is > 1degC
+For instances where change in a 15m period is > 1degC (for temperature data) (this should also be a look up table)
 
 ```{r}
 # flag data where change in a 15m period is > 1degC
-temperature_archery_summary_stats_2 <- temperature_archery_summary_stats_2 %>% 
+temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
   add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "Slope exceedance")
+```
+
+For missing data:
+```{r}
+temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
+  add_flag(is.na(mean), "missing data")
 ```
 
 #### Visualize the flags
@@ -588,9 +542,9 @@ temperature_archery_summary_stats_2 <- temperature_archery_summary_stats_2 %>%
 ```{r}
 # Current vis:
 ggplot() +
-  geom_point(data = filter(temperature_archery_summary_stats_2, is.na(flag)), 
+  geom_point(data = filter(temperature_archery_bound_flags, is.na(flag)), 
              aes(x=DT_round, y = mean)) +
-  geom_point(data = filter(temperature_archery_summary_stats_2, !is.na(flag)), 
+  geom_point(data = filter(temperature_archery_bound_flags, !is.na(flag)), 
              aes(x=DT_round, y = mean, color = flag)) +
   theme_bw() +
   theme(legend.position = 'bottom') 
@@ -619,10 +573,10 @@ for (i in 1:nrow(flag_dates)) {
   plot <- ggplot(data = day_data, aes(x=DT_round, y = mean, color = flag)) +
     geom_point() +
     # exceeding sd visualized
-    # geom_ribbon(aes(ymin = rollavg - ym_sd, ymax = rollavg + ym_sd), alpha = 0.1, color = NA) +
-    # geom_ribbon(aes(ymin = rollavg - (ym_sd*2), ymax = rollavg + (ym_sd*2)), alpha = 0.1, color = NA) +
-    # geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3)), alpha = 0.1, color = NA) +
-    # geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+    geom_ribbon(aes(ymin = rollavg - ym_sd, ymax = rollavg + ym_sd), alpha = 0.1, color = NA) +
+    geom_ribbon(aes(ymin = rollavg - (ym_sd*2), ymax = rollavg + (ym_sd*2)), alpha = 0.1, color = NA) +
+    geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3)), alpha = 0.1, color = NA) +
+    geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
     # exceeding slope visualized
     geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = "NA mean")) +
     # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
@@ -641,51 +595,13 @@ for (i in 1:length(plot_list)) {
 ```
 
 ```{r}
-temperature_archery_summary_stats_3 <- temperature_archery_summary_stats_2 %>% 
-  add_flag(slope_behind >= slope_thresh, "slope (behind)")
-```
+# This can be used to develop site specific flags for specific parameters
+# (later)
 
-```{r}
-# Visualizing slope exceedance (behind)
-plot_list <- list()
+# Use grep to find elements with "archery" in their title
+archery_objects <- all_data_summary_list[grep("archery", names(all_data_summary_list), ignore.case = TRUE)]
 
-flag_dates_2 <- temperature_archery_summary_stats_3 %>% 
-  filter(str_detect(flag, "slope (behind)"))#%>%   
-  # group_by(day(DT_join)) %>% 
-  # slice(1)
-
-for (i in 1:nrow(flag_dates_2)) {
-  
-  flag_year <- flag_dates_2$year[i]
-  flag_month <- flag_dates_2$month[i]
-  flag_day <- flag_dates_2$DT_round[i]
-  
-  day_data <- temperature_archery_summary_stats_3 %>%
-    filter(year == flag_year,
-           month == flag_month,
-           day(DT_round) == day(flag_day))
-
-  plot <- ggplot(data = day_data, aes(x=DT_round, y = mean, color = flag)) +
-    geom_point() +
-    # exceeding sd visualized
-    # geom_ribbon(aes(ymin = rollavg - ym_sd, ymax = rollavg + ym_sd), alpha = 0.1, color = NA) +
-    # geom_ribbon(aes(ymin = rollavg - (ym_sd*2), ymax = rollavg + (ym_sd*2)), alpha = 0.1, color = NA) +
-    # geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3)), alpha = 0.1, color = NA) +
-    # geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
-    # exceeding slope visualized
-    geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = "NA mean")) +
-    # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
-    theme_bw() +
-    theme(legend.position = 'bottom') +
-    ggtitle(paste("Site Visit on", as.character(flag_day)))
-  
-  plot_list[[as.character(flag_day)]] <- plot
-  
-}
-
-# for loop here because map was acting strange
-for (i in 1:length(plot_list)) {
-  print(plot_list[[i]])
-}
+# Resulting list of objects with "archery" in the title
+archery_objects_df <- bind_rows(archery_objects)
 ```
 
