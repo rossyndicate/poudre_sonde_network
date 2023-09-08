@@ -1,0 +1,24 @@
+Data out of range:
+listed accuracy and range for sensors:
+
+Temperature: ±0.1 Celsius, -5 to 50 C
+
+Barometric Pressure: ±1.0 mbars, 300 to 1,100 mbars
+
+pH: ±0.1 pH, 0 to 14 pH
+
+ORP: ±5 mV
+
+Conductivity: ±0.5% of reading plus 1 μS/ cm from 0 to 100,000 μS/cm; ±1.0% of reading from 100,000 to 200,000 μS/cm; ±2.0% of reading from 200,000 to 350,000 μS/cm
+
+TDS/Salinity: range of 0 to 350 ppt/0 to 350 PSU
+
+RDO: ±0.1 mg/L or ±2% of reading (whichever is greater)
+
+Turbidity: ±2% of reading or ±0.5 NTU (whichever is greater)
+
+TSS: range of 1 to 1,500 mg/L
+
+Pressure: ±0.1% FS from -5 to 50°C
+
+Chlorophyll-a: range of 0-100 RFU or 1-1,000 μg/L

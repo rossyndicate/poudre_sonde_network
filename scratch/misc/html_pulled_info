@@ -1,0 +1,61 @@
+What to pull from html
+
+Depth:
+  div: sensor: pressure
+    - last calibrated date
+    - calibration details
+      - zero offset
+      - reference depth
+      - reference offset
+      - pre measurement
+      - post measurement
+
+RDO:
+  div: sensor: RDO
+    - calibration details:
+      - slope
+      - offset
+    - calibration point 100%:
+      - pre measurement
+      - concentration
+      - temperature
+      - barometric pressure
+
+pH/ORP:
+  div: sensor: pH/ORP
+    - calibration details
+      - calibration point 3
+        - slope and offset 1
+          - slope
+          - offset
+        - slope and offset 2
+          - slope
+          -offset
+      - calibratoin point 2
+        - post measurement
+          - pH mV
+      - ORP
+        - offset
+
+Conductivity:
+  div: sensor: Conductivity
+    - calibration details
+      - TDS Conversion Factor (ppm)
+      - cell constant
+    - pre measurement
+      - specific conductivity
+    - post measurement
+      - specific conductivity
+
+Turbidity:
+  div: sensor: Turbidity
+    - calibration details
+      - slope
+      - offset
+    - calibration point 1
+      - pre measurement
+    - calibration point 2
+      - pre measurement
+
+factory defaults column:
+  - this checks each column, and if there is an NA in that column, then the factory default gets put there.
