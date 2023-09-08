@@ -278,7 +278,6 @@ processing speed (targets?). Here I am starting a pipeline for Archery's tempera
 
 #### Format data
 
-
 ```{r}
 # Determine each site and parameter in all_data 
 sites <- unique(all_data$site)
@@ -604,4 +603,3 @@ archery_objects <- all_data_summary_list[grep("archery", names(all_data_summary_
 # Resulting list of objects with "archery" in the title
 archery_objects_df <- bind_rows(archery_objects)
 ```
-
