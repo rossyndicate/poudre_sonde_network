@@ -1,0 +1,45 @@
+Temperature:
+  min: -5
+  max: 50
+- "% Saturation O₂":
+  min: NA
+  max: NA
+Actual Conductivity:
+  min: 0
+  max: 350000
+Baro:
+  min: 4.35113
+  max: 15.95415
+Battery Level:
+  min: 0
+  max: 100
+Chl-a Fluorescence:
+  min: 0
+  max: 100
+- "Density"
+- "Depth"
+DO:
+  min: 0
+  max: 60
+- "External Voltage"
+- "Level: Depth to Water"
+- "Level: Elevation"
+ORP:
+  min: -1.4
+  max: 1.4
+- "Partial Pressure O₂"
+pH:
+  min: 0
+  max: 14
+- "pH MV"
+- "Pressure"
+- "Pulse"
+- "Resistivity"
+Salinity:
+  min: 0
+  max: 350
+"Specific Conductivity"
+"Total Dissolved Solids"
+Turbidity:
+  min: 0
+  max: 4000

@@ -523,6 +523,20 @@ temperature_archery_bound_flags <- temperature_archery_bound_flags %>%
 For instances where change in a 15m period is > 1degC (for temperature data) (this should also be a look up table)
 
 ```{r}
+test_slope_df_2 <- all_data_summary_stats_df[["archery-Temperature"]] %>% 
+  add_field_flags() %>% 
+  add_sensor_spec_range_flags() %>% 
+  add_parameter_bound_flags() %>% 
+  add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range") %>% 
+  add_flag((mean == front1 | mean == back1), "Repeated value") %>%
+  add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "slope flag suspect") %>% 
+  alter_flag((slope_ahead >= slope_thresh & slope_behind >= slope_thresh), "slope flag suspect", "slope flag actual") %>% 
+  add_flag(is.na(mean), "missing data")
+  
+```
+
+
+```{r}
 # flag data where change in a 15m period is > 1degC
 temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
   add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "Slope exceedance")
@@ -551,8 +565,11 @@ ggplot() +
 # Visualizing slope exceedance
 plot_list <- list()
 
-flag_dates <- temperature_archery_bound_flags %>% 
-  filter(str_detect(flag, "Slope exceedance")) %>%  
+flag_dates <- test_slope_df_2 %>% 
+  filter(str_detect(flag, "slope flag suspect")) %>%  
+flag_dates <- test_slope_df_2 %>% 
+  filter(str_detect(flag, "slope flag suspect")) %>%  
+  # filter(str_detect(flag, "Outside SD range")) %>%  
   group_by(day(DT_join)) %>% 
   slice(1)
 
@@ -562,7 +579,8 @@ for (i in 1:nrow(flag_dates)) {
   flag_month <- flag_dates$month[i]
   flag_day <- flag_dates$DT_round[i]
   
-  day_data <- temperature_archery_bound_flags %>%
+
+  day_data <- test_slope_df_2 %>%
     filter(year == flag_year,
            month == flag_month,
            day(DT_round) == day(flag_day))
@@ -575,7 +593,7 @@ for (i in 1:nrow(flag_dates)) {
     geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3)), alpha = 0.1, color = NA) +
     geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
     # exceeding slope visualized
-    geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = "NA mean")) +
+    geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
     # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
     theme_bw() +
     theme(legend.position = 'bottom') +
