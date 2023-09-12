@@ -1,0 +1,110 @@
+---
+title: "Comparing data between Timberline and Prospect sites"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE, evaluate = FALSE)
+```
+
+# Goal
+ 
+ The Timberline and Prospect sites bracket Spring Creek as it flows into the Cache la Poudre River. From a visual perspective, the datasets are nearly the same other than biofilm build up at Prospect which causes turbidity to drift in the late summer. 
+ This analysis will compare the two datasets and determine if there is a statistical difference between the two sites. 
+ 
+ 
+```{r setup}
+source("src/package_loader.R")
+lapply(c("data.table", "arrow", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll"), package_loader)
+
+
+library(forecast)
+library(lmtest)
+library(fUnitRoots)
+library(TSA)
+library(dplyr)
+
+```
+
+
+```{r load_datasets}
+prospect <- read_csv_arrow(file = "data/api/Prospect_2023-08-07.csv")%>%
+  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+  pivot_wider(id_cols = c("site", "id", "name", "timestamp"),names_from = parameter, values_from = value)%>%
+  select(-c(Baro, 'Battery Level'))
+
+timberline <- read_csv_arrow(file = "data/api/Timberline_2023-08-07.csv")%>%
+  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+  pivot_wider(id_cols = c("site", "id", "name", "timestamp"),names_from = parameter, values_from = value)
+
+archery <- read_csv_arrow(file = "data/api/Archery_2023-08-07.csv")%>%
+  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+  pivot_wider(id_cols = c("site", "id", "name", "timestamp"),names_from = parameter, values_from = value)
+
+lincoln <- read_csv_arrow(file = "data/api/lincoln_2023-08-07.csv")%>%
+  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+  pivot_wider(id_cols = c("site", "id", "name", "timestamp"),names_from = parameter, values_from = value)%>%
+  select(-c(Baro, 'Battery Level'))
+  #select(-c(Baro, 'Battery Level'))
+pros_timb <- rbind(prospect, timberline)
+
+```
+
+```{r stats}
+
+# Assuming ts1 and ts2 are your time series data for parameter 1
+make_comparison <- function(parameter, site1, site2){
+  
+  site1_name <- site1$name[1]
+  site2_name <- site2$name[1]
+  
+  ts1 <- site1%>%
+    select(timestamp, param_site1 = parameter)
+  ts2 <- site2%>%
+    select(timestamp, param_site2 = parameter)
+  ts_comb <- ts1%>%
+    left_join(ts2, by = "timestamp")%>%
+    na.omit()
+  
+  model <- lm(param_site1 ~ param_site2, data = ts_comb)
+  
+  # Perform Breusch-Pagan test for homoscedasticity
+bptest(model)
+
+
+# Get residuals from the model
+residuals <- residuals(model)
+
+# Create a data frame
+data <- data.frame(TS2 = ts_comb$param_site2, Residuals = residuals)
+  
+param_range <- range(min(ts_comb$param_site1, ts_comb$param_site2),max(ts_comb$param_site1, ts_comb$param_site2))
+
+ggplot(ts_comb, aes(x = param_site1, y = param_site2)) +
+  geom_point() +
+   geom_smooth(method = "lm", se = FALSE, color = "blue") + 
+   geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  labs(
+    title = parameter,
+    x = site1_name,
+    y = site2_name
+  )+
+  coord_fixed(ratio = 1)+
+  xlim(param_range)+
+  ylim(param_range)+
+  theme_bw()
+}
+```
+
+Making comparisons 
+```{r making_comps}
+timb_linc <- make_comparison("Temperature", site1 = timberline, site2 = lincoln)
+timb_pros <- make_comparison("Temperature", site1 = timberline, site2 = prospect)
+timb_arch <- make_comparison("Temperature", site1 = timberline, site2 = archery)
+
+timb_comp <- ggpubr::ggarrange(timb_linc, timb_pros, timb_arch, nrow = 1)
+ggsave("images/timberline_temp_comparison.png",plot = timb_comp, dpi = 300)
+```
+
