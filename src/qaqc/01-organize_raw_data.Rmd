@@ -342,37 +342,35 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
 ```{r}
-# This should get wrapped up in a function to map over all_data_summary_list
-temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature"]] %>%
-  # ... so that we can get the proper leading/lagging values across our entire timeseries:
-  mutate(
-    # Add the next value and previous value for mean.
-    front1 = lead(mean, n = 1),
-    back1 = lag(mean, n = 1),
-    # Add the median for a point centered in a rolling median of 7 points.
-    rollmed = roll_median(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-    # Add the mean for a point centered in a rolling mean of 7 points.
-    rollavg = roll_mean(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-    # Add the standard deviation for a point centered in a rolling mean of 7 points.
-    rollsd = roll_sd(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-    # Determine the slope of a point in relation to the point ahead and behind.
-    slope_ahead = abs(front1 - mean)/15,
-    slope_behind = abs(mean - back1)/15,
-    # add some summary info for future us
-    month = month(DT_round),
-    year = year(DT_round),
-    y_m = paste(year, '-', month))
-
-temperature_summary <- temperature_archery_summary_stats %>% 
-  group_by(y_m) %>% 
-  summarise(ym_sd = sd(mean, na.rm = T))
-
-# flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
-temperature_archery_summary_stats <- temperature_archery_summary_stats %>%
-  left_join(temperature_summary) 
-
-# This will need to get done for each site-param combo separately
-# Then we can bind these tables and continue adding flags
+generate_summary_statistics <- function(site_param_df) {
+  # This should get wrapped up in a function to map over all_data_summary_list
+  summary_stats_df <- site_param_df %>%
+    # ... so that we can get the proper leading/lagging values across our entire timeseries:
+    mutate(
+      # Add the next value and previous value for mean.
+      front1 = lead(mean, n = 1),
+      back1 = lag(mean, n = 1),
+      # Add the median for a point centered in a rolling median of 7 points.
+      rollmed = roll_median(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      # Add the mean for a point centered in a rolling mean of 7 points.
+      rollavg = roll_mean(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      # Add the standard deviation for a point centered in a rolling mean of 7 points.
+      rollsd = roll_sd(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      # Determine the slope of a point in relation to the point ahead and behind.
+      slope_ahead = abs(front1 - mean)/15,
+      slope_behind = abs(mean - back1)/15,
+      # add some summary info for future us
+      month = month(DT_round),
+      year = year(DT_round),
+      y_m = paste(year, '-', month)
+      ) %>% 
+    group_by(y_m) %>% 
+    mutate(ym_sd = sd(mean, na.rm = T)) %>% 
+    ungroup() # does this do anything for downstream analysis?
+  
+  return(summary_stats_df)
+}
+all_data_summary_stats_df <- map(all_data_summary_list, generate_summary_statistics)
 ```
 
 #### Set thresholds (these thresholds need to become a yaml table)
