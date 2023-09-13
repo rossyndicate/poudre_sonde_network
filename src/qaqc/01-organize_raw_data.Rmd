@@ -9,7 +9,7 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
 ```
 
 Load necessary packages:
@@ -342,37 +342,35 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
 ```{r}
-# This should get wrapped up in a function to map over all_data_summary_list
-temperature_archery_summary_stats <- all_data_summary_list[["archery-Temperature"]] %>%
-  # ... so that we can get the proper leading/lagging values across our entire timeseries:
-  mutate(
-    # Add the next value and previous value for mean.
-    front1 = lead(mean, n = 1),
-    back1 = lag(mean, n = 1),
-    # Add the median for a point centered in a rolling median of 7 points.
-    rollmed = roll_median(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-    # Add the mean for a point centered in a rolling mean of 7 points.
-    rollavg = roll_mean(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-    # Add the standard deviation for a point centered in a rolling mean of 7 points.
-    rollsd = roll_sd(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-    # Determine the slope of a point in relation to the point ahead and behind.
-    slope_ahead = abs(front1 - mean)/15,
-    slope_behind = abs(mean - back1)/15,
-    # add some summary info for future us
-    month = month(DT_round),
-    year = year(DT_round),
-    y_m = paste(year, '-', month))
-
-temperature_summary <- temperature_archery_summary_stats %>% 
-  group_by(y_m) %>% 
-  summarise(ym_sd = sd(mean, na.rm = T))
-
-# flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
-temperature_archery_summary_stats <- temperature_archery_summary_stats %>%
-  left_join(temperature_summary) 
-
-# This will need to get done for each site-param combo separately
-# Then we can bind these tables and continue adding flags
+generate_summary_statistics <- function(site_param_df) {
+  # This should get wrapped up in a function to map over all_data_summary_list
+  summary_stats_df <- site_param_df %>%
+    # ... so that we can get the proper leading/lagging values across our entire timeseries:
+    mutate(
+      # Add the next value and previous value for mean.
+      front1 = lead(mean, n = 1),
+      back1 = lag(mean, n = 1),
+      # Add the median for a point centered in a rolling median of 7 points.
+      rollmed = roll_median(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      # Add the mean for a point centered in a rolling mean of 7 points.
+      rollavg = roll_mean(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      # Add the standard deviation for a point centered in a rolling mean of 7 points.
+      rollsd = roll_sd(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      # Determine the slope of a point in relation to the point ahead and behind.
+      slope_ahead = abs(front1 - mean)/15,
+      slope_behind = abs(mean - back1)/15,
+      # add some summary info for future us
+      month = month(DT_round),
+      year = year(DT_round),
+      y_m = paste(year, '-', month)
+      ) %>% 
+    group_by(y_m) %>% 
+    mutate(ym_sd = sd(mean, na.rm = T)) %>% 
+    ungroup() # does this do anything for downstream analysis?
+  
+  return(summary_stats_df)
+}
+all_data_summary_stats_df <- map(all_data_summary_list, generate_summary_statistics)
 ```
 
 #### Set thresholds (these thresholds need to become a yaml table)
@@ -525,6 +523,20 @@ temperature_archery_bound_flags <- temperature_archery_bound_flags %>%
 For instances where change in a 15m period is > 1degC (for temperature data) (this should also be a look up table)
 
 ```{r}
+test_slope_df_2 <- all_data_summary_stats_df[["archery-Temperature"]] %>% 
+  add_field_flags() %>% 
+  add_sensor_spec_range_flags() %>% 
+  add_parameter_bound_flags() %>% 
+  add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range") %>% 
+  add_flag((mean == front1 | mean == back1), "Repeated value") %>%
+  add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "slope flag suspect") %>% 
+  alter_flag((slope_ahead >= slope_thresh & slope_behind >= slope_thresh), "slope flag suspect", "slope flag actual") %>% 
+  add_flag(is.na(mean), "missing data")
+  
+```
+
+
+```{r}
 # flag data where change in a 15m period is > 1degC
 temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
   add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "Slope exceedance")
@@ -553,8 +565,11 @@ ggplot() +
 # Visualizing slope exceedance
 plot_list <- list()
 
-flag_dates <- temperature_archery_summary_stats_2 %>% 
-  filter(str_detect(flag, "Slope exceedance")) %>%  
+flag_dates <- test_slope_df_2 %>% 
+  filter(str_detect(flag, "slope flag suspect")) %>%  
+flag_dates <- test_slope_df_2 %>% 
+  filter(str_detect(flag, "slope flag suspect")) %>%  
+  # filter(str_detect(flag, "Outside SD range")) %>%  
   group_by(day(DT_join)) %>% 
   slice(1)
 
@@ -564,7 +579,8 @@ for (i in 1:nrow(flag_dates)) {
   flag_month <- flag_dates$month[i]
   flag_day <- flag_dates$DT_round[i]
   
-  day_data <- temperature_archery_summary_stats_2 %>%
+
+  day_data <- test_slope_df_2 %>%
     filter(year == flag_year,
            month == flag_month,
            day(DT_round) == day(flag_day))
@@ -577,7 +593,7 @@ for (i in 1:nrow(flag_dates)) {
     geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3)), alpha = 0.1, color = NA) +
     geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
     # exceeding slope visualized
-    geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = "NA mean")) +
+    geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
     # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
     theme_bw() +
     theme(legend.position = 'bottom') +
