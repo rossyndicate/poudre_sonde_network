@@ -16,7 +16,7 @@ Load necessary packages:
 
 ```{r}
 source("src/package_loader.R")
-lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll"), package_loader)
+lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml"), package_loader)
 ```
 
 # Import and collate data
@@ -375,16 +375,6 @@ all_data_summary_stats_df <- map(all_data_summary_list, generate_summary_statist
 
 #### Set thresholds (these thresholds need to become a yaml table)
 
-```{r}
-# value range df
-temp_max = 30
-temp_min = 0
-
-# slope threshold
-## 1C/15min
-slope_thresh = 1/15
-```
-
 #### Add the flags
 Add flagging functions for each df in all_data_summary_list
 
@@ -395,6 +385,15 @@ Add flagging functions for each df in all_data_summary_list
 add_flag <- function(df, condition_arg, description_arg) {
   df <- df %>% mutate(flag = case_when(
     {{condition_arg}} ~ if_else(is.na(flag), description_arg, paste(flag, description_arg, sep = "; ")),
+    TRUE ~ flag))
+  return(df)
+}
+
+# Flag alter function
+# This function can be used to alter flags that have been established
+alter_flag <- function(df, condition_arg, old_description_arg, new_description_arg) {
+  df <- df %>% mutate(flag = case_when(
+    {{condition_arg}} & str_detect(flag, old_description_arg) ~ str_replace(flag, old_description_arg, new_description_arg),
     TRUE ~ flag))
   return(df)
 }
@@ -415,88 +414,35 @@ temperature_archery_field_flags <- add_field_flags(temperature_archery_summary_s
 ```
 
 ```{r}
+parameter_ranges <- yaml::read_yaml("src/qaqc/parameter_thresholds.yml")
+
 # sensor spec ranges flagging function
   # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
-add_sensor_spec_range_flags <- function(df) {
-  df <- df %>% 
-  # "Temperature" 
-    add_flag(parameter == "Temperature" & (mean < -5 | mean > 50), "out of (temperature) sensor specification range") %>% 
-  # "% Saturation O₂"
-  # "Actual Conductivity"
-    add_flag(parameter == "Actual Conductivity" & (mean < 0 | mean > 350000), "out of (actual conductivity) sensor specification range") %>% 
-  # "Baro" 
-    add_flag(parameter == "Baro" & (mean < 4.35113 | mean > 15.95415 ), "out of (barometric pressure) sensor specification range") %>% 
-  # "Battery Level" 
-    add_flag(parameter == "Battery Level" & (mean < 0 | mean > 100 ), "out of (battery level) sensor specification range") %>%
-  # "Chl-a Fluorescence"    
-    add_flag(parameter == "Chl-a Fluorescence" & (mean < 0 | mean > 100 ), "out of (chl-a fluorescence) sensor specification range") %>%
-  # "Density"               
-  # "Depth"                  
-  # "DO" (is RDO and DO the same thing?)
-    add_flag(parameter == "DO" & (mean < 0 | mean > 60 ), "out of (battery level) sensor specification range") %>%
-  # "External Voltage"       
-  # "Level: Depth to Water" 
-  # "Level: Elevation"       
-  # "ORP"
-    add_flag(parameter == "ORP" & (mean < -1.4 | mean > 1.4 ), "out of (ORP) sensor specification range") %>% 
-  # "Partial Pressure O₂"    
-  # "pH"
-    add_flag(parameter == "pH" & (mean < 0 | mean > 14), "out of (pH) sensor specification range") %>% 
-  # "pH MV"                 
-  # "Pressure"               
-  # "Pulse"                  
-  # "Resistivity"            
-  # "Salinity"
-    add_flag(parameter == "Salinity" & (mean < 0 | mean > 350), "out of (salinity) sensor specification range") %>% 
-  # "Specific Conductivity" 
-  # "Total Dissolved Solids" 
-  # "Turbidity"
-    add_flag(parameter == "Turbidity" & (mean < 0 | mean > 4000), "out of (turbidity) sensor specification range")
+add_range_flags <- function(df) {
+  
+  # get the parameter from the parameter column in the df of interest
+  parameter_name <- unique(na.omit(df$parameter))
+  # Pull the sensor specification range from the yaml file
+  sensor_min <- parameter_ranges[[parameter_name]]$sensor_specifications$min
+  sensor_max <- parameter_ranges[[parameter_name]]$sensor_specifications$max
+  # Pull the lab bound range from the yaml file
+  lab_min <- parameter_ranges[[parameter_name]]$lab_bounds$min
+  lab_max <- parameter_ranges[[parameter_name]]$lab_bounds$max
+
+  df <- df %>%
+    # adding sensor range flags
+    add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
+             paste0("out of (", parameter_name,") sensor specification range (TEST)")) %>%
+    # adding lab bound flags
+    add_flag(parameter == parameter_name & (mean < lab_min | mean > lab_max),
+             paste0("out of (", parameter_name,") lab bounds (TEST)"))
   
   return(df)
+  
 }
 
 # applying add_sensor_spec_range_flags() function to temperature_archery_field_flags df
 temperature_archery_range_flags <- add_sensor_spec_range_flags(temperature_archery_field_flags)
-```
-
-
-```{r}
-# internal lab bounds for parameters
-add_parameter_bound_flags <- function(df) {
-  df <- df %>% 
-  # "Temperature" 
-    add_flag(parameter == "Temperature" & (mean <= 0 | mean >= 30), "out of (temperature) bounds") %>% 
-  # "% Saturation O₂"
-  # "Actual Conductivity"    
-  # "Baro"                   
-  # "Battery Level"          
-  # "Chl-a Fluorescence"    
-  # "Density"               
-  # "Depth"                  
-  # "DO"                     
-  # "External Voltage"       
-  # "Level: Depth to Water" 
-  # "Level: Elevation"       
-  # "ORP"                    
-  # "Partial Pressure O₂"    
-  # "pH"
-    add_flag(parameter == "pH" & (mean <= 0 | mean >= 14), "out of (pH) bounds")
-  # "pH MV"                 
-  # "Pressure"               
-  # "Pulse"                  
-  # "Resistivity"            
-  # "Salinity"               
-  # "Specific Conductivity" 
-  # "Temperature"            
-  # "Total Dissolved Solids" 
-  # "Turbidity"
-  
-  return(df)
-}
-
-# applying add_parameter_bound_flags() function to temperature_archery_field_flags df
-temperature_archery_bound_flags <- add_parameter_bound_flags(temperature_archery_range_flags)
 ```
 
 For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
@@ -523,16 +469,16 @@ temperature_archery_bound_flags <- temperature_archery_bound_flags %>%
 For instances where change in a 15m period is > 1degC (for temperature data) (this should also be a look up table)
 
 ```{r}
-test_slope_df_2 <- all_data_summary_stats_df[["archery-Temperature"]] %>% 
+# This is here to explore data easily
+
+test_slope_df_2 <- all_data_summary_stats_df[["legacy-pH"]] %>% 
   add_field_flags() %>% 
-  add_sensor_spec_range_flags() %>% 
-  add_parameter_bound_flags() %>% 
+  add_range_flags() %>% 
   add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range") %>% 
   add_flag((mean == front1 | mean == back1), "Repeated value") %>%
   add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "slope flag suspect") %>% 
   alter_flag((slope_ahead >= slope_thresh & slope_behind >= slope_thresh), "slope flag suspect", "slope flag actual") %>% 
   add_flag(is.na(mean), "missing data")
-  
 ```
 
 
@@ -540,6 +486,8 @@ test_slope_df_2 <- all_data_summary_stats_df[["archery-Temperature"]] %>%
 # flag data where change in a 15m period is > 1degC
 temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
   add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "Slope exceedance")
+
+# Testing 
 ```
 
 For missing data:
@@ -565,11 +513,14 @@ ggplot() +
 # Visualizing slope exceedance
 plot_list <- list()
 
+# flag_dates <- test_slope_df_2 %>% 
+#   filter(str_detect(flag, "slope flag suspect"))
+
 flag_dates <- test_slope_df_2 %>% 
-  filter(str_detect(flag, "slope flag suspect")) %>%  
-flag_dates <- test_slope_df_2 %>% 
-  filter(str_detect(flag, "slope flag suspect")) %>%  
+  filter(str_detect(flag, "site visit")) %>%
+  # filter(str_detect(flag, "slope flag suspect")) %>%    
   # filter(str_detect(flag, "Outside SD range")) %>%  
+  # filter(!is.na(flag)) %>% 
   group_by(day(DT_join)) %>% 
   slice(1)
 

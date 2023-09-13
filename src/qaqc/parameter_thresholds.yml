@@ -1,0 +1,184 @@
+"Temperature":
+  sensor_specifications:
+    min: -5
+    max: 50
+  lab_bounds:
+    min: 0
+    max: 30
+  slope_threshold: 1/15
+"% Saturation O₂":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Actual Conductivity":
+  sensor_specifications:
+    min: 0
+    max: 350000
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Baro":
+  sensor_specifications:
+    min: 4.35113
+    max: 15.95415
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Battery Level":
+  sensor_specifications:
+    min: 0
+    max: 100
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Chl-a Fluorescence":
+  sensor_specifications:
+    min: 0
+    max: 100
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Density":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Depth":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"DO":
+  sensor_specifications:
+    min: 0
+    max: 60
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"External Voltage":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Level: Depth to Water":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Level: Elevation":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"ORP":
+  sensor_specifications:
+    min: -1.4
+    max: 1.4
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Partial Pressure O₂":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"pH":
+  sensor_specifications:
+    min: 0
+    max: 14
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"pH MV":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Pressure":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Pulse":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Resistivity":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Salinity":
+  sensor_specifications:
+    min: 0
+    max: 350
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Specific Conductivity":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Total Dissolved Solids":
+  sensor_specifications:
+    min: NA
+    max: NA
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
+"Turbidity":
+  sensor_specifications:
+    min: 0
+    max: 4000
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
