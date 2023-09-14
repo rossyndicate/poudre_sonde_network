@@ -481,7 +481,7 @@ temperature_archery_bound_flags <- temperature_archery_bound_flags %>%
 For instances where change in a 15m period is > 1degC (for temperature data) (this should also be a look up table)
 
 ```{r}
-# This is here to explore data easily
+# This adds the flags to all the dfs inside of all_data_summary_stats_list
 all_data_flagged <- map(all_data_summary_stats_list, ~ .x %>% 
   add_field_flags() %>% 
   add_range_flags() %>% 
@@ -509,19 +509,23 @@ Visualizing daily plots
 ```{r}
 # Visualizing daily plots
 
+## This function will generate a list of plots for site-parameters
+## that have been tagged by a specific flag 
 generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
-
-  plot_list <- list()
   
+  # Generating df name to pull from all_data_flagged list
   site_param <- paste0(site_arg, "-", parameter_arg)
-  
+  # filter for all the days that are tagged within the site-param df of interest
   flag_dates <- all_data_flagged[[site_param]] %>%
       filter(str_detect(flag, flag_arg)) %>%
       group_by(day(DT_join)) %>%
       slice(1)
-
+  
+  # for loop to generate plots for everyday that was tagged by a flag
+  plot_list <- list()
+  
   for (i in 1:nrow(flag_dates)) {
-
+    
     flag_year <- flag_dates$year[i]
     flag_month <- flag_dates$month[i]
     flag_day <- flag_dates$DT_round[i]
@@ -562,7 +566,8 @@ Visualizing weekly plots
 # Visualizing weekly data ----
 
 generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) { 
-  
+  # vector of sites in the order that they are in spatially
+  # some sites have some funkiness going on
   sites_order <- c("tamasag", # rist 
                 "legacy",
                 "lincoln",
@@ -571,16 +576,20 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
                 "boxelder", # elc
                 "archery",
                 "river bluffs")
-  
+  # determining the index for the site of interest.
   site_index <- which(sites_order == site_arg)
   
-  site_param <- paste0(site_arg,"-",parameter_arg)
-  
+  # Generating df name to pull from all_data_flagged list
+  site_param <- paste0(site_arg, "-", parameter_arg)
+  # filter for all the days that are tagged within the site-param df of interest
   site_flag_dates <- all_data_flagged[[site_param]] %>% 
       filter(str_detect(flag, flag_arg)) %>%
       group_by(day(DT_join)) %>%
       slice(1)
   
+  # This for loop generates an overlayed plot of weekly data for the site of 
+  # interest sandwiched by the site above and below it for each day that was 
+  # tagged by a flag of interest
   plot_list <- list()
 
   for(i in 1:nrow(site_flag_dates)) {
@@ -588,15 +597,18 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
     flag_year <- site_flag_dates$year[i]
     flag_month <- site_flag_dates$month[i]
     flag_day <- site_flag_dates$DT_round[i]
-    # Getting the previous and next 3 days in relation to the flag day
+    # Getting the prior and subsequent 3 days to the flag day
     start_day <- flag_day - days(3)
     end_day <- flag_day + days(3)
-
+    
+    # filtering dfs of interest for the weeks where a flag was detected
     site_df <- all_data_flagged[[site_param]] %>%
       filter(year == flag_year,
       month == flag_month,
       DT_round >= start_day & DT_round <= end_day)
     
+    # TryCatch used here to avoid erroring out on the first and last values of
+    # sites_order object (there is no prior/next record after the first/last record)
     tryCatch({
       previous_site <- paste0(sites_order[site_index-1],"-",parameter_arg)
       prev_site_df <- all_data_flagged[[previous_site]] %>%
@@ -617,11 +629,15 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
         cat("No next site")},  # Return df as NULL in case of an error
       finally = {next_site_df <- NULL})
     
+    # Bind all three dfs
     week_plot_data <- list(site_df, prev_site_df, next_site_df) %>% 
       # remove NULL values from the list
       keep(~ !is.null(.)) %>% 
       bind_rows()
-
+    
+    # Using the data from the day where a flag was detected to generate a window
+    # to easily distinguish the data of interest in comparison with the rest of 
+    # the data
     site_day_data <- all_data_flagged[[site_param]] %>%
       filter(year == flag_year,
            month == flag_month,
@@ -634,9 +650,6 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
                 alpha = 0.01,
                 color = NA)+
       geom_line() +
-      # geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
-      # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
-      # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
       theme_bw() +
       theme(legend.position = 'bottom') +
       ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
@@ -653,18 +666,23 @@ generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
 ```{r}
-# combine weekly and daily plots 
-combine_plots <- function(week_plot, day_plot) {
+# function to combine weekly and daily plots 
+stack_plots <- function(week_plot, day_plot) {
   ggarrange(week_plot, day_plot, nrow = 2, ncol = 1)
 }
 
-# make new function that combines the two here
+# This function lets you combine the weekly and daily plots into one stacked plot
+# to compare the two. 
 weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   
+  # Call on the weekly and daily functions and fill their args with this 
+  # functions args
   weekly_plot_list <- generate_weekly_flag_plots(site_arg = site_arg, parameter_arg = parameter_arg, flag_arg = flag_arg)
   daily_plot_list <- generate_daily_flag_plots(site_arg = site_arg, parameter_arg = parameter_arg, flag_arg = flag_arg)
   
-  weekly_daily_plots <- map2(weekly_plot_list, daily_plot_list, combine_plots)
+  # These two functions should alway returnt the same amount of plots, so we can
+  # use map2() to stack them with combine_plots()
+  weekly_daily_plots <- map2(weekly_plot_list, daily_plot_list, stack_plots)
   return(weekly_daily_plots)
 }
 
