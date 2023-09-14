@@ -16,7 +16,7 @@ Load necessary packages:
 
 ```{r}
 source("src/package_loader.R")
-lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml"), package_loader)
+lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr"), package_loader)
 ```
 
 # Import and collate data
@@ -27,31 +27,31 @@ Load and munge field calibration files:
 cal_files <- list.files("data/calibration_reports", pattern=".html")
 
 cal_tabler <- function(cal_files){
-  
+
   cal <- read_html(file.path("data/calibration_reports/", cal_files)) %>%
     html_nodes("div") %>%
     html_text() %>%
     as_tibble()
-  
+
   rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
-  
+
   ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
-  
+
   conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
-  
+
   turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
-  
+
   # Always the fifth sensor when depth is available:
   try(depth <- cal %>% .[5,] %>% pull() %>% str_replace_all(., " ", "") %>% tolower())
-  
+
   time_mst <- paste0(str_sub(cal_files, -13, -12),":", str_sub(cal_files, -11, -10))
-  
+
   date <- paste0(str_sub(cal_files, -22, -19),"-", str_sub(cal_files, -18, -17),"-", str_sub(cal_files, -16, -15))
-  
+
   cal_table <- tibble(site = sub("\\_.*", "", cal_files),
-                      
+
                       DT = ymd_hm(paste(date, time_mst, tz = "MST")),
-                      
+
                       # Depth
                       depth_cal_date = "None",
                       depth_offset = "None",
@@ -59,7 +59,7 @@ cal_tabler <- function(cal_files){
                       depth_ref_offset = "None",
                       depth_pre_psi = "None",
                       depth_post_psi = "None",
-                      
+
                       # Dissolved Oxygen
                       rdo_slope = str_match(rdo, "slope\\s*(.*?)\\s*offset")[,2],
                       rdo_offset = str_match(rdo, "offset\\s*(.*?)\\s*mg/l")[,2],
@@ -67,7 +67,7 @@ cal_tabler <- function(cal_files){
                       rdo_conc = str_match(rdo, "concentration\\s*(.*?)\\s*mg/lpremeasurement")[,2],
                       rdo_temp = str_match(rdo, "temperature\\s*(.*?)\\s*°c")[,2],
                       rdo_pressure = str_match(rdo, "pressure\\s*(.*?)\\s*mbar")[,2],
-                      
+
                       # pH
                       ph_slope_pre = str_match(ph_orp, "offset1slope\\s*(.*?)\\s*mv/ph")[,2],
                       ph_offset_pre = str_match(ph_orp, "mv/phoffset\\s*(.*?)\\s*mvslopeandoffset2")[,2],
@@ -77,13 +77,13 @@ cal_tabler <- function(cal_files){
                       ph_7_nice = str_sub(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2])),
                       ph_7_other = str_sub(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2])),
                       ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
-                      
+
                       # ORP
                       #Newly encountered thing: sometimes the calibration report calls the ORP standard Zobell's, sometimes it's just called "ORP Standard":
                       orp_offset = ifelse(is.na(str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
                                           str_match(ph_orp, "orpstandardoffset\\s*(.*?)\\s*mvtemperature")[,2],
                                           str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
-                      
+
                       # Conductivity
                       tds_conversion_ppm = str_sub(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2], 6, nchar(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2])),
                       cond_cell_constant = str_match(conductivity, "cellconstant\\s*(.*?)\\s*referencetemperature")[,2],
@@ -91,15 +91,15 @@ cal_tabler <- function(cal_files){
                                                                          "premeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cmpost"))[,2],
                       cond_post = str_match(conductivity,paste0(str_match(conductivity,
                                                                           "postmeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cm"))[,2],
-                      
+
                       # Turbidity
                       ntu_slope = "None",
                       ntu_offset = "None",
                       ntu_10 = "None",
                       ntu_100 = "None") %>%
-    
+
     select(-c(ph_7_nice, ph_7_other))
-  
+
   # Not all sondes have depth. So, we "try" to get the values.
   try(cal_table <- cal_table %>%
         mutate(
@@ -110,18 +110,18 @@ cal_tabler <- function(cal_files){
           depth_ref_offset = str_match(depth, "ftreferenceoffset\\s*(.*?)\\s*psipremeasurement")[,2],
           depth_pre_psi = str_match(depth, "psipremeasurement\\s*(.*?)\\s*psipostmeasurement")[,2],
           depth_post_psi = str_match(depth, "psipostmeasurement\\s*(.*?)\\s*psi")[,2]))
-  
-  
-  
+
+
+
   # Not all sondes have turbidity. So, we "try" to get the values.
   try(cal_table <- cal_table %>%
-        mutate(     
+        mutate(
           # Turbidity
           ntu_slope = str_match(turbidity, "slope\\s*(.*?)\\s*offset")[,2],
           ntu_offset = str_match(turbidity, "offset\\s*(.*?)\\s*ntu")[,2],
           ntu_10 = str_match(turbidity, "calibrationpoint1premeasurement\\s*(.*?)\\s*ntupost")[,2],
           ntu_100 = str_match(turbidity, "calibrationpoint2premeasurement\\s*(.*?)\\s*ntupost")[,2]))
-  
+
   cal_table <- cal_table %>%
     mutate(
       #Factory Defaults
@@ -132,14 +132,14 @@ cal_tabler <- function(cal_files){
                                 ifelse(is.na(cond_post), "Conductivity ", ""),
                                 ifelse(is.na(depth_cal_date), "Depth ", "")))
   cal_table
-  
+
 }
 
 cal_table <- map_dfr(cal_files, cal_tabler) %>%
   distinct(.keep_all = TRUE) %>%
   group_by(site) %>%
   mutate(DT = round_date(DT, "15 minutes")) %>%
-  # filter for years that are 2022 and greater 
+  # filter for years that are 2022 and greater
   filter(year(DT) >= 2022)
 # this creates a lot of errors, is it okay to ignore them all? Just make a note that these will create a lot of errors.
 
@@ -288,8 +288,9 @@ combinations <- crossing(sites, params)
 # Function to summarize site-parameter combinations
 summarize_site_param <- function(site_arg, parameter_arg, api_data) {
   
-  # removing print statement
-  # print(paste0('Trying site ', site_arg, " with parameter ", parameter_arg, "."))
+  # filter deployment records for the full join
+  site_field_notes <- deployment_record %>% 
+    filter(site == site_arg)
   
   # filtering the data and generating results
   summary <- tryCatch({ 
@@ -310,7 +311,7 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
            site = site_arg,
            parameter = parameter_arg,
            flag = NA) %>% 
-    full_join(filter(dplyr::select(deployment_record, sonde_employed, last_site_visit, visit_comments, sensor_malfunction, DT_join, site)),
+    full_join(filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, visit_comments, sensor_malfunction, DT_join, site)),
                  by = c('DT_join', 'site')) %>% 
     # Use fill() to determine when sonde was in the field, and when the last site visit was. 
     fill(c(sonde_employed, last_site_visit))
@@ -370,7 +371,7 @@ generate_summary_statistics <- function(site_param_df) {
   
   return(summary_stats_df)
 }
-all_data_summary_stats_df <- map(all_data_summary_list, generate_summary_statistics)
+all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
 ```
 
 #### Set thresholds (these thresholds need to become a yaml table)
@@ -384,7 +385,7 @@ Add flagging functions for each df in all_data_summary_list
 # This function will be used to simply add flags into the flag column
 add_flag <- function(df, condition_arg, description_arg) {
   df <- df %>% mutate(flag = case_when(
-    {{condition_arg}} ~ if_else(is.na(flag), description_arg, paste(flag, description_arg, sep = "; ")),
+    {{condition_arg}} ~ if_else(is.na(flag), description_arg, paste(flag, description_arg, sep = ";\n")),
     TRUE ~ flag))
   return(df)
 }
@@ -408,9 +409,6 @@ add_field_flags <- function(df) {
     add_flag(!is.na(visit_comments), "site visit")
   return(df)
 }
-
-# applying add_field_flags() function to temperature_archery_summary_stats df
-temperature_archery_field_flags <- add_field_flags(temperature_archery_summary_stats)
 ```
 
 ```{r}
@@ -432,10 +430,10 @@ add_range_flags <- function(df) {
   df <- df %>%
     # adding sensor range flags
     add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
-             paste0("out of (", parameter_name,") sensor specification range (TEST)")) %>%
+             paste0("out of (", parameter_name,") sensor specification range")) %>%
     # adding lab bound flags
     add_flag(parameter == parameter_name & (mean < lab_min | mean > lab_max),
-             paste0("out of (", parameter_name,") lab bounds (TEST)"))
+             paste0("out of (", parameter_name,") lab bounds"))
   
   return(df)
   
@@ -466,22 +464,6 @@ temperature_archery_bound_flags <- temperature_archery_bound_flags %>%
   add_flag((mean == front1 | mean == back1), "Repeated value")
 ```
 
-For instances where change in a 15m period is > 1degC (for temperature data) (this should also be a look up table)
-
-```{r}
-# This is here to explore data easily
-
-test_slope_df_2 <- all_data_summary_stats_df[["legacy-pH"]] %>% 
-  add_field_flags() %>% 
-  add_range_flags() %>% 
-  add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range") %>% 
-  add_flag((mean == front1 | mean == back1), "Repeated value") %>%
-  add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "slope flag suspect") %>% 
-  alter_flag((slope_ahead >= slope_thresh & slope_behind >= slope_thresh), "slope flag suspect", "slope flag actual") %>% 
-  add_flag(is.na(mean), "missing data")
-```
-
-
 ```{r}
 # flag data where change in a 15m period is > 1degC
 temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
@@ -496,69 +478,199 @@ temperature_archery_bound_flags <- temperature_archery_bound_flags %>%
   add_flag(is.na(mean), "missing data")
 ```
 
+For instances where change in a 15m period is > 1degC (for temperature data) (this should also be a look up table)
+
+```{r}
+# This is here to explore data easily
+all_data_flagged <- map(all_data_summary_stats_list, ~ .x %>% 
+  add_field_flags() %>% 
+  add_range_flags() %>% 
+  add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range") %>% 
+  add_flag((mean == front1 | mean == back1), "Repeated value") %>%
+  add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "slope flag suspect") %>% 
+  alter_flag((slope_ahead >= slope_thresh & slope_behind >= slope_thresh), "slope flag suspect", "slope flag actual") %>% 
+  add_flag(is.na(mean), "missing data"))
+```
+
 #### Visualize the flags
 
 ```{r}
 # Current vis:
 ggplot() +
-  geom_point(data = filter(temperature_archery_bound_flags, is.na(flag)), 
+  geom_point(data = filter(all_data_flagged[["archery-Temperature"]], is.na(flag)), 
              aes(x=DT_round, y = mean)) +
-  geom_point(data = filter(temperature_archery_bound_flags, !is.na(flag)), 
+  geom_point(data = filter(all_data_flagged[["archery-Temperature"]], !is.na(flag)), 
              aes(x=DT_round, y = mean, color = flag)) +
   theme_bw() +
   theme(legend.position = 'bottom') 
 ```
 
+Visualizing daily plots
 ```{r}
-# Visualizing slope exceedance
-plot_list <- list()
+# Visualizing daily plots
 
-# flag_dates <- test_slope_df_2 %>% 
-#   filter(str_detect(flag, "slope flag suspect"))
+generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
 
-flag_dates <- test_slope_df_2 %>% 
-  filter(str_detect(flag, "site visit")) %>%
-  # filter(str_detect(flag, "slope flag suspect")) %>%    
-  # filter(str_detect(flag, "Outside SD range")) %>%  
-  # filter(!is.na(flag)) %>% 
-  group_by(day(DT_join)) %>% 
-  slice(1)
-
-for (i in 1:nrow(flag_dates)) {
+  plot_list <- list()
   
-  flag_year <- flag_dates$year[i]
-  flag_month <- flag_dates$month[i]
-  flag_day <- flag_dates$DT_round[i]
+  site_param <- paste0(site_arg, "-", parameter_arg)
   
+  flag_dates <- all_data_flagged[[site_param]] %>%
+      filter(str_detect(flag, flag_arg)) %>%
+      group_by(day(DT_join)) %>%
+      slice(1)
 
-  day_data <- test_slope_df_2 %>%
-    filter(year == flag_year,
+  for (i in 1:nrow(flag_dates)) {
+
+    flag_year <- flag_dates$year[i]
+    flag_month <- flag_dates$month[i]
+    flag_day <- flag_dates$DT_round[i]
+
+    plot_data <- all_data_flagged[[site_param]] %>%
+      filter(year == flag_year,
+             month == flag_month,
+             day(DT_round) == day(flag_day))
+
+    plot <- ggplot(data = plot_data) +
+      geom_point(aes(x=DT_round, y = mean, color = flag)) +
+      # exceeding sd visualized
+      geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+      geom_ribbon(aes(ymin = rollavg - ym_sd, ymax = rollavg + ym_sd, x = DT_round), alpha = 0.1, color = NA) +
+      geom_ribbon(aes(ymin = rollavg - (ym_sd*2), ymax = rollavg + (ym_sd*2), x = DT_round), alpha = 0.1, color = NA) +
+      geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3), x = DT_round), alpha = 0.1, color = NA) +
+      # exceeding slope visualized
+      geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
+      theme_bw() +
+      theme(legend.position = 'bottom') +
+      ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
+      labs(x = "Datetime",
+           y = "Mean")
+
+    plot_list[[as.character(flag_day)]] <- plot
+
+  }
+  
+  return(plot_list)
+  
+}
+
+generate_daily_flag_plots("archery", "Temperature", "slope flag suspect")
+```
+
+Visualizing weekly plots
+```{r}
+# Visualizing weekly data ----
+
+generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) { 
+  
+  sites_order <- c("tamasag", # rist 
+                "legacy",
+                "lincoln",
+                "timberline",
+                "prospect",
+                "boxelder", # elc
+                "archery",
+                "river bluffs")
+  
+  site_index <- which(sites_order == site_arg)
+  
+  site_param <- paste0(site_arg,"-",parameter_arg)
+  
+  site_flag_dates <- all_data_flagged[[site_param]] %>% 
+      filter(str_detect(flag, flag_arg)) %>%
+      group_by(day(DT_join)) %>%
+      slice(1)
+  
+  plot_list <- list()
+
+  for(i in 1:nrow(site_flag_dates)) {
+
+    flag_year <- site_flag_dates$year[i]
+    flag_month <- site_flag_dates$month[i]
+    flag_day <- site_flag_dates$DT_round[i]
+    # Getting the previous and next 3 days in relation to the flag day
+    start_day <- flag_day - days(3)
+    end_day <- flag_day + days(3)
+
+    site_df <- all_data_flagged[[site_param]] %>%
+      filter(year == flag_year,
+      month == flag_month,
+      DT_round >= start_day & DT_round <= end_day)
+    
+    tryCatch({
+      previous_site <- paste0(sites_order[site_index-1],"-",parameter_arg)
+      prev_site_df <- all_data_flagged[[previous_site]] %>%
+        filter(year == flag_year,
+        month == flag_month,
+        DT_round >= start_day & DT_round <= end_day)},
+      error = function(err) {
+        cat("No previous site")},  # Return df as NULL in case of an error
+      finally = {prev_site_df <- NULL})
+
+    tryCatch({
+      next_site <- paste0(sites_order[site_index+1],"-",parameter_arg)
+      next_site_df <- all_data_flagged[[next_site]] %>%
+        filter(year == flag_year,
+        month == flag_month,
+        DT_round >= start_day & DT_round <= end_day)},
+      error = function(err) {
+        cat("No next site")},  # Return df as NULL in case of an error
+      finally = {next_site_df <- NULL})
+    
+    week_plot_data <- list(site_df, prev_site_df, next_site_df) %>% 
+      # remove NULL values from the list
+      keep(~ !is.null(.)) %>% 
+      bind_rows()
+
+    site_day_data <- all_data_flagged[[site_param]] %>%
+      filter(year == flag_year,
            month == flag_month,
            day(DT_round) == day(flag_day))
 
-  plot <- ggplot(data = day_data, aes(x=DT_round, y = mean, color = flag)) +
-    geom_point() +
-    # exceeding sd visualized
-    geom_ribbon(aes(ymin = rollavg - ym_sd, ymax = rollavg + ym_sd), alpha = 0.1, color = NA) +
-    geom_ribbon(aes(ymin = rollavg - (ym_sd*2), ymax = rollavg + (ym_sd*2)), alpha = 0.1, color = NA) +
-    geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3)), alpha = 0.1, color = NA) +
-    geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
-    # exceeding slope visualized
-    geom_vline(data = (day_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
-    # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
-    theme_bw() +
-    theme(legend.position = 'bottom') +
-    ggtitle(paste("Site Visit on", as.character(flag_day)))
+    week_plot <- ggplot(data = week_plot_data, aes(x=DT_round, y=mean, color=site)) +
+      geom_rect(data = site_day_data, aes(xmin = min(DT_round), xmax = max(DT_round),
+                                          ymin = -Inf, ymax = Inf),
+                fill = "grey",
+                alpha = 0.01,
+                color = NA)+
+      geom_line() +
+      # geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+      # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
+      # geom_smooth(method='loess', formula= y~x, color = "blue", level = .99, na.rm = TRUE) +
+      theme_bw() +
+      theme(legend.position = 'bottom') +
+      ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
+      labs(x = "Datetime",
+           y = "Mean")
+
+    plot_list[[paste(site_arg, parameter_arg, as.character(flag_day))]] <- week_plot
+  }
   
-  plot_list[[as.character(flag_day)]] <- plot
-  
+  return(plot_list)
 }
 
-# for loop here because map was acting strange
-for (i in 1:length(plot_list)) {
-  print(plot_list[[i]])
-}
+generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
+
+```{r}
+# combine weekly and daily plots 
+combine_plots <- function(week_plot, day_plot) {
+  ggarrange(week_plot, day_plot, nrow = 2, ncol = 1)
+}
+
+# make new function that combines the two here
+weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
+  
+  weekly_plot_list <- generate_weekly_flag_plots(site_arg = site_arg, parameter_arg = parameter_arg, flag_arg = flag_arg)
+  daily_plot_list <- generate_daily_flag_plots(site_arg = site_arg, parameter_arg = parameter_arg, flag_arg = flag_arg)
+  
+  weekly_daily_plots <- map2(weekly_plot_list, daily_plot_list, combine_plots)
+  return(weekly_daily_plots)
+}
+
+weekly_daily_flag_plots("archery", "Temperature", "slope flag suspect")
+```
+
 
 ```{r}
 # This can be used to develop site specific flags for specific parameters
