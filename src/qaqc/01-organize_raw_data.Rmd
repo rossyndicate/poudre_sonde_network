@@ -608,7 +608,11 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
       DT_round >= start_day & DT_round <= end_day)
     
     # TryCatch used here to avoid erroring out on the first and last values of
-    # sites_order object (there is no prior/next record after the first/last record)
+    # sites_order object (there is no prior/next record after the first/last record).
+    # Return df as NULL in case of an error
+    prev_site_df <- NULL
+    next_site_df <- NULL
+    
     tryCatch({
       previous_site <- paste0(sites_order[site_index-1],"-",parameter_arg)
       prev_site_df <- all_data_flagged[[previous_site]] %>%
@@ -616,8 +620,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
         month == flag_month,
         DT_round >= start_day & DT_round <= end_day)},
       error = function(err) {
-        cat("No previous site")},  # Return df as NULL in case of an error
-      finally = {prev_site_df <- NULL})
+        cat("No previous site")}) 
 
     tryCatch({
       next_site <- paste0(sites_order[site_index+1],"-",parameter_arg)
@@ -626,9 +629,8 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
         month == flag_month,
         DT_round >= start_day & DT_round <= end_day)},
       error = function(err) {
-        cat("No next site")},  # Return df as NULL in case of an error
-      finally = {next_site_df <- NULL})
-    
+        cat("No next site")})
+
     # Bind all three dfs
     week_plot_data <- list(site_df, prev_site_df, next_site_df) %>% 
       # remove NULL values from the list
@@ -685,7 +687,7 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   weekly_daily_plots <- map2(weekly_plot_list, daily_plot_list, stack_plots)
   return(weekly_daily_plots)
 }
-
+  
 weekly_daily_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
