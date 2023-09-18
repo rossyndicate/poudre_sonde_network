@@ -1,0 +1,269 @@
+---
+title: "Timberline Timelapse Video"
+author: "Katie Willi"
+date: "12/29/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(animation)
+library(gganimate)
+library(dygraphs)
+library(lubridate)
+library(xts)
+library(exifr)
+library(imputeTS)
+library(png)
+library(grid)
+library(ggthemes)
+library(patchwork)
+```
+
+
+
+```{r}
+# library(exifr)
+# library(tidyverse)
+# library(lubridate)
+# library(fs)
+# 
+# # List the jpg files in the folder
+# 
+# old_files <- list.files("data/timelapse_photos/new_blackout", full.names = TRUE)
+# old_files
+# 
+# # Create vector of new files
+# 
+# new_files <- paste0("data/timelapse_photos/blackout/",1:length(old_files),".JPG")
+# new_files
+# 
+# # Copy from old files to new files
+# 
+# file.copy(from = old_files, to = new_files)
+# 
+# ############################
+# 
+# # reading in all the different pictures we need to rename
+# files <- list.files("data/timelapse_photos/katie_vid", full.names=TRUE)
+# 
+# photo_renamer <- function(files) {
+#   dt <- read_exif(path = files,
+#                   tags = c("DateTimeOriginal")) %>%
+#     pull(DateTimeOriginal) %>%
+#     parse_date_time("YmdHMS", tz="MST")
+#   
+#   correct_dt <- (round_date(ymd_hms(dt, tz = 'us/mountain'), '30 minutes')) %>%
+#     str_replace_all(., c("\\:" = "")) %>%
+#     str_replace_all(., c("\\ " = "_"))
+#   
+#   file.rename(files, paste0('data/timelapse_photos/katie_vid/legacy_',correct_dt,'.JPG'))
+# }
+# 
+# map(files,photo_renamer)
+
+#### THIS IS FOR WHEN THE ACTUAL DT METADATA IS WRONG::
+
+# exif_renamer <- function(files) {
+#   hrs <- hours(2868) # <- HOUR OFFSET FOR IT TO BE CORRECT
+#   dt <- read_exif(path = files,
+#                   tags = c("DateTimeOriginal")) %>%
+#     pull(DateTimeOriginal) %>%
+#     parse_date_time("YmdHMS", tz="MST")
+#   correct_dt <- (dt + hrs) %>% # PLUS OR MINUS DEPENDING ON NECESSARY OFFSET
+#     str_replace_all(., c("\\:" = "")) %>%
+#     str_replace_all(., c("\\ " = "_"))
+#   file.rename(files, paste0('NewFiles/',correct_dt,'.JPG'))
+# }
+# 
+# map(files,exif_renamer)
+
+##### THIS IS FOR WHEN YOU NEED TO ADD BLACK IMAGES BETWEEN PHOTO GAPS #####
+
+# blackout_files <- list.files("data/timelapse_photos/blackout", full.names=TRUE)
+# 
+# right_dates <- blackout_filter %>% #test %>%
+#   mutate(FileName = paste0(1:nrow(.),".JPG"))
+# 
+# blackout_renamer <- function(blackout_files) {
+#   
+#   dt <- read_exif(path = blackout_files)
+#   
+#   correct_dt <- right_dates %>%
+#     inner_join(dt, by="FileName") %>%
+#     pull(dt) %>%
+#     str_replace_all(., c("\\:" = "")) %>%
+#     str_replace_all(., c("\\ " = "_"))
+#   
+#   file.rename(blackout_files, paste0('data/timelapse_photos/new_blackout/timberline_',correct_dt,'.JPG'))}
+# 
+# map(blackout_files, blackout_renamer)
+```
+
+
+## Photo timestamps
+```{r}
+photo_files = list.files('data/timelapse_photos/katie_vid', full.names = T)
+# For when videos are really big (or resolution of photos is great):
+compressed_files <- list.files('data/timelapse_photos/katie_vid', full.names = T)
+
+photo_time = read_exif(photo_files) %>%
+  # Files are named with their hour-rounded timestamp
+  arrange(FileName) %>%
+  mutate(DT_round = round_date(ymd_hms(str_sub(FileModifyDate, 1, 19), tz = "MST"), "30 minutes")) %>%
+  select(SourceFile, DT_round)
+```
+
+
+## WQ data
+```{r}
+
+wq_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv") %>%
+  map_dfr(~data.table::fread(.) %>% select(-id)) %>%
+  # remove overlapping API-pull data
+  distinct() %>%
+  # remove VuLink data
+  filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
+  # Convert DT to MST:
+  mutate(DT = as_datetime(timestamp, tz = "UTC")) %>%
+  mutate(DT = with_tz(DT, tzone = "MST"),
+         DT_round = round_date(DT, "30 minutes"),
+         DT_join = as.character(DT_round),
+         site = tolower(site)) %>%
+  # Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
+  mutate(site = ifelse(site == "rist" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site)) %>%
+  filter(parameter %in% c("Depth", "Specific Conductivity") & site == "legacy") %>%
+  select(-name) %>%
+  distinct() %>%
+  group_by(DT_round, parameter) %>%
+  # I WOULD LIKE TO PRESERVE THE RAW VALS THAT WENT INTO MAKING THIS AVERAGE
+  # IN A NESTED DATAFRAME VIA NEST(). IT WON'T WORK >:(
+  summarize(p1 = as.numeric(mean(value, na.rm = T))) %>% 
+  pivot_wider(values_from = p1, names_from = "parameter") %>%
+  rename(SpC=3) %>%
+  ungroup() %>%
+  # pad the dataset so that all 30-min timestamps are present
+  padr::pad(by = "DT_round", interval = "30 min") %>%
+  filter(ymd_hms(DT_round) >= "2023-07-07 10:00:00" & ymd_hms(DT_round) <= "2023-07-18 08:30:00")
+
+photo_join <- inner_join(photo_time, wq_data, by= "DT_round") %>%
+  arrange(DT_round) %>%
+  #.[1:260,] %>%
+  rowid_to_column()
+```
+
+## Initial graph
+
+```{r}
+library(jpeg)
+library(ggdark)
+library(animation)
+
+dex <- 200
+
+photo_plotter <- function(dex = 200){
+  
+  simul = photo_join[dex,]
+  
+  upto = photo_join[1:dex,]
+  photo_bg <- readJPEG(simul$SourceFile)
+  back <- ggplot() + 
+    annotation_custom(rasterGrob(photo_bg, 
+                                 width = unit(1,"npc"), 
+                                 height = unit(1,"npc")), 
+                      -Inf, Inf, -Inf, Inf) 
+  
+  inset <- ggplot() + 
+    geom_ribbon(data = upto, aes(x = DT_round, 
+                                 y = Depth*100,
+                                 ymin = 0, 
+                                 ymax = Depth*100), 
+                color = "white", 
+                fill = "white", 
+                #linetype = "dash", 
+                alpha = 0.75) +
+    geom_path(data = upto, aes(x = DT_round, y = SpC), 
+              color = "#F34646", size=2) +
+    geom_point(data = simul, aes(x = DT_round, y = SpC), 
+               color = "#F34646") +
+    ylim(min(photo_join$Turbidity, na.rm = T),
+         max(photo_join$Turbidity, na.rm = T)) + 
+    xlim(min(photo_join$DT_round, na.rm = T),
+         max(photo_join$DT_round, na.rm = T)) + 
+    scale_y_continuous(name = "Sp. Conductivity",
+                       sec.axis = sec_axis(~./100,
+                                           name = 'River level (feet)',
+                                           breaks = seq(0,6,1)),
+                       limits = c(0, 150, na.rm = T)) +
+    dark_theme_light(base_size = 10) +  
+    theme(axis.title.y.right = element_text(color="white"), axis.title.y.left = element_text(color="#F34646")) +
+    theme(
+      panel.background = element_rect(fill = "transparent"), 
+      plot.background = element_rect(fill = "transparent", color = NA), 
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(), 
+      legend.background = element_rect(fill = "transparent"),
+      legend.box.background = element_rect(fill = "transparent"),
+      panel.border = element_blank(),
+      axis.line = element_line(color = 'gray80'),
+    ) + 
+    ylab('River level (ft)') + 
+    xlab('')
+  
+  gp1 <- back + 
+    inset_element(inset,
+                  left = 0.16,
+                  bottom = 0.15,
+                  right = 0.9,
+                  top = 0.6)
+  #print(gp1)
+  ggsave(paste0('data/timelapse_photos/vid_image/', str_remove_all(max(upto$DT_round), ":"), ".png"),
+         width = 1920,
+         height = 1080,
+         units = "px")
+  #dev.copy(gp1,paste0('data/timelapse_photos/vid_image/', max(upto$rowid), ".png"))
+  #dev.off()
+}
+
+map(1:nrow(photo_join), photo_plotter)
+
+
+tl_photos <- (list.files('data/timelapse_photos/vid_image/', full.names = TRUE))
+
+#This extracts the underlying height, width, and type of image.
+img.height <- magick::image_info(magick::image_read(tl_photos[1]))$height
+img.width <- magick::image_info(magick::image_read(tl_photos[1]))$width
+img.type <- magick::image_info(magick::image_read(tl_photos[1]))$format
+
+#This tells FFmpeg that each picture should be displayed for 0.25 seconds,
+# the height of the image, the width of the image, and the appropriate
+# image engine to use.
+#Note: tolower() converts uppercase letters to lowercase letters.
+animation::ani.options(interval = 0.075,
+                       ani.height = img.height,
+                       ani.width = img.width,
+                       ani.dev = tolower(img.type),
+                       ani.type = tolower(img.type))
+
+#By default the input dimensions of the image (designated here by img.height
+# and img.width) dictate the output resolution. Below, I'm increasing the
+# video dimensions to improve the image quality.
+opts <- paste("-s ", img.height * 2, "x", img.width * 2, sep = "")
+
+animation::saveVideo(
+
+  for(i in 1:length(tl_photos)){
+    tl_image <- magick::image_read(tl_photos[i])
+    plot(tl_image)
+  },
+  #Designate the name of the image within the working directory.
+  video.name = "Legacy.mp4")
+
+
+
+```
+
+

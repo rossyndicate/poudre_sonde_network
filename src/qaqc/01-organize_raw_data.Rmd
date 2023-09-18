@@ -177,7 +177,8 @@ deployment_record <- field_notes %>%
                            !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
                            is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
                            is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA),
-         last_site_visit = DT_round) 
+         last_site_visit = DT_round) %>%
+  filter(!is.na(sonde_employed))
 ```
 
 Munge field notes
@@ -207,6 +208,8 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
   distinct() %>%
   # remove VuLink data
   filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
+  # remove Virridy data (for now)
+  filter(!grepl("virridy", name, ignore.case = TRUE)) %>%
   # Convert DT to MST:
   mutate(DT = as_datetime(timestamp, tz = "UTC")) %>%
   mutate(DT = with_tz(DT, tzone = "MST"),
@@ -311,7 +314,7 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
            site = site_arg,
            parameter = parameter_arg,
            flag = NA) %>% 
-    full_join(filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, visit_comments, sensor_malfunction, DT_join, site)),
+    full_join(filter(dplyr::select(deployment_record, sonde_employed, last_site_visit, DT_join, site)),
                  by = c('DT_join', 'site')) %>% 
     # Use fill() to determine when sonde was in the field, and when the last site visit was. 
     fill(c(sonde_employed, last_site_visit))
@@ -366,6 +369,9 @@ generate_summary_statistics <- function(site_param_df) {
       y_m = paste(year, '-', month)
       ) %>% 
     group_by(y_m) %>% 
+    # KW:: wondering if, there's a way to develop the sd using ONLY the range of data in
+    # the 25%-75% percentile range. Therefore, we don't include any of the weird outliers
+    # when trying to flag this way...
     mutate(ym_sd = sd(mean, na.rm = T)) %>% 
     ungroup() # does this do anything for downstream analysis?
   
@@ -443,11 +449,11 @@ add_range_flags <- function(df) {
 temperature_archery_range_flags <- add_sensor_spec_range_flags(temperature_archery_field_flags)
 ```
 
-For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
+For wonky data next to each other (defined by roll sd) - here we make some monthly summaries to help with this:
 
 ```{r}
 # flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
-  # Do we want to play around with using the monthly sd instead of the rolling sd?
+# NOW, we are using the monthly sd instead of the rolling sd?
 
   # keep this df name temperature_archery_bound_flags bc the bounding flagging
   # function was the last one that was applied
