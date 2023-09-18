@@ -453,7 +453,7 @@ For wonky data next to each other (defined by roll sd) - here we make some month
 
 ```{r}
 # flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
-# NOW, we are using the monthly sd instead of the rolling sd?
+# NOW, we are using the monthly sd instead of the rolling sd...
 
   # keep this df name temperature_archery_bound_flags bc the bounding flagging
   # function was the last one that was applied
