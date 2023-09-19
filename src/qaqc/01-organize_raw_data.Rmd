@@ -344,6 +344,7 @@ all_data_summary_list <- map2(combinations$sites,
 # Bind rows for each df in list
 all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
+#### Add summary statistics to the formatted data
 
 ```{r}
 generate_summary_statistics <- function(site_param_df) {
@@ -379,8 +380,6 @@ generate_summary_statistics <- function(site_param_df) {
 }
 all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
 ```
-
-#### Set thresholds (these thresholds need to become a yaml table)
 
 #### Add the flags
 Add flagging functions for each df in all_data_summary_list
@@ -418,6 +417,8 @@ add_field_flags <- function(df) {
 ```
 
 ```{r}
+# Add the function to add the range flags using the parameter thresholds yaml file
+
 parameter_ranges <- yaml::read_yaml("src/qaqc/parameter_thresholds.yml")
 
 # sensor spec ranges flagging function
@@ -455,14 +456,19 @@ For wonky data next to each other (defined by roll sd) - here we make some month
   # keep this df name temperature_archery_bound_flags bc the bounding flagging
   # function was the last one that was applied
 
+# This has been moved down to the all_data_flagged step ----
+
 # temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
 #   add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range")
 ```
 
+Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
-slope_thresh = 1/15
+# Set the slope threshold for the functions below
 # This will change whent the slopes are incorporated into the yaml file,
 # for now this is just for temperature data
+slope_thresh = 1/15
+
 
 # This adds the flags to all the dfs inside of all_data_summary_stats_list
 all_data_flagged <- map(all_data_summary_stats_list, ~ .x %>% 
