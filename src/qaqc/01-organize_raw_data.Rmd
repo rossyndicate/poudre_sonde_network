@@ -504,24 +504,25 @@ Visualizing daily plots
 
 ## This function will generate a list of plots for site-parameters
 ## that have been tagged by a specific flag 
-generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
+generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) {
   
   # Generating df name to pull from all_data_flagged list
   site_param <- paste0(site_arg, "-", parameter_arg)
   # filter for all the days that are tagged within the site-param df of interest
-  flag_dates <- all_data_flagged[[site_param]] %>%
-      filter(str_detect(flag, flag_arg)) %>%
+  site_flag_dates <- all_data_flagged[[site_param]] %>%
+      filter(if (is.null(flag_arg)) !is.na(flag) else str_detect(flag, flag_arg)) %>%
       group_by(day(DT_join)) %>%
       slice(1)
   
   # for loop to generate plots for everyday that was tagged by a flag
   plot_list <- list()
   
-  for (i in 1:nrow(flag_dates)) {
+  for (i in 1:nrow(site_flag_dates)) {
     
-    flag_year <- flag_dates$year[i]
-    flag_month <- flag_dates$month[i]
-    flag_day <- flag_dates$DT_round[i]
+    flag_title <- site_flag_dates$flag[i]
+    flag_year <- site_flag_dates$year[i]
+    flag_month <- site_flag_dates$month[i]
+    flag_day <- site_flag_dates$DT_round[i]
 
     plot_data <- all_data_flagged[[site_param]] %>%
       filter(year == flag_year,
@@ -539,7 +540,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
       geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
       theme_bw() +
       theme(legend.position = 'bottom') +
-      ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
+      ggtitle(paste(flag_title ,"at", site_arg, "on", as.character(flag_day))) + # HERE
       labs(x = "Datetime",
            y = "Mean")
 
@@ -558,7 +559,7 @@ Visualizing weekly plots
 ```{r}
 # Visualizing weekly data ----
 
-generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) { 
+generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) { 
   # vector of sites in the order that they are in spatially
   # some sites have some funkiness going on
   sites_order <- c("tamasag", # rist 
@@ -576,7 +577,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   site_param <- paste0(site_arg, "-", parameter_arg)
   # filter for all the days that are tagged within the site-param df of interest
   site_flag_dates <- all_data_flagged[[site_param]] %>% 
-      filter(str_detect(flag, flag_arg)) %>%
+      filter(if (is.null(flag_arg)) !is.na(flag) else str_detect(flag, flag_arg)) %>%
       group_by(day(DT_join)) %>%
       slice(1)
   
@@ -586,7 +587,8 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   plot_list <- list()
 
   for(i in 1:nrow(site_flag_dates)) {
-
+    
+    flag_title <- site_flag_dates$flag[i]
     flag_year <- site_flag_dates$year[i]
     flag_month <- site_flag_dates$month[i]
     flag_day <- site_flag_dates$DT_round[i]
@@ -647,7 +649,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
       geom_line() +
       theme_bw() +
       theme(legend.position = 'bottom') +
-      ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
+      ggtitle(paste(flag_title,"at", site_arg, "on", as.character(flag_day))) +
       labs(x = "Datetime",
            y = "Mean")
 
@@ -695,3 +697,92 @@ archery_objects <- all_data_summary_list[grep("archery", names(all_data_summary_
 # Resulting list of objects with "archery" in the title
 archery_objects_df <- bind_rows(archery_objects)
 ```
+
+Remove flag methods
+for every flag in a df:
+  - save the df as a separate object (flags altered object)
+  - display the stacked ggplot with the point of interest highlighted
+  - Give an option in the console to remove it with the DT of the point
+  - make a column that holds pass/fail information
+```{r}
+manual_flag_removal <- function(df_from_list) {
+  # Generating df name to pull from all_data_flagged list
+  site_name <- str_extract(deparse(substitute(df_from_list)), ".*(?= - )")
+  parameter_name <- str_extract(deparse(substitute(df_from_list)), ".*(?<= - )")
+  site_param <- paste0(site_arg, "-", parameter_arg)
+  
+  daily_flag_list <- generate_daily_flag_plots(site_arg = site_name, 
+                                               parameter_arg = parameter_name, 
+                                               flag_arg = NULL)
+  
+  
+  
+  # make plot_data_list and bind it together
+  plot_data_list
+  for (i in daily_flag_list) {
+    
+  }
+}
+```
+
+```{r}
+test_daily <- generate_daily_flag_plots("archery", "Temperature", "Repeated value")
+
+display_plots <- function(plot_object) {
+  # for each plot object in a list print the plot for each item !is.na(flag)
+  flag_data <- ggplot_build(plot_object)$plot$data %>%
+    filter(!is.na(flag))
+
+  for (i in 1:nrow(flag_data)){
+    
+    # Create a data frame with a single row containing the desired DT_round value
+    flag_demarcation_data <- data.frame(DT_round = flag_data$DT_round[i])
+    
+    choice <- get_flag_decision("Do you want to continue?")
+      if (choice) {
+        cat("You chose to continue.\n")
+      } else {
+        cat("You chose to exit.\n")
+      }
+    
+    new_plot <- plot_object +
+      geom_vline(data = flag_demarcation_data,
+        aes(xintercept = DT_round,
+        color = "red",
+        # size = 2, # fix this later
+        alpha = 0.05))
+    
+    print(new_plot)
+  }
+  
+  # return()
+}
+
+display_plots(test_daily[[1]])
+```
+
+```{r}
+get_flag_decision <- function(prompt_text) {
+  while (TRUE) {
+    user_input <- readline(prompt = paste(prompt_text, " (yes/no): "))
+    user_input <- tolower(user_input)
+    
+    if (user_input %in% c("yes", "y")) {
+      return(TRUE)
+    } else if (user_input %in% c("no", "n")) {
+      return(FALSE)
+    } else {
+      cat("Invalid input. Please enter 'yes' or 'no'.\n")
+    }
+  }
+}
+
+# Example usage
+choice <- get_flag_decision("Do you want to continue?")
+if (choice) {
+  cat("You chose to continue.\n")
+} else {
+  cat("You chose to exit.\n")
+}
+```
+
