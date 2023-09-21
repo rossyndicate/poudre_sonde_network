@@ -700,6 +700,25 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
 weekly_daily_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
+Histograms of all parameter/site combos
+```{r}
+# generate basic histograms for dfs
+generate_histograms <- function(df, df_index) {
+  
+  site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
+  title <- paste("Histogram of ", site_param)
+  
+  histogram <- ggplot(data = df, aes(x = mean)) +
+    geom_histogram() +
+    labs(title = title)
+
+  return(histogram)
+}
+
+# use imap to use the index in the list for the plot titles
+result <- purrr::imap(all_data_flagged, ~generate_histograms(.x, .y))
+result[[1]]
+```
 
 ```{r}
 # This can be used to develop site specific flags for specific parameters
