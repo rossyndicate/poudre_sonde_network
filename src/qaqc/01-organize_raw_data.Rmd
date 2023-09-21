@@ -657,7 +657,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   return(plot_list)
 }
 
-generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
+generate_weekly_flag_plots("prospect", "Temperature", "slope flag suspect")
 ```
 
 ```{r}
@@ -675,7 +675,7 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   weekly_plot_list <- generate_weekly_flag_plots(site_arg = site_arg, parameter_arg = parameter_arg, flag_arg = flag_arg)
   daily_plot_list <- generate_daily_flag_plots(site_arg = site_arg, parameter_arg = parameter_arg, flag_arg = flag_arg)
   
-  # These two functions should alway returnt the same amount of plots, so we can
+  # These two functions should always return the same amount of plots, so we can
   # use map2() to stack them with combine_plots()
   weekly_daily_plots <- map2(weekly_plot_list, daily_plot_list, stack_plots)
   return(weekly_daily_plots)
