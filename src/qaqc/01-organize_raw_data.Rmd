@@ -483,6 +483,19 @@ all_data_flagged <- map(all_data_summary_stats_list, ~ .x %>%
   alter_flag((slope_ahead >= slope_thresh & slope_behind >= slope_thresh), "slope flag suspect", "slope flag actual") %>% 
   # Missing data flag
   add_flag(is.na(mean), "missing data"))
+
+# add pass/fail column and apply this to every df 
+add_verification_column <- function(df) {
+  df <- df %>% 
+    mutate(verification = case_when(
+      str_detect(flag, "missing data") ~ "fail",
+      is.na(flag) ~ "pass",
+      TRUE ~ NA
+    ))
+  return(df)
+}
+
+all_data_flagged <- map(all_data_flagged, add_verification_column)
 ```
 
 #### Visualize the flags
@@ -552,7 +565,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
   
 }
 
-generate_daily_flag_plots("archery", "Temperature", "slope flag suspect")
+generate_daily_flag_plots("archery", "Temperature", "Repeated value")
 ```
 
 Visualizing weekly plots
@@ -697,92 +710,3 @@ archery_objects <- all_data_summary_list[grep("archery", names(all_data_summary_
 # Resulting list of objects with "archery" in the title
 archery_objects_df <- bind_rows(archery_objects)
 ```
-
-Remove flag methods
-for every flag in a df:
-  - save the df as a separate object (flags altered object)
-  - display the stacked ggplot with the point of interest highlighted
-  - Give an option in the console to remove it with the DT of the point
-  - make a column that holds pass/fail information
-```{r}
-manual_flag_removal <- function(df_from_list) {
-  # Generating df name to pull from all_data_flagged list
-  site_name <- str_extract(deparse(substitute(df_from_list)), ".*(?= - )")
-  parameter_name <- str_extract(deparse(substitute(df_from_list)), ".*(?<= - )")
-  site_param <- paste0(site_arg, "-", parameter_arg)
-  
-  daily_flag_list <- generate_daily_flag_plots(site_arg = site_name, 
-                                               parameter_arg = parameter_name, 
-                                               flag_arg = NULL)
-  
-  
-  
-  # make plot_data_list and bind it together
-  plot_data_list
-  for (i in daily_flag_list) {
-    
-  }
-}
-```
-
-```{r}
-test_daily <- generate_daily_flag_plots("archery", "Temperature", "Repeated value")
-
-display_plots <- function(plot_object) {
-  # for each plot object in a list print the plot for each item !is.na(flag)
-  flag_data <- ggplot_build(plot_object)$plot$data %>%
-    filter(!is.na(flag))
-
-  for (i in 1:nrow(flag_data)){
-    
-    # Create a data frame with a single row containing the desired DT_round value
-    flag_demarcation_data <- data.frame(DT_round = flag_data$DT_round[i])
-    
-    choice <- get_flag_decision("Do you want to continue?")
-      if (choice) {
-        cat("You chose to continue.\n")
-      } else {
-        cat("You chose to exit.\n")
-      }
-    
-    new_plot <- plot_object +
-      geom_vline(data = flag_demarcation_data,
-        aes(xintercept = DT_round,
-        color = "red",
-        # size = 2, # fix this later
-        alpha = 0.05))
-    
-    print(new_plot)
-  }
-  
-  # return()
-}
-
-display_plots(test_daily[[1]])
-```
-
-```{r}
-get_flag_decision <- function(prompt_text) {
-  while (TRUE) {
-    user_input <- readline(prompt = paste(prompt_text, " (yes/no): "))
-    user_input <- tolower(user_input)
-    
-    if (user_input %in% c("yes", "y")) {
-      return(TRUE)
-    } else if (user_input %in% c("no", "n")) {
-      return(FALSE)
-    } else {
-      cat("Invalid input. Please enter 'yes' or 'no'.\n")
-    }
-  }
-}
-
-# Example usage
-choice <- get_flag_decision("Do you want to continue?")
-if (choice) {
-  cat("You chose to continue.\n")
-} else {
-  cat("You chose to exit.\n")
-}
-```
-
