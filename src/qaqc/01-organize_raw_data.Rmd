@@ -675,6 +675,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
 generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
+Stack the weekly and daily plots
 ```{r}
 # function to combine weekly and daily plots 
 stack_plots <- function(week_plot, day_plot) {
@@ -695,7 +696,7 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   weekly_daily_plots <- map2(weekly_plot_list, daily_plot_list, stack_plots)
   return(weekly_daily_plots)
 }
-  
+
 weekly_daily_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
