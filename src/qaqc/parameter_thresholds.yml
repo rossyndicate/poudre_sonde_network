@@ -182,3 +182,11 @@
     min: NA
     max: NA
   slope_threshold: y/15
+"FDOM Fluorescence":
+  sensor_specifications:
+    min: 0
+    max: 100
+  lab_bounds:
+    min: NA
+    max: NA
+  slope_threshold: y/15
