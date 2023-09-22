@@ -557,7 +557,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
       labs(x = "Datetime",
            y = "Mean")
 
-    plot_list[[as.character(flag_day)]] <- plot
+    plot_list[[paste(site_param, as.character(flag_day))]] <- plot
 
   }
   
@@ -666,7 +666,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
       labs(x = "Datetime",
            y = "Mean")
 
-    plot_list[[paste(site_arg, parameter_arg, as.character(flag_day))]] <- week_plot
+    plot_list[[paste(site_param, as.character(flag_day))]] <- week_plot
   }
   
   return(plot_list)
