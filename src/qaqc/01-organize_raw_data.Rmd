@@ -708,16 +708,65 @@ generate_histograms <- function(df, df_index) {
   site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
   title <- paste("Histogram of ", site_param)
   
+  minimum <- floor(min(df$mean, na.rm = TRUE)) 
+  maximum <- ceiling(max(df$mean, na.rm = TRUE))
+  
   histogram <- ggplot(data = df, aes(x = mean)) +
-    geom_histogram() +
+    geom_histogram(
+      breaks = seq(minimum, maximum, by = 1)
+    ) +
     labs(title = title)
 
   return(histogram)
 }
 
 # use imap to use the index in the list for the plot titles
-result <- purrr::imap(all_data_flagged, ~generate_histograms(.x, .y))
-result[[1]]
+# result <- imap(all_data_flagged, ~generate_histograms(.x, .y))
+
+# making histograms for temperatures
+temperature_hist_list <- all_data_flagged[grep("Temperature", names(all_data_summary_list), ignore.case = TRUE)]
+temperature_hist_plots <- imap(temperature_hist_list, ~generate_histograms(.x, .y))
+temperature_hist_plots
+## getting the histogram data
+temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]]) 
 ```
 
+```{r}
+# Working on seasonal histograms
+winter <- c(12,1,2)
+spring <- c(3,4,5)
+summer <- c(6,7,8)
+fall <- c(9,10,11)
+seasons <- data.frame(winter, spring, summer, fall)
 
+for (i in colnames(seasons)){
+  
+  title <- i
+
+  df <- all_data_flagged[["archery-Temperature"]] %>%
+    filter(month %in% seasons[[i]]) 
+  
+  if (all(is.finite(df$mean))) {
+    
+    minimum <- floor(min(df$mean, na.rm = TRUE))
+    maximum <- ceiling(max(df$mean, na.rm = TRUE))
+    
+    histogram <- ggplot(data = df, aes(x = mean)) +
+      geom_histogram(
+        breaks = seq(minimum, maximum, by = 1)
+      ) +
+      labs(title = title)
+    
+  } else {
+    
+    histogram <- ggplot(data = df, aes(x = mean)) +
+      geom_histogram() +
+      labs(title = title) 
+    
+  }
+  
+  print(histogram)
+  
+}
+
+```
