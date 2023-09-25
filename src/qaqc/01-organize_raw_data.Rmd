@@ -787,5 +787,5 @@ generate_seasonal_histogram <- function(df) {
   
 }
 
-generate_seasonal_histograms(df=all_data_flagged[["archery-Temperature"]])
+generate_seasonal_histogram(df=all_data_flagged[["archery-Temperature"]])
 ```
