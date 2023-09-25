@@ -700,14 +700,92 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
 weekly_daily_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
+Histograms of all parameter/site combos
+```{r}
+# generate basic histograms for dfs
+generate_general_histogram <- function(df, df_index) {
+  
+  site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
+  title <- paste("Histogram of ", site_param)
+  
+  # there should be checks for data here 
+  minimum <- floor(min(df$mean, na.rm = TRUE)) 
+  maximum <- ceiling(max(df$mean, na.rm = TRUE))
+  
+  histogram <- ggplot(data = df, aes(x = mean)) +
+    geom_histogram(
+      breaks = seq(minimum, maximum, by = 1)
+    ) +
+    labs(title = title)
+
+  return(histogram)
+}
+
+
+
+# making histograms for temperatures
+## pulling all the temperature dfs from the all_data list
+temperature_hist_list <- all_data_flagged[grep("Temperature", names(all_data_summary_list), ignore.case = TRUE)]
+
+## use imap to use the index in the list for the plot titles
+## (not loving imap, if there is a better way to do this please change this)
+temperature_hist_plots <- imap(temperature_hist_list, ~generate_general_histogram(.x, .y))
+temperature_hist_plots
+
+## How to pull the histogram data that ggplot generates to make histograms
+temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]]) 
+```
 
 ```{r}
-# This can be used to develop site specific flags for specific parameters
-# (later)
+# Working on seasonal histograms function 
+# useful for seeing seasonal differences and how each season affects the 
+# general histogram
 
-# Use grep to find elements with "archery" in their title
-archery_objects <- all_data_summary_list[grep("archery", names(all_data_summary_list), ignore.case = TRUE)]
+generate_seasonal_histogram <- function(df) {
+  
+  winter <- c(12,1,2)
+  spring <- c(3,4,5)
+  summer <- c(6,7,8)
+  fall <- c(9,10,11)
+  seasons <- data.frame(winter, spring, summer, fall)
+  
+  hist_list <- list()
+  
+  for (i in colnames(seasons)){
+    
+    title <- i
+  
+    filtered_df <- df %>%
+      filter(month %in% seasons[[i]]) 
+    
+    # This if else is to check for data availability, could be a try() in the future
+    if (all(is.finite(filtered_df$mean))) {
+      
+      minimum <- floor(min(filtered_df$mean, na.rm = TRUE))
+      maximum <- ceiling(max(filtered_df$mean, na.rm = TRUE))
+      
+      histogram <- ggplot(data = filtered_df, aes(x = mean)) +
+        geom_histogram(
+          breaks = seq(minimum, maximum, by = 1)
+        ) +
+        labs(title = title)
+      
+    } else {
+      
+      histogram <- ggplot(data = filtered_df, aes(x = mean)) +
+        geom_histogram() +
+        labs(title = title) 
+      
+    }
+    
+    hist_list[[i]] <- histogram
+    
+  }
+  
+  collated_hist <- ggarrange(plotlist = hist_list, nrow=2, ncol=2)
+  return(collated_hist)
+  
+}
 
-# Resulting list of objects with "archery" in the title
-archery_objects_df <- bind_rows(archery_objects)
+generate_seasonal_histograms(df=all_data_flagged[["archery-Temperature"]])
 ```
