@@ -483,6 +483,19 @@ all_data_flagged <- map(all_data_summary_stats_list, ~ .x %>%
   alter_flag((slope_ahead >= slope_thresh & slope_behind >= slope_thresh), "slope flag suspect", "slope flag actual") %>% 
   # Missing data flag
   add_flag(is.na(mean), "missing data"))
+
+# add pass/fail column and apply this to every df 
+add_verification_column <- function(df) {
+  df <- df %>% 
+    mutate(verification = case_when(
+      str_detect(flag, "missing data") ~ "fail",
+      is.na(flag) ~ "pass",
+      TRUE ~ NA
+    ))
+  return(df)
+}
+
+all_data_flagged <- map(all_data_flagged, add_verification_column)
 ```
 
 #### Visualize the flags
@@ -504,24 +517,25 @@ Visualizing daily plots
 
 ## This function will generate a list of plots for site-parameters
 ## that have been tagged by a specific flag 
-generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
+generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) {
   
   # Generating df name to pull from all_data_flagged list
   site_param <- paste0(site_arg, "-", parameter_arg)
   # filter for all the days that are tagged within the site-param df of interest
-  flag_dates <- all_data_flagged[[site_param]] %>%
-      filter(str_detect(flag, flag_arg)) %>%
+  site_flag_dates <- all_data_flagged[[site_param]] %>%
+      filter(if (is.null(flag_arg)) !is.na(flag) else str_detect(flag, flag_arg)) %>%
       group_by(day(DT_join)) %>%
       slice(1)
   
   # for loop to generate plots for everyday that was tagged by a flag
   plot_list <- list()
   
-  for (i in 1:nrow(flag_dates)) {
+  for (i in 1:nrow(site_flag_dates)) {
     
-    flag_year <- flag_dates$year[i]
-    flag_month <- flag_dates$month[i]
-    flag_day <- flag_dates$DT_round[i]
+    flag_title <- site_flag_dates$flag[i]
+    flag_year <- site_flag_dates$year[i]
+    flag_month <- site_flag_dates$month[i]
+    flag_day <- site_flag_dates$DT_round[i]
 
     plot_data <- all_data_flagged[[site_param]] %>%
       filter(year == flag_year,
@@ -539,7 +553,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
       geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
       theme_bw() +
       theme(legend.position = 'bottom') +
-      ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
+      ggtitle(paste(flag_title ,"at", site_arg, "on", as.character(flag_day))) + # HERE
       labs(x = "Datetime",
            y = "Mean")
 
@@ -551,14 +565,14 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   
 }
 
-generate_daily_flag_plots("archery", "Temperature", "slope flag suspect")
+generate_daily_flag_plots("archery", "Temperature", "Repeated value")
 ```
 
 Visualizing weekly plots
 ```{r}
 # Visualizing weekly data ----
 
-generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) { 
+generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) { 
   # vector of sites in the order that they are in spatially
   # some sites have some funkiness going on
   sites_order <- c("tamasag", # rist 
@@ -576,7 +590,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   site_param <- paste0(site_arg, "-", parameter_arg)
   # filter for all the days that are tagged within the site-param df of interest
   site_flag_dates <- all_data_flagged[[site_param]] %>% 
-      filter(str_detect(flag, flag_arg)) %>%
+      filter(if (is.null(flag_arg)) !is.na(flag) else str_detect(flag, flag_arg)) %>%
       group_by(day(DT_join)) %>%
       slice(1)
   
@@ -586,7 +600,8 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   plot_list <- list()
 
   for(i in 1:nrow(site_flag_dates)) {
-
+    
+    flag_title <- site_flag_dates$flag[i]
     flag_year <- site_flag_dates$year[i]
     flag_month <- site_flag_dates$month[i]
     flag_day <- site_flag_dates$DT_round[i]
@@ -647,7 +662,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
       geom_line() +
       theme_bw() +
       theme(legend.position = 'bottom') +
-      ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
+      ggtitle(paste(flag_title,"at", site_arg, "on", as.character(flag_day))) +
       labs(x = "Datetime",
            y = "Mean")
 
@@ -660,6 +675,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
 generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
+Stack the weekly and daily plots
 ```{r}
 # function to combine weekly and daily plots 
 stack_plots <- function(week_plot, day_plot) {
@@ -680,7 +696,7 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   weekly_daily_plots <- map2(weekly_plot_list, daily_plot_list, stack_plots)
   return(weekly_daily_plots)
 }
-  
+
 weekly_daily_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 

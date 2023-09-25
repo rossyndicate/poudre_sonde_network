@@ -1,0 +1,115 @@
+# Remove flag methods
+## This uses the data that is generated from the function generate_daily_flag_plots()
+## to ask the user whether or not a flagged data point should pass or fail.
+
+# get flag decision function ----
+# returns a binary TRUE or FALSE depending on the input from the user
+get_flag_decision <- function(prompt_text) {
+  while (TRUE) {
+    user_input <- readline(prompt = paste(prompt_text, " (pass/fail): "))
+    user_input <- tolower(user_input)
+
+    if (user_input %in% c("pass", "p")) {
+      return(TRUE)
+    } else if (user_input %in% c("fail", "f")) {
+      return(FALSE)
+    } else {
+      cat("Invalid input. Please enter 'pass' or 'fail'.\n")
+    }
+    # need to add skip option later
+  }
+}
+
+# alter verification column ----
+# this does not work yet
+## This is the function that we want to pass into the next function to alter
+## the verification column after the user inputs pass or fail
+alter_verification_column <- function(df, choice_arg = choice) {
+
+  row_condition <- as.character(df$DT_round) == flag_dt
+
+  if (choice_arg) {
+    df <- df %>%
+      mutate(verification = ifelse(row_condition,
+                                   "pass",
+                                   verification))
+  } else {
+    df <- df %>%
+      mutate(verification = ifelse(row_condition,
+                                   "fail",
+                                   verification))
+  }
+
+  return(df)
+
+}
+
+# Verify flag data function and testing ----
+## Right now this function takes in a ggplot object, extracts its data and then
+## makes a plot for each point of interest to ask the user if it is valid point
+## or not. As it is how the user answers has not effect on any data.
+
+verify_flag_data <- function(plot_object) {
+
+  # filter the data from the plot object to get any points where the
+  # verification column is NA
+  flag_data <- ggplot_build(plot_object)$plot$data %>%
+    filter(is.na(verification))
+
+  # pull the site-param combo and inform the user what they are working on
+  flag_site <- flag_data$site[1]
+  flag_parameter <- flag_data$parameter[1]
+
+  # which df are you working on:
+  cat("Currently verifying: ", flag_site, flag_parameter, " data.")
+
+  for (i in 1:nrow(flag_data)){
+
+    # Create a data frame with a single row containing the desired DT_round value
+    flag_demarcation_data <- data.frame(DT_round = flag_data$DT_round[i])
+
+    day_plot <- plot_object +
+      geom_vline(data = flag_demarcation_data,
+                 aes(xintercept = DT_round,
+                     color = "data point of interest",
+                     # size = 2, # fix this later
+                     alpha = 0.05))
+
+    ### add the weekly data for verification as well
+    ### stacked_plot <- ggarrange(week_plot, day_plot, nrow = 2, ncol = 1)
+
+    # Print the plot so the user can see the data
+    print(day_plot)
+
+    # Generate the prompt for the user to answer
+    flag_dt <- as.character(flag_data$DT_round[i])
+
+    choice_prompt <- paste(flag_site, flag_parameter, "at", flag_dt)
+
+    choice <- get_flag_decision(choice_prompt)
+
+    # alter the df based on the response from the user
+    if (choice) { # if choice is true
+      cat(flag_site, flag_parameter, " at ", flag_dt, " has passed.\n")
+      # add pass to verification column
+
+    } else { # if choice is false
+      cat(flag_site, flag_parameter, " at ", flag_dt, " has failed.\n")
+      # add fail
+
+    }
+
+  }
+
+  # Inform the user that they are done verifying which ever df
+  cat("Finished verifying: ", flag_site, flag_parameter, " data.")
+
+  # Return the df that has verification column altered
+  #return(altered_df)
+
+}
+
+# Right now this takes in a list of plots, I don't love this but for now its the
+# easiest way to quickly get to the data that has flagged data.
+test_daily <- generate_daily_flag_plots("archery", "Temperature", "Repeated value")
+verify_flag_data(test_daily[[1]])
