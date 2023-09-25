@@ -121,9 +121,19 @@ verify_flag_data <- function(plot_object) {
 
 }
 
+# Examples ----
+
 # Right now this takes in a list of plots, I don't love this but for now its the
 # easiest way to quickly get to the data that has flagged data.
+
+# Generating a list of plots (this example only has one plot that has a
+# repeated value flag)
 test_daily <- generate_daily_flag_plots("archery", "Temperature", "Repeated value")
+
+# Using the list of plots that we generated to verify just one of the dfs in the list
 test <- verify_flag_data(test_daily[[1]])
 
+# Using the function that was made to map over the dfs in the list
 test_map <- map(test_daily, verify_flag_data)
+
+# For now only the daily plots are generated, but this can change in the future.
