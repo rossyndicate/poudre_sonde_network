@@ -703,11 +703,12 @@ weekly_daily_flag_plots("archery", "Temperature", "slope flag suspect")
 Histograms of all parameter/site combos
 ```{r}
 # generate basic histograms for dfs
-generate_histograms <- function(df, df_index) {
+generate_general_histogram <- function(df, df_index) {
   
   site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
   title <- paste("Histogram of ", site_param)
   
+  # there should be checks for data here 
   minimum <- floor(min(df$mean, na.rm = TRUE)) 
   maximum <- ceiling(max(df$mean, na.rm = TRUE))
   
@@ -720,53 +721,71 @@ generate_histograms <- function(df, df_index) {
   return(histogram)
 }
 
-# use imap to use the index in the list for the plot titles
-# result <- imap(all_data_flagged, ~generate_histograms(.x, .y))
+
 
 # making histograms for temperatures
+## pulling all the temperature dfs from the all_data list
 temperature_hist_list <- all_data_flagged[grep("Temperature", names(all_data_summary_list), ignore.case = TRUE)]
-temperature_hist_plots <- imap(temperature_hist_list, ~generate_histograms(.x, .y))
+
+## use imap to use the index in the list for the plot titles
+## (not loving imap, if there is a better way to do this please change this)
+temperature_hist_plots <- imap(temperature_hist_list, ~generate_general_histogram(.x, .y))
 temperature_hist_plots
-## getting the histogram data
+
+## How to pull the histogram data that ggplot generates to make histograms
 temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]]) 
 ```
 
 ```{r}
-# Working on seasonal histograms
-winter <- c(12,1,2)
-spring <- c(3,4,5)
-summer <- c(6,7,8)
-fall <- c(9,10,11)
-seasons <- data.frame(winter, spring, summer, fall)
+# Working on seasonal histograms function 
+# useful for seeing seasonal differences and how each season affects the 
+# general histogram
 
-for (i in colnames(seasons)){
+generate_seasonal_histogram <- function(df) {
   
-  title <- i
-
-  df <- all_data_flagged[["archery-Temperature"]] %>%
-    filter(month %in% seasons[[i]]) 
+  winter <- c(12,1,2)
+  spring <- c(3,4,5)
+  summer <- c(6,7,8)
+  fall <- c(9,10,11)
+  seasons <- data.frame(winter, spring, summer, fall)
   
-  if (all(is.finite(df$mean))) {
+  hist_list <- list()
+  
+  for (i in colnames(seasons)){
     
-    minimum <- floor(min(df$mean, na.rm = TRUE))
-    maximum <- ceiling(max(df$mean, na.rm = TRUE))
+    title <- i
+  
+    filtered_df <- df %>%
+      filter(month %in% seasons[[i]]) 
     
-    histogram <- ggplot(data = df, aes(x = mean)) +
-      geom_histogram(
-        breaks = seq(minimum, maximum, by = 1)
-      ) +
-      labs(title = title)
+    # This if else is to check for data availability, could be a try() in the future
+    if (all(is.finite(filtered_df$mean))) {
+      
+      minimum <- floor(min(filtered_df$mean, na.rm = TRUE))
+      maximum <- ceiling(max(filtered_df$mean, na.rm = TRUE))
+      
+      histogram <- ggplot(data = filtered_df, aes(x = mean)) +
+        geom_histogram(
+          breaks = seq(minimum, maximum, by = 1)
+        ) +
+        labs(title = title)
+      
+    } else {
+      
+      histogram <- ggplot(data = filtered_df, aes(x = mean)) +
+        geom_histogram() +
+        labs(title = title) 
+      
+    }
     
-  } else {
-    
-    histogram <- ggplot(data = df, aes(x = mean)) +
-      geom_histogram() +
-      labs(title = title) 
+    hist_list[[i]] <- histogram
     
   }
   
-  print(histogram)
+  collated_hist <- ggarrange(plotlist = hist_list, nrow=2, ncol=2)
+  return(collated_hist)
   
 }
 
+generate_seasonal_histograms(df=all_data_flagged[["archery-Temperature"]])
 ```
