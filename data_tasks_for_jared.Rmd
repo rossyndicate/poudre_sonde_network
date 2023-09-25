@@ -9,9 +9,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
-library(lubridate)
-library(ggplot2)
+library(tidyverse)
 library(plotly)
 
 
@@ -319,4 +317,35 @@ ggplot( some_turb_reduced, aes(x = DT, y = Turbidity_NTU, color = trigger_reduce
  
  
 
+```
+
+# Budget update 9/25/23
+
+```{r}
+
+
+budget_202309 <- read_csv("data/sharing/5303303_Budget_20230925.csv")%>%
+  mutate(date = as_date(DATE, format = "%m/%d/%y"), 
+         year = year(date))%>%
+  filter(year == 2023)
+
+allotments <- budget_202309%>%
+  dplyr::rename(person = `VENDOR PERSON`)%>%
+  filter(person == "ALLOTMENT")
+
+cost_by_user <- budget_202309%>%
+  dplyr::rename(person = `VENDOR PERSON`)%>%
+  filter(person != "ALLOTMENT")%>%
+  group_by(person)%>%
+  summarise(cost =sum(EXPENSE))%>%
+  mutate(category = case_when(
+    person %in% c("MILLER", "WILLIAMS", "LICHTENSZTAJN") ~ "Technician",
+    person == "STRUTHERS" ~ "Struthers",
+    person == "IN SITU" ~ "In Situ",
+    TRUE ~ "supplies"
+  ))
+
+cost_categories <- cost_by_user%>%
+  group_by(category)%>%
+  summarise(total =sum(cost))
 ```
