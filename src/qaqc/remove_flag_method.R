@@ -24,9 +24,9 @@ get_flag_decision <- function(prompt_text) {
 # this does not work yet
 ## This is the function that we want to pass into the next function to alter
 ## the verification column after the user inputs pass or fail
-alter_verification_column <- function(df, choice_arg = choice) {
+alter_verification_column <- function(df, dt, choice_arg = choice) {
 
-  row_condition <- as.character(df$DT_round) == flag_dt
+  row_condition <- as.character(df$DT_round) == dt
 
   if (choice_arg) {
     df <- df %>%
@@ -53,7 +53,8 @@ verify_flag_data <- function(plot_object) {
 
   # filter the data from the plot object to get any points where the
   # verification column is NA
-  flag_data <- ggplot_build(plot_object)$plot$data %>%
+  df_data <- ggplot_build(plot_object)$plot$data
+  flag_data <- df_data %>%
     filter(is.na(verification))
 
   # pull the site-param combo and inform the user what they are working on
@@ -62,6 +63,9 @@ verify_flag_data <- function(plot_object) {
 
   # which df are you working on:
   cat("Currently verifying: ", flag_site, flag_parameter, " data.")
+
+  # initialize the df_join as an empty df to join to the df_data later
+  df_join <- data.frame()
 
   for (i in 1:nrow(flag_data)){
 
@@ -92,24 +96,44 @@ verify_flag_data <- function(plot_object) {
     if (choice) { # if choice is true
       cat(flag_site, flag_parameter, " at ", flag_dt, " has passed.\n")
       # add pass to verification column
-
+      choice_df <- alter_verification_column(df = flag_demarcation_data, dt = flag_dt, choice_arg = TRUE)
     } else { # if choice is false
       cat(flag_site, flag_parameter, " at ", flag_dt, " has failed.\n")
       # add fail
-
+      choice_df <- alter_verification_column(df = flag_demarcation_data, dt = flag_dt, choice_arg = FALSE)
     }
 
+    # append choice_df to df_join
+    df_join <- bind_rows(df_join, choice_df)
   }
 
   # Inform the user that they are done verifying which ever df
   cat("Finished verifying: ", flag_site, flag_parameter, " data.")
 
+  # Join the original data with the decisions that the user made
+  altered_df <- df_data %>%
+    left_join(df_join, by = "DT_round") %>%
+    mutate(verification = coalesce(verification.x, verification.y)) %>%
+    select(!c(verification.x, verification.y))
+
   # Return the df that has verification column altered
-  #return(altered_df)
+  return(altered_df)
 
 }
 
+# Examples ----
+
 # Right now this takes in a list of plots, I don't love this but for now its the
 # easiest way to quickly get to the data that has flagged data.
+
+# Generating a list of plots (this example only has one plot that has a
+# repeated value flag)
 test_daily <- generate_daily_flag_plots("archery", "Temperature", "Repeated value")
-verify_flag_data(test_daily[[1]])
+
+# Using the list of plots that we generated to verify just one of the dfs in the list
+test <- verify_flag_data(test_daily[[1]])
+
+# Using the function that was made to map over the dfs in the list
+test_map <- map(test_daily, verify_flag_data)
+
+# For now only the daily plots are generated, but this can change in the future.
