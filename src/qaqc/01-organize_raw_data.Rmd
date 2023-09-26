@@ -428,11 +428,11 @@ add_range_flags <- function(df) {
   # get the parameter from the parameter column in the df of interest
   parameter_name <- unique(na.omit(df$parameter))
   # Pull the sensor specification range from the yaml file
-  sensor_min <- parameter_ranges[[parameter_name]]$sensor_specifications$min
-  sensor_max <- parameter_ranges[[parameter_name]]$sensor_specifications$max
+  sensor_min <- eval(parse(text = parameter_ranges[[parameter_name]]$sensor_specifications$min))
+  sensor_max <- eval(parse(text = parameter_ranges[[parameter_name]]$sensor_specifications$max))
   # Pull the lab bound range from the yaml file
-  lab_min <- parameter_ranges[[parameter_name]]$lab_bounds$min
-  lab_max <- parameter_ranges[[parameter_name]]$lab_bounds$max
+  lab_min <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$min))
+  lab_max <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$max))
 
   df <- df %>%
     # adding sensor range flags
@@ -446,6 +446,27 @@ add_range_flags <- function(df) {
   
 }
 ```
+
+```{r}
+# Add the function to add slope flags using parameter thresholds yaml file
+
+add_slope_flags <- function(df) {
+  
+  # get the parameter from the parameter column in the df of interest
+  parameter_name <- unique(na.omit(df$parameter))
+  # Pull the threshold from the yaml file
+  threshold <- eval(parse(text = parameter_ranges[[parameter_name]]$slope_threshold))
+
+  df <- df %>%
+    # adding slope flag
+    add_flag((slope_ahead >= threshold | slope_behind >= threshold), "slope flag suspect") %>% 
+    alter_flag((slope_ahead >= threshold & slope_behind >= threshold), "slope flag suspect", "slope flag actual") 
+  
+  return(df)
+  
+}
+```
+
 
 For wonky data next to each other (defined by roll sd) - here we make some monthly summaries to help with this:
 
@@ -464,23 +485,15 @@ For wonky data next to each other (defined by roll sd) - here we make some month
 
 Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
-# Set the slope threshold for the functions below
-# This will change whent the slopes are incorporated into the yaml file,
-# for now this is just for temperature data
-slope_thresh = 1/15
-
-
 # This adds the flags to all the dfs inside of all_data_summary_stats_list
 all_data_flagged <- map(all_data_summary_stats_list, ~ .x %>% 
   add_field_flags %>% 
   add_range_flags %>% 
+  add_slope_flags %>% 
   # SD flag
   add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range") %>% 
   # For data that repeats
   add_flag((mean == front1 | mean == back1), "Repeated value") %>%
-  # Slope flag
-  add_flag((slope_ahead >= slope_thresh | slope_behind >= slope_thresh), "slope flag suspect") %>% 
-  alter_flag((slope_ahead >= slope_thresh & slope_behind >= slope_thresh), "slope flag suspect", "slope flag actual") %>% 
   # Missing data flag
   add_flag(is.na(mean), "missing data"))
 
@@ -565,7 +578,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
   
 }
 
-generate_daily_flag_plots("archery", "Temperature", "Repeated value")
+generate_daily_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
 Visualizing weekly plots
@@ -672,7 +685,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
   return(plot_list)
 }
 
-generate_weekly_flag_plots("prospect", "Temperature", "slope flag suspect")
+generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
 Stack the weekly and daily plots
