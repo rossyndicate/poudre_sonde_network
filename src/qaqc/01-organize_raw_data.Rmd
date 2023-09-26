@@ -706,7 +706,8 @@ Histograms of all parameter/site combos
 generate_general_histogram <- function(df, df_index) {
   
   site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
-  title <- paste("Histogram of ", site_param)
+  n <- as.character(sum(!is.na(df$mean)))
+  title <- paste0("Histogram of ", site_param, " (n = ", n, ")")
   
   # there should be checks for data here 
   minimum <- floor(min(df$mean, na.rm = TRUE)) 
@@ -743,20 +744,22 @@ temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]
 
 generate_seasonal_histogram <- function(df) {
   
-  winter <- c(12,1,2)
-  spring <- c(3,4,5)
-  summer <- c(6,7,8)
-  fall <- c(9,10,11)
-  seasons <- data.frame(winter, spring, summer, fall)
+  winter_baseflow <- c(12,1,2,3)
+  snowmelt <- c(4,5,6,NA)
+  monsoon <- c(7,8,NA,NA)
+  fall_baseflow <- c(9,10,11,NA)
+  seasons <- data.frame(winter_baseflow, snowmelt, monsoon, fall_baseflow)
   
   hist_list <- list()
   
   for (i in colnames(seasons)){
-    
-    title <- i
   
     filtered_df <- df %>%
       filter(month %in% seasons[[i]]) 
+    
+    n <- as.character(sum(!is.na(filtered_df$mean)))
+    
+    title <- paste0(i," (n = ",n ,")")
     
     # This if else is to check for data availability, could be a try() in the future
     if (all(is.finite(filtered_df$mean))) {
