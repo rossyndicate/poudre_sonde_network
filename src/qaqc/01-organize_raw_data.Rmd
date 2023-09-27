@@ -16,138 +16,12 @@ Load necessary packages:
 
 ```{r}
 source("src/package_loader.R")
-lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr"), package_loader)
+lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis"), package_loader)
 ```
 
 # Import and collate data
 
-Load and munge field calibration files:
-
-```{r}
-# cal_files <- list.files("data/calibration_reports", pattern=".html")
-# 
-# cal_tabler <- function(cal_files){
-# 
-#   cal <- read_html(file.path("data/calibration_reports/", cal_files)) %>%
-#     html_nodes("div") %>%
-#     html_text() %>%
-#     as_tibble()
-# 
-#   rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
-# 
-#   ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
-# 
-#   conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
-# 
-#   turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "") %>% tolower()
-# 
-#   # Always the fifth sensor when depth is available:
-#   try(depth <- cal %>% .[5,] %>% pull() %>% str_replace_all(., " ", "") %>% tolower())
-# 
-#   time_mst <- paste0(str_sub(cal_files, -13, -12),":", str_sub(cal_files, -11, -10))
-# 
-#   date <- paste0(str_sub(cal_files, -22, -19),"-", str_sub(cal_files, -18, -17),"-", str_sub(cal_files, -16, -15))
-# 
-#   cal_table <- tibble(site = sub("\\_.*", "", cal_files),
-# 
-#                       DT = ymd_hm(paste(date, time_mst, tz = "MST")),
-# 
-#                       # Depth
-#                       depth_cal_date = "None",
-#                       depth_offset = "None",
-#                       depth_ref_depth = "None",
-#                       depth_ref_offset = "None",
-#                       depth_pre_psi = "None",
-#                       depth_post_psi = "None",
-# 
-#                       # Dissolved Oxygen
-#                       rdo_slope = str_match(rdo, "slope\\s*(.*?)\\s*offset")[,2],
-#                       rdo_offset = str_match(rdo, "offset\\s*(.*?)\\s*mg/l")[,2],
-#                       rdo_100 = str_match(rdo, "premeasurement\\s*(.*?)\\s*%satpost")[,2],
-#                       rdo_conc = str_match(rdo, "concentration\\s*(.*?)\\s*mg/lpremeasurement")[,2],
-#                       rdo_temp = str_match(rdo, "temperature\\s*(.*?)\\s*°c")[,2],
-#                       rdo_pressure = str_match(rdo, "pressure\\s*(.*?)\\s*mbar")[,2],
-# 
-#                       # pH
-#                       ph_slope_pre = str_match(ph_orp, "offset1slope\\s*(.*?)\\s*mv/ph")[,2],
-#                       ph_offset_pre = str_match(ph_orp, "mv/phoffset\\s*(.*?)\\s*mvslopeandoffset2")[,2],
-#                       ph_slope_post = str_match(ph_orp, "offset2slope\\s*(.*?)\\s*mv/ph")[,2],
-#                       ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mv/phoffset\\s*(.*?)\\s*mvorporp"))[,2],
-#                       # Sometimes, the post value can actually be in the high 6 pH... therefore the post measurement regex matching text is conditional
-#                       ph_7_nice = str_sub(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph7\\s*(.*?)\\s*mvcal")[,2])),
-#                       ph_7_other = str_sub(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2], 10, nchar(str_match(ph_orp, "postmeasurementph6\\s*(.*?)\\s*mvcal")[,2])),
-#                       ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
-# 
-#                       # ORP
-#                       #Newly encountered thing: sometimes the calibration report calls the ORP standard Zobell's, sometimes it's just called "ORP Standard":
-#                       orp_offset = ifelse(is.na(str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
-#                                           str_match(ph_orp, "orpstandardoffset\\s*(.*?)\\s*mvtemperature")[,2],
-#                                           str_match(ph_orp, "zobell'soffset\\s*(.*?)\\s*mvtemperature")[,2]),
-# 
-#                       # Conductivity
-#                       tds_conversion_ppm = str_sub(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2], 6, nchar(str_match(conductivity, "tdsconversionfactor\\s*(.*?)\\s*cellconstant")[,2])),
-#                       cond_cell_constant = str_match(conductivity, "cellconstant\\s*(.*?)\\s*referencetemperature")[,2],
-#                       cond_pre = str_match(conductivity,paste0(str_match(conductivity,
-#                                                                          "premeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cmpost"))[,2],
-#                       cond_post = str_match(conductivity,paste0(str_match(conductivity,
-#                                                                           "postmeasurementactual\\s*(.*?)\\s*specificconductivity")[,2],"specificconductivity\\s*(.*?)\\s*µs/cm"))[,2],
-# 
-#                       # Turbidity
-#                       ntu_slope = "None",
-#                       ntu_offset = "None",
-#                       ntu_10 = "None",
-#                       ntu_100 = "None") %>%
-# 
-#     select(-c(ph_7_nice, ph_7_other))
-# 
-#   # Not all sondes have depth. So, we "try" to get the values.
-#   try(cal_table <- cal_table %>%
-#         mutate(
-#           # Depth
-#           depth_cal_date = str_match(depth, "lastcalibrated\\s*(.*?)\\s*calibrationdetails")[,2],
-#           depth_offset = str_match(depth, "zerooffset\\s*(.*?)\\s*psireferencedepth")[,2],
-#           depth_ref_depth = str_match(depth, "psireferencedepth\\s*(.*?)\\s*ftreferenceoffset")[,2],
-#           depth_ref_offset = str_match(depth, "ftreferenceoffset\\s*(.*?)\\s*psipremeasurement")[,2],
-#           depth_pre_psi = str_match(depth, "psipremeasurement\\s*(.*?)\\s*psipostmeasurement")[,2],
-#           depth_post_psi = str_match(depth, "psipostmeasurement\\s*(.*?)\\s*psi")[,2]))
-# 
-# 
-# 
-#   # Not all sondes have turbidity. So, we "try" to get the values.
-#   try(cal_table <- cal_table %>%
-#         mutate(
-#           # Turbidity
-#           ntu_slope = str_match(turbidity, "slope\\s*(.*?)\\s*offset")[,2],
-#           ntu_offset = str_match(turbidity, "offset\\s*(.*?)\\s*ntu")[,2],
-#           ntu_10 = str_match(turbidity, "calibrationpoint1premeasurement\\s*(.*?)\\s*ntupost")[,2],
-#           ntu_100 = str_match(turbidity, "calibrationpoint2premeasurement\\s*(.*?)\\s*ntupost")[,2]))
-# 
-#   cal_table <- cal_table %>%
-#     mutate(
-#       #Factory Defaults
-#       factory_defaults = paste0(ifelse(is.na(ntu_slope), "Turbidity ", ""),
-#                                 ifelse(is.na(rdo_slope), "RDO ", ""),
-#                                 ifelse(is.na(ph_slope_post), "pH ", ""),
-#                                 ifelse(is.na(orp_offset), "ORP ", ""),
-#                                 ifelse(is.na(cond_post), "Conductivity ", ""),
-#                                 ifelse(is.na(depth_cal_date), "Depth ", "")))
-#   cal_table
-# 
-# }
-# 
-# cal_table <- map_dfr(cal_files, cal_tabler) %>%
-#   distinct(.keep_all = TRUE) %>%
-#   group_by(site) %>%
-#   mutate(DT = round_date(DT, "15 minutes")) %>%
-#   # filter for years that are 2022 and greater
-#   filter(year(DT) >= 2022)
-# # this creates a lot of errors, is it okay to ignore them all? Just make a note that these will create a lot of errors.
-# 
-# rm(cal_files, cal_tabler, package_loader)
-```
-
 Load field notes and define the start time as the 15 minute preceding the field time
-
 ```{r}
 # Pulling in field notes and adding relevant datetime columns
 field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
@@ -181,26 +55,7 @@ deployment_record <- field_notes %>%
   filter(!is.na(sonde_employed))
 ```
 
-Munge field notes
-
-```{r}
-# field_notes_clean <- field_notes %>% 
-#   mutate(sonde_impact = case_when(grepl('sonde', visit_comments, ignore.case = T) ~ 'y',
-#                                   grepl('calib', visit_comments, ignore.case = T) ~ 'y',
-#                                   sensor_pulled == 'x' ~ 'y',
-#                                   sensor_deployed == 'x' ~ 'y',
-#                                   grepl('yes', sensors_cleaned, ignore.case = T) ~ 'y'
-#   ),
-#   end_DT = case_when(sensor_pulled == 'x' ~ ymd_hm(paste0(season, '-12-31 23:59'), tz = 'MST'),
-#                      sensor_deployed == 'x' ~ start_DT,
-#                      TRUE ~ start_DT + minutes(15)),
-#   start_DT = case_when(sensor_deployed == 'x' ~ ymd_hm(paste0(season, '-01-01 00:00'), tz = 'MST'),
-#                        TRUE ~ start_DT)) %>% 
-#   filter(sonde_impact == 'y', !is.na(start_DT))
-```
-
 Merge the data sets from all API pulls:
-
 ```{r}
 all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv") %>%
   map_dfr(~data.table::fread(.) %>% select(-id)) %>%
@@ -231,60 +86,19 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
 
 # Level 1 QA-QC
 
-### Recoding data where sonde was out of water
-
-Filter instances in which a sonde was pulled out of field mid-season (basically a backup filter in case a sonde was pulled out of water but the log didn't get stopped)
-
-```{r}
-#this function is not working... not going to debug right now, but this is meant to do the lifting of this code block, but in an automated way... 
-# 
-# recode_for_maintenance = function(start, end, site) {
-#   # start_DT = ymd_hm(start, tz = 'MST')
-#   # end_DT = ymd_hm(end, tz = 'MST')
-#   all_data %>%
-#     setDT(.) %>%
-#     mutate(value = if_else(ymd_hms(DT) >= ymd_hms(start) &
-#                              ymd_hms(DT) <= ymd_hms(end) &
-#                              site == site,
-#                            NA_real_,
-#                            value),
-#            flag = if_else(ymd_hms(DT) >= ymd_hms(start) &
-#                             ymd_hms(DT) <= ymd_hms(end) &
-#                             site == site,
-#                           'recoded for sensor maintenance',
-#                           NA_character_))
-# }
-
-# preserving this for now.
-# all_data <- all_data %>% 
-#   setDT(.) %>%
-#   # Rist
-#   filter(!(ymd_hms(DT_round) >= ymd_hms("2021-09-11 09:00:00") & ymd_hms(DT_round) <= ymd_hms("2022-04-22 14:00:00") & site == "rist"),
-#          !(ymd_hms(DT_round) <= ymd_hms("2022-05-30 09:00:00") & site == "rist"),
-#          !(ymd_hms(DT_round) >= ymd_hms('2022-05-06 12:00:00') & ymd_hms(DT_round) <= ymd_hms('2022-05-09 14:30:00') & site == "rist"),
-#          # Legacy
-#          !(ymd_hms(DT_round) >= ymd_hms('2021-12-04 19:30:00') & ymd_hms(DT_round) < ymd_hms('2022-04-06 17:30:00') & site == "legacy"),
-#          !(ymd_hms(DT_round) >= ymd_hms('2022-05-24 09:30:00') & ymd_hms(DT_round) < ymd_hms('2022-06-01 13:30:00') & site == "legacy"),
-#          !(ymd_hms(DT_round) > ymd_hms('2022-07-08 14:00:00') & ymd_hms(DT_round) <= ymd_hms('2022-07-12 10:00:00') & site == "legacy"),
-#          !(ymd_hms(DT_round) >= ymd_hms('2022-08-04 09:50:00') & ymd_hms(DT_round) <= ymd_hms('2022-08-25 16:15:00') & site == "legacy"),
-#          !(ymd_hms(DT_round) > ymd_hms('2022-09-07 06:57:00') & ymd_hms(DT_round) <= ymd_hms('2022-09-18 07:00:00') & site == "legacy"),
-#          # Timberline
-#          !(ymd_hms(DT_round) > ymd_hms('2022-01-01 08:15:00') & ymd_hms(DT_round) <= ymd_hms('2022-04-06 08:15:00') & site == "timberline"),
-#          # Archery
-#          !(ymd_hms(DT_round) > ymd_hms('2022-10-04 15:00:00') & ymd_hms(DT_round) <= ymd_hms('2022-10-07 16:00:00') & site == "archery"))
-```
-
 ### Temperature at Archery
 
 I think we will want to develop pipelines specific for each site and parameter for
 processing speed (targets?). Here I am starting a pipeline for Archery's temperature:
 
 #### Format data
-
 ```{r}
 # Determine each site and parameter in all_data 
 sites <- unique(all_data$site)
-params <- unique(all_data$parameter)
+params <- c("Actual Conductivity", "Battery Level", "Baro", "Chl-a Fluorescence", 
+            "Depth", "DO", "External Voltage", "FDOM Fluorescence", "ORP", 
+            "pH", "Specific Conductivity", "Temperature", "Turbidity")
+ 
 # Constructing a df to iterate over each site-parameter combination
 combinations <- crossing(sites, params)
 
@@ -316,6 +130,9 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
            flag = NA) %>% 
     full_join(filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, DT_join, site)),
                  by = c('DT_join', 'site')) %>% 
+    # the mutate dt_round is similar to what was done prior to tz stuff... lmk if this looks weird -j
+    mutate(DT_round = as_datetime(DT_join, tz = "UTC"),
+           DT_round = with_tz(DT_round, tzone = "MST")) %>% 
     # Use fill() to determine when sonde was in the field, and when the last site visit was. 
     fill(c(sonde_employed, last_site_visit))
     },
@@ -345,7 +162,6 @@ all_data_summary_list <- map2(combinations$sites,
 all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 #### Add summary statistics to the formatted data
-
 ```{r}
 generate_summary_statistics <- function(site_param_df) {
   # This should get wrapped up in a function to map over all_data_summary_list
@@ -419,7 +235,8 @@ add_field_flags <- function(df) {
 ```{r}
 # Add the function to add the range flags using the parameter thresholds yaml file
 
-parameter_ranges <- yaml::read_yaml("src/qaqc/parameter_thresholds.yml")
+parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
+sensor_spec_ranges <- yaml::read_yaml("src/qaqc/range_limits/sensor_spec_thresholds.yml")
 
 # sensor spec ranges flagging function
   # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
@@ -428,8 +245,8 @@ add_range_flags <- function(df) {
   # get the parameter from the parameter column in the df of interest
   parameter_name <- unique(na.omit(df$parameter))
   # Pull the sensor specification range from the yaml file
-  sensor_min <- eval(parse(text = parameter_ranges[[parameter_name]]$sensor_specifications$min))
-  sensor_max <- eval(parse(text = parameter_ranges[[parameter_name]]$sensor_specifications$max))
+  sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
+  sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
   # Pull the lab bound range from the yaml file
   lab_min <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$min))
   lab_max <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$max))
@@ -486,9 +303,13 @@ For wonky data next to each other (defined by roll sd) - here we make some month
 Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
 # This adds the flags to all the dfs inside of all_data_summary_stats_list
+# all_data_summary_stats_list[["archery-Temperature"]] %>% add_field_flags()
+# all_data_summary_stats_list[["archery-Temperature"]] %>% add_range_flags()
+# all_data_summary_stats_list[["archery-Temperature"]] %>% add_slope_flags()
+
 all_data_flagged <- map(all_data_summary_stats_list, ~ .x %>% 
-  add_field_flags %>% 
-  add_range_flags %>% 
+  add_field_flags %>%
+  add_range_flags %>%
   add_slope_flags %>% 
   # SD flag
   add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range") %>% 
@@ -509,6 +330,7 @@ add_verification_column <- function(df) {
 }
 
 all_data_flagged <- map(all_data_flagged, add_verification_column)
+
 ```
 
 #### Visualize the flags
@@ -751,11 +573,8 @@ temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]
 ```
 
 ```{r}
-# Working on seasonal histograms function 
-# useful for seeing seasonal differences and how each season affects the 
-# general histogram
-
-generate_seasonal_histogram <- function(df) {
+# seasonal histogram function
+generate_seasonal_histogram <- function(df, df_index) {
   
   winter_baseflow <- c(12,1,2,3)
   snowmelt <- c(4,5,6,NA)
@@ -763,45 +582,68 @@ generate_seasonal_histogram <- function(df) {
   fall_baseflow <- c(9,10,11,NA)
   seasons <- data.frame(winter_baseflow, snowmelt, monsoon, fall_baseflow)
   
-  hist_list <- list()
+  site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
   
+  param <- unique(na.omit(df$parameter))
+  
+  hist_list <- list()
   for (i in colnames(seasons)){
   
     filtered_df <- df %>%
-      filter(month %in% seasons[[i]]) 
+      filter(month %in% seasons[[i]],
+             !str_detect(flag, "sensor specification range"))
     
     n <- as.character(sum(!is.na(filtered_df$mean)))
     
     title <- paste0(i," (n = ",n ,")")
     
-    # This if else is to check for data availability, could be a try() in the future
-    if (all(is.finite(filtered_df$mean))) {
-      
+    histogram <- ggplot() +
+          geom_histogram() +
+          labs(title = title)
+    
+    tryCatch({
       minimum <- floor(min(filtered_df$mean, na.rm = TRUE))
       maximum <- ceiling(max(filtered_df$mean, na.rm = TRUE))
       
+      if (param %in% c("Specific Conductivity", "Actual Conductivity", "Turbidity")) {
+        bins <- seq(minimum, maximum, by = 10)
+      } else if (param %in% c("ORP", "pH", "Depth")) {
+        bins <- seq(minimum, maximum, by = 0.05)
+      } else {
+        bins <- seq(minimum, maximum)
+      }
+      
       histogram <- ggplot(data = filtered_df, aes(x = mean)) +
-        geom_histogram(
-          breaks = seq(minimum, maximum, by = 1)
-        ) +
-        labs(title = title)
-      
-    } else {
-      
-      histogram <- ggplot(data = filtered_df, aes(x = mean)) +
-        geom_histogram() +
-        labs(title = title) 
-      
-    }
+        geom_histogram(breaks = bins) +
+        facet_wrap(~ year, nrow = 1) +
+        labs(title = title)},
+      error = function(err) {
+        cat("No finite values for", site_param, i, "\n")})
     
     hist_list[[i]] <- histogram
     
   }
   
-  collated_hist <- ggarrange(plotlist = hist_list, nrow=2, ncol=2)
+  collated_hist <- ggarrange(plotlist = hist_list, nrow=2, ncol=2) %>% 
+    annotate_figure(top = site_param)
+  
   return(collated_hist)
   
 }
 
-generate_seasonal_histogram(df=all_data_flagged[["archery-Temperature"]])
+imap(all_data_flagged, ~generate_seasonal_histogram(.x, .y))
+
+# output_dir <- "/Users/juandlt_csu/Library/CloudStorage/OneDrive-Colostate/poudre_sonde_network/data/histogram_images"
+# 
+# # Use imap to iterate over the list and generate/save plots
+# imap(all_data_flagged, ~{
+#   df_name <- .y  # Get the name of the data frame
+#   plot <- generate_seasonal_histogram(.x, .y)  # Generate the plot
+# 
+#   # Create a filename based on the name of the data frame
+#   filename <- file.path(output_dir, paste0(df_name, ".png"))
+# 
+#   # Save the plot as an image (you can adjust the file format and options)
+#   ggsave(filename, plot, device = "png", width = 8, height = 6)
+# })
 ```
