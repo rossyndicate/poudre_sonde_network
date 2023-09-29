@@ -30,7 +30,17 @@ field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
          DT_round = floor_date(start_DT, "15 minutes"),
          DT_join = as.character(DT_round),
          site = tolower(site),
-         season = year(DT_round))
+         field_season = year(DT_round),
+         last_site_visit = DT_round) %>%
+  arrange(site, DT_round) %>% 
+  # `sonde_employed` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
+  mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+                           !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
+                           is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) #%>%
+  # remove times in field notes where the sensor wasn't actually handled or visited
+  # filter(!is.na(sensor_handled))
+
 
 # Determining when the sonde was employed (SE) based on `sensor_pulled` (SP) and `sensor_deployed` (SD) columns.
 ## when (SP & SD) columns are NOT empty, SE = 0 (employed).
@@ -41,18 +51,18 @@ field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
 ## Downstream, fill() (fill in missing values with previous value)
 ## is used on the sonde_employed column after it has been joined
 ## to the pulled API data to determine if the sonde was employed for that data.
-deployment_record <- field_notes %>%
-  # filter for years that are 2022 and greater 
-  filter(year(DT_round) >= 2022) %>% 
-  arrange(site, DT_round) %>% 
-  group_by(site) %>%
-  # `sonde_employed` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
-  mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                           !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
-                           is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA),
-         last_site_visit = DT_round) %>%
-  filter(!is.na(sonde_employed))
+# deployment_record <- field_notes %>%
+#   # filter for years that are 2022 and greater 
+#   filter(year(DT_round) >= 2022) %>% 
+#   arrange(site, DT_round) %>% 
+#   group_by(site) %>%
+#   # `sonde_employed` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
+#   mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+#                            !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
+#                            is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
+#                            is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) %>% #,
+#          #last_site_visit = DT_round) %>%
+#   filter(!is.na(sonde_employed))
 ```
 
 Merge the data sets from all API pulls:
@@ -73,8 +83,11 @@ all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv")
          site = tolower(site)) %>%
   # filter for years that are 2022 and greater 
   filter(year(DT_round) >= 2022) %>% 
+  # These sites will be considered the same site for this workflow
+  mutate(site = ifelse(site == "rist", "tamasag", 
+                ifelse(site == "elc", "boxelder", site))) %>%
   # Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
-  mutate(site = ifelse(site == "rist" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
+  mutate(site = ifelse(site == "tamasag" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
 ```
 
 ### Export collated raw file
@@ -106,7 +119,7 @@ combinations <- crossing(sites, params)
 summarize_site_param <- function(site_arg, parameter_arg, api_data) {
   
   # filter deployment records for the full join
-  site_field_notes <- deployment_record %>% 
+  site_field_notes <- field_notes %>% 
     filter(site == site_arg)
   
   # filtering the data and generating results
@@ -128,13 +141,12 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data) {
            site = site_arg,
            parameter = parameter_arg,
            flag = NA) %>% 
-    full_join(filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, DT_join, site)),
+    left_join(filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, DT_join, site, visit_comments, sensor_malfunction, cals_performed)),
                  by = c('DT_join', 'site')) %>% 
     # the mutate dt_round is similar to what was done prior to tz stuff... lmk if this looks weird -j
-    mutate(DT_round = as_datetime(DT_join, tz = "UTC"),
-           DT_round = with_tz(DT_round, tzone = "MST")) %>% 
+    mutate(DT_round = as_datetime(DT_join, tz = "MST")) %>%
     # Use fill() to determine when sonde was in the field, and when the last site visit was. 
-    fill(c(sonde_employed, last_site_visit))
+    fill(c(sonde_employed, last_site_visit, sensor_malfunction))
     },
     
     error = function(err) {
@@ -161,8 +173,18 @@ all_data_summary_list <- map2(combinations$sites,
 # Bind rows for each df in list
 all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
+
 #### Add summary statistics to the formatted data
 ```{r}
+winter_baseflow <- c(12,1,2,3,4)
+snowmelt <- c(5,6,NA,NA,NA)
+monsoon <- c(7,8,9,NA,NA)
+fall_baseflow <- c(10,11,NA,NA,NA)
+
+seasons <- cbind(winter_baseflow, snowmelt, monsoon, fall_baseflow) %>%
+  as_tibble() %>%
+  pivot_longer(cols = names(.), values_to = "month", names_to = "season") %>% drop_na()
+
 generate_summary_statistics <- function(site_param_df) {
   # This should get wrapped up in a function to map over all_data_summary_list
   summary_stats_df <- site_param_df %>%
@@ -180,21 +202,44 @@ generate_summary_statistics <- function(site_param_df) {
       # Determine the slope of a point in relation to the point ahead and behind.
       slope_ahead = abs(front1 - mean)/15,
       slope_behind = abs(mean - back1)/15,
+      #KRW Comment: add monthly sd. add monthly avg. add 10th and 90th quantiles. 
       # add some summary info for future us
       month = month(DT_round),
       year = year(DT_round),
-      y_m = paste(year, '-', month)
-      ) %>% 
-    group_by(y_m) %>% 
+      y_m = paste(year, '-', month)) %>%
+    left_join(seasons, by = "month") %>%
+    group_by(season) %>% 
     # KW:: wondering if, there's a way to develop the sd using ONLY the range of data in
-    # the 25%-75% percentile range. Therefore, we don't include any of the weird outliers
+    # the 10%-90% percentile range. Therefore, we don't include any of the weird outliers
     # when trying to flag this way...
-    mutate(ym_sd = sd(mean, na.rm = T)) %>% 
-    ungroup() # does this do anything for downstream analysis?
+    mutate(
+      m_mean10 = quantile(mean, 0.1, na.rm = TRUE),
+      m_mean90 = quantile(mean, 0.9, na.rm = TRUE),
+      m_slope_behind_10 = quantile(slope_behind, 0.1, na.rm = TRUE),
+      m_slope_behind_90 = quantile(slope_behind, 0.9, na.rm = TRUE),
+      m_sd = sd(mean, na.rm = T)) %>% 
+    ungroup() %>%
+    # Find the 10th and 90th percentile of data.
+    # Using 10-90th percentile data, get the standard deviation of the
+    # values.
+    left_join(., site_param_df %>%
+                mutate(month = month(DT_round),
+                       year = year(DT_round),
+                       y_m = paste(year, '-', month)) %>%
+                left_join(seasons, by = "month") %>%
+                group_by(season) %>% 
+                mutate(p10 = quantile(mean, 0.1, na.rm = TRUE),
+                       p90 = quantile(mean, 0.9, na.rm = TRUE)) %>%
+                filter(mean > p10 & mean < p90) %>%
+                summarize(m_sd_1090 = sd(mean, na.rm = T)) %>%
+                select(season, m_sd_1090),
+              by = "season")
   
   return(summary_stats_df)
 }
+
 all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
+
 ```
 
 #### Add the flags
@@ -232,73 +277,114 @@ add_field_flags <- function(df) {
 }
 ```
 
+KATIE WILLI REQUEST Convert the "YAML" code below to use the seasonal sd, means, etc instead of YAML as we continue to explore what exactly we want to put in the YAML.
 ```{r}
 # Add the function to add the range flags using the parameter thresholds yaml file
 
-parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
+#parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
 sensor_spec_ranges <- yaml::read_yaml("src/qaqc/range_limits/sensor_spec_thresholds.yml")
 
 # sensor spec ranges flagging function
   # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
 add_range_flags <- function(df) {
-  
+  # 
   # get the parameter from the parameter column in the df of interest
   parameter_name <- unique(na.omit(df$parameter))
   # Pull the sensor specification range from the yaml file
   sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
   sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
-  # Pull the lab bound range from the yaml file
-  lab_min <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$min))
-  lab_max <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$max))
+  # # Pull the lab bound range from the yaml file
+  # lab_min <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$min))
+  # lab_max <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$max))
 
   df <- df %>%
     # adding sensor range flags
     add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
-             paste0("out of (", parameter_name,") sensor specification range")) %>%
+             paste0("outside of ", parameter_name," sensor specification range")) %>%
     # adding lab bound flags
-    add_flag(parameter == parameter_name & (mean < lab_min | mean > lab_max),
-             paste0("out of (", parameter_name,") lab bounds"))
+    add_flag(parameter == parameter_name & (mean < m_mean10 | mean > m_mean90),
+             paste0("outside of ", parameter_name," seasonal range"))
   
   return(df)
   
 }
 ```
+
+
+```{r}
+## OG YAML CODE OF JUAN'S
+# # Add the function to add the range flags using the parameter thresholds yaml file
+# 
+# parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
+# sensor_spec_ranges <- yaml::read_yaml("src/qaqc/range_limits/sensor_spec_thresholds.yml")
+# 
+# # sensor spec ranges flagging function
+#   # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
+# add_range_flags <- function(df) {
+#   
+#   # get the parameter from the parameter column in the df of interest
+#   parameter_name <- unique(na.omit(df$parameter))
+#   # Pull the sensor specification range from the yaml file
+#   sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
+#   sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
+#   # Pull the lab bound range from the yaml file
+#   lab_min <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$min))
+#   lab_max <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$max))
+# 
+#   df <- df %>%
+#     # adding sensor range flags
+#     add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
+#              paste0("out of (", parameter_name,") sensor specification range")) %>%
+#     # adding lab bound flags
+#     add_flag(parameter == parameter_name & (mean < lab_min | mean > lab_max),
+#              paste0("out of (", parameter_name,") lab bounds"))
+#   
+#   return(df)
+#   
+# }
+```
+
 
 ```{r}
 # Add the function to add slope flags using parameter thresholds yaml file
 
 add_slope_flags <- function(df) {
-  
-  # get the parameter from the parameter column in the df of interest
-  parameter_name <- unique(na.omit(df$parameter))
-  # Pull the threshold from the yaml file
-  threshold <- eval(parse(text = parameter_ranges[[parameter_name]]$slope_threshold))
-
   df <- df %>%
     # adding slope flag
-    add_flag((slope_ahead >= threshold | slope_behind >= threshold), "slope flag suspect") %>% 
-    alter_flag((slope_ahead >= threshold & slope_behind >= threshold), "slope flag suspect", "slope flag actual") 
-  
+    add_flag((slope_ahead >= m_slope_behind_90| slope_behind >= m_slope_behind_90), "slope flag suspect") %>%
+    alter_flag((slope_ahead >= m_slope_behind_90 & slope_behind >= m_slope_behind_90), "slope flag suspect", "slope flag actual")
+
   return(df)
-  
+
 }
 ```
 
 
-For wonky data next to each other (defined by roll sd) - here we make some monthly summaries to help with this:
+
 
 ```{r}
-# flag data points that are outside the range of 3 sds from the mean of previous + future 3 data points:
-# NOW, we are using the monthly sd instead of the rolling sd...
-
-  # keep this df name temperature_archery_bound_flags bc the bounding flagging
-  # function was the last one that was applied
-
-# This has been moved down to the all_data_flagged step ----
-
-# temperature_archery_bound_flags <- temperature_archery_bound_flags %>% 
-#   add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range")
+# JUAN OG YAML CODE. MUST PRESERVE
+# # Add the function to add slope flags using parameter thresholds yaml file
+# 
+# add_slope_flags <- function(df) {
+#   
+#   # get the parameter from the parameter column in the df of interest
+#   parameter_name <- unique(na.omit(df$parameter))
+#   # Pull the threshold from the yaml file
+#   threshold <- eval(parse(text = parameter_ranges[[parameter_name]]$slope_threshold))
+# 
+#   df <- df %>%
+#     # adding slope flag
+#     add_flag((slope_ahead >= threshold | slope_behind >= threshold), "slope flag suspect") %>% 
+#     alter_flag((slope_ahead >= threshold & slope_behind >= threshold), "slope flag suspect", "slope flag actual") 
+#   
+#   return(df)
+#   
+# }
 ```
+
+
+For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
 
 Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
@@ -307,43 +393,50 @@ Pass the dfs in all_data_summary_stats_list through the flagging functions
 # all_data_summary_stats_list[["archery-Temperature"]] %>% add_range_flags()
 # all_data_summary_stats_list[["archery-Temperature"]] %>% add_slope_flags()
 
-all_data_flagged <- map(all_data_summary_stats_list, ~ .x %>% 
-  add_field_flags %>%
-  add_range_flags %>%
-  add_slope_flags %>% 
-  # SD flag
-  add_flag((mean <= rollavg - (3 * ym_sd) | mean >= rollavg + (3 * ym_sd)), "Outside SD range") %>% 
-  # For data that repeats
-  add_flag((mean == front1 | mean == back1), "Repeated value") %>%
-  # Missing data flag
-  add_flag(is.na(mean), "missing data"))
+add_all_flags <- function(df) {
+  
+  df <- df %>%
+    add_field_flags %>%
+    add_range_flags %>%
+    add_slope_flags %>%
+    # SD flag
+    add_flag((mean <= rollavg - (3 * m_sd_1090) | mean >= rollavg + (3 * m_sd_1090)), "Outside SD range") %>%
+    # For data that repeats
+    add_flag((mean == front1 | mean == back1), "Repeated value") %>%
+    # Missing data flag
+    add_flag(is.na(mean), "missing data") %>%
+    mutate(flag_binary = ifelse(is.na(flag), 0, 1),
+           roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>%
+    add_flag((roll_bin >= (97*0.25)), "Surrounding weird")
+}
 
-# add pass/fail column and apply this to every df 
+all_data_flagged <- map(all_data_summary_stats_list, add_all_flags)
+
+# add pass/fail column and apply this to every df
 add_verification_column <- function(df) {
-  df <- df %>% 
+  df <- df %>%
     mutate(verification = case_when(
       str_detect(flag, "missing data") ~ "fail",
       is.na(flag) ~ "pass",
-      TRUE ~ NA
-    ))
+      TRUE ~ NA))
   return(df)
 }
 
 all_data_flagged <- map(all_data_flagged, add_verification_column)
-
 ```
 
 #### Visualize the flags
 
 ```{r}
 # Current vis:
-ggplot() +
+plottly::ggplotly(ggplot() +
   geom_point(data = filter(all_data_flagged[["archery-Temperature"]], is.na(flag)), 
              aes(x=DT_round, y = mean)) +
   geom_point(data = filter(all_data_flagged[["archery-Temperature"]], !is.na(flag)), 
              aes(x=DT_round, y = mean, color = flag)) +
   theme_bw() +
-  theme(legend.position = 'bottom') 
+  theme(legend.position = 'bottom') +
+  facet_wrap(year))
 ```
 
 Visualizing daily plots
