@@ -269,6 +269,7 @@ alter_flag <- function(df, condition_arg, old_description_arg, new_description_a
 
 # creating add_field_flags function
 add_field_flags <- function(df) {
+  
   df <- df %>% 
     add_flag(sonde_employed == 1, "sonde not employed") %>% 
     add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit")
@@ -281,10 +282,11 @@ add_field_flags <- function(df) {
     },
     error = function(err) {
         df})
+  
   return(df)
 }
 # testing ----
-df <- all_data_summary_stats_list[["archery-Actual Conductivity"]]
+df <- all_data_summary_stats_list[["prospect-Actual Conductivity"]]
 df %>% add_field_flags %>% View
 ```
 
@@ -551,7 +553,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
       geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
       theme_bw() +
       theme(legend.position = 'bottom') +
-      ggtitle(paste(flag_title ,"at", site_arg, "on", as.character(flag_day))) + # HERE
+      ggtitle(paste("Flags at", site_arg, "on", as.character(flag_day))) + # HERE
       labs(x = "Datetime",
            y = "Mean")
 
