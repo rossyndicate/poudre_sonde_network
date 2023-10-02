@@ -278,7 +278,10 @@ add_field_flags <- function(df) {
   # This is not working properly, will need to go back to this
   df <- tryCatch({
     df <- df %>% 
-      add_flag(lag(grepl("site visit", flag, fixed = T), n = 3, default = 1), "site visit window")
+      # using grepl here instead of str_detect
+      add_flag(lag(str_detect(flag, "site visit"), n = 3), "sv window") %>% 
+      add_flag(lag(str_detect(flag, "site visit"), n = 2), "sv window") %>%
+      add_flag(lag(str_detect(flag, "site visit"), n = 1), "sv window")
     },
     error = function(err) {
         df})
@@ -286,7 +289,7 @@ add_field_flags <- function(df) {
   return(df)
 }
 # testing ----
-df <- all_data_summary_stats_list[["prospect-Actual Conductivity"]]
+df <- all_data_summary_stats_list[["prospect-Temperature"]]
 df %>% add_field_flags %>% View
 ```
 
