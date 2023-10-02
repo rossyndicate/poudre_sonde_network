@@ -270,17 +270,22 @@ alter_flag <- function(df, condition_arg, old_description_arg, new_description_a
 # creating add_field_flags function
 add_field_flags <- function(df) {
   df <- df %>% 
-    add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit") %>%
-    # adding the site visit window flag
-    add_flag(lag(str_detect(flag, "site visit"), n = 3, default = T), "site visit window") %>% 
-    add_flag(sonde_employed == 1, "sonde not employed") 
+    add_flag(sonde_employed == 1, "sonde not employed") %>% 
+    add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit")
   
+  # adding the site visit window flag
+  # This is not working properly, will need to go back to this
+  df <- tryCatch({
+    df <- df %>% 
+      add_flag(lag(grepl("site visit", flag, fixed = T), n = 3, default = 1), "site visit window")
+    },
+    error = function(err) {
+        df})
   return(df)
 }
-
 # testing ----
-df <- all_data_summary_stats_list[["archery-Temperature"]]
-df %>% add_field_flags() %>% View()
+df <- all_data_summary_stats_list[["archery-Actual Conductivity"]]
+df %>% add_field_flags %>% View
 ```
 
 KATIE WILLI REQUEST Convert the "YAML" code below to use the seasonal sd, means, etc instead of YAML as we continue to explore what exactly we want to put in the YAML.
