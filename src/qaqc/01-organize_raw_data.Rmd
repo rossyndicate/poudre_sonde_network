@@ -214,7 +214,7 @@ generate_summary_statistics <- function(site_param_df) {
     # when trying to flag this way...
     mutate(
       m_mean10 = quantile(mean, 0.1, na.rm = TRUE),
-      m_mean90 = quantile(mean, 0.9, na.rm = TRUE),
+      m_mean90 = quantile(mean, 0.99, na.rm = TRUE),
       m_slope_behind_10 = quantile(slope_behind, 0.1, na.rm = TRUE),
       m_slope_behind_90 = quantile(slope_behind, 0.9, na.rm = TRUE),
       m_sd = sd(mean, na.rm = T)) %>% 
@@ -229,7 +229,7 @@ generate_summary_statistics <- function(site_param_df) {
                 left_join(seasons, by = "month") %>%
                 group_by(season) %>% 
                 mutate(p10 = quantile(mean, 0.1, na.rm = TRUE),
-                       p90 = quantile(mean, 0.9, na.rm = TRUE)) %>%
+                       p90 = quantile(mean, 0.99, na.rm = TRUE)) %>%
                 filter(mean > p10 & mean < p90) %>%
                 summarize(m_sd_1090 = sd(mean, na.rm = T)) %>%
                 select(season, m_sd_1090),
@@ -270,11 +270,17 @@ alter_flag <- function(df, condition_arg, old_description_arg, new_description_a
 # creating add_field_flags function
 add_field_flags <- function(df) {
   df <- df %>% 
-    # To use add_flag in a pipeline just input a condition for a flag and your description for the flag.
-    add_flag(sonde_employed == 1, "sonde not employed") %>% 
-    add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit")
+    add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit") %>%
+    # adding the site visit window flag
+    add_flag(lag(str_detect(flag, "site visit"), n = 3, default = T), "site visit window") %>% 
+    add_flag(sonde_employed == 1, "sonde not employed") 
+  
   return(df)
 }
+
+# testing ----
+df <- all_data_summary_stats_list[["archery-Temperature"]]
+df %>% add_field_flags() %>% View()
 ```
 
 KATIE WILLI REQUEST Convert the "YAML" code below to use the seasonal sd, means, etc instead of YAML as we continue to explore what exactly we want to put in the YAML.
@@ -405,6 +411,7 @@ add_all_flags <- function(df) {
     add_flag((mean == front1 | mean == back1), "Repeated value") %>%
     # Missing data flag
     add_flag(is.na(mean), "missing data") %>%
+    # Need to put this somewhere else
     mutate(flag_binary = ifelse(is.na(flag), 0, 1),
            roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>%
     add_flag((roll_bin >= (97*0.25)), "Surrounding weird")
@@ -429,7 +436,7 @@ all_data_flagged <- map(all_data_flagged, add_verification_column)
 
 ```{r}
 # Current vis:
-plottly::ggplotly(ggplot() +
+plotly::ggplotly(ggplot() +
   geom_point(data = filter(all_data_flagged[["archery-Temperature"]], is.na(flag)), 
              aes(x=DT_round, y = mean)) +
   geom_point(data = filter(all_data_flagged[["archery-Temperature"]], !is.na(flag)), 
@@ -474,9 +481,9 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
       geom_point(aes(x=DT_round, y = mean, color = flag)) +
       # exceeding sd visualized
       geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
-      geom_ribbon(aes(ymin = rollavg - ym_sd, ymax = rollavg + ym_sd, x = DT_round), alpha = 0.1, color = NA) +
-      geom_ribbon(aes(ymin = rollavg - (ym_sd*2), ymax = rollavg + (ym_sd*2), x = DT_round), alpha = 0.1, color = NA) +
-      geom_ribbon(aes(ymin = rollavg - (ym_sd*3), ymax = rollavg + (ym_sd*3), x = DT_round), alpha = 0.1, color = NA) +
+      geom_ribbon(aes(ymin = rollavg - m_sd, ymax = rollavg + m_sd, x = DT_round), alpha = 0.1, color = NA) +
+      geom_ribbon(aes(ymin = rollavg - (m_sd*2), ymax = rollavg + (m_sd*2), x = DT_round), alpha = 0.1, color = NA) +
+      geom_ribbon(aes(ymin = rollavg - (m_sd*3), ymax = rollavg + (m_sd*3), x = DT_round), alpha = 0.1, color = NA) +
       # exceeding slope visualized
       geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
       theme_bw() +
@@ -493,6 +500,65 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
   
 }
 
+generate_daily_flag_plots("archery", "Temperature", "slope flag suspect")
+```
+
+```{r}
+# Visualizing daily plots
+
+## This function will generate a list of plots for site-parameters
+## that have been tagged by a specific flag 
+generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) {
+  
+  # Generating df name to pull from all_data_flagged list
+  site_param <- paste0(site_arg, "-", parameter_arg)
+  # filter for all the days that are tagged within the site-param df of interest
+  site_flag_dates <- all_data_flagged[[site_param]] %>%
+      filter(year == "2023") %>%
+      filter(if (is.null(flag_arg)) !is.na(flag) else str_detect(flag, flag_arg)) %>%
+      group_by(day(DT_join)) %>%
+      slice(1)
+  
+  # for loop to generate plots for everyday that was tagged by a flag
+  plot_list <- list()
+  
+  for (i in 1:nrow(site_flag_dates)) {
+    
+    flag_title <- site_flag_dates$flag[i]
+    flag_year <- site_flag_dates$year[i]
+    flag_month <- site_flag_dates$month[i]
+    flag_day <- site_flag_dates$DT_round[i]
+
+    plot_data <- all_data_flagged[[site_param]] %>%
+      filter(year == "2023") %>%
+      filter(year == flag_year,
+             month == flag_month,
+             day(DT_round) == day(flag_day))
+
+    plot <- ggplot(data = plot_data) +
+      geom_point(aes(x=DT_round, y = mean, color = flag)) +
+      # exceeding sd visualized
+      geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+      geom_ribbon(aes(ymin = rollavg - m_sd, ymax = rollavg + m_sd, x = DT_round), alpha = 0.1, color = NA) +
+      geom_ribbon(aes(ymin = rollavg - (m_sd*2), ymax = rollavg + (m_sd*2), x = DT_round), alpha = 0.1, color = NA) +
+      geom_ribbon(aes(ymin = rollavg - (m_sd*3), ymax = rollavg + (m_sd*3), x = DT_round), alpha = 0.1, color = NA) +
+      # exceeding slope visualized
+      geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
+      theme_bw() +
+      theme(legend.position = 'bottom') +
+      ggtitle(paste(flag_title ,"at", site_arg, "on", as.character(flag_day))) + # HERE
+      labs(x = "Datetime",
+           y = "Mean")
+
+    plot_list[[paste(site_param, as.character(flag_day))]] <- plot
+
+  }
+  
+  return(plot_list)
+  
+}
+
+# This is still not getting all of the data that I am expecting -j
 generate_daily_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
