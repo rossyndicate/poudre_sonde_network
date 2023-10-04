@@ -214,7 +214,7 @@ generate_summary_statistics <- function(site_param_df) {
     # when trying to flag this way...
     mutate(
       m_mean10 = quantile(mean, 0.1, na.rm = TRUE),
-      m_mean90 = quantile(mean, 0.99, na.rm = TRUE),
+      m_mean99 = quantile(mean, 0.99, na.rm = TRUE),
       m_slope_behind_10 = quantile(slope_behind, 0.1, na.rm = TRUE),
       m_slope_behind_90 = quantile(slope_behind, 0.9, na.rm = TRUE),
       m_sd = sd(mean, na.rm = T)) %>% 
@@ -272,22 +272,22 @@ add_field_flags <- function(df) {
   
   df <- df %>% 
     add_flag(sonde_employed == 1, "sonde not employed") %>% 
-    add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit")
+    add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit") %>% 
+    add_flag(lag(str_detect(flag, "site visit"), n = 3), "sv window") %>% 
+    add_flag(lag(str_detect(flag, "site visit"), n = 2), "sv window") %>%
+    add_flag(lag(str_detect(flag, "site visit"), n = 1), "sv window")
   
-  df <- tryCatch({
-    df %>% 
-      add_flag(lag(str_detect(flag, "site visit"), n = 3), "sv window") %>% 
-      add_flag(lag(str_detect(flag, "site visit"), n = 2), "sv window") %>%
-      add_flag(lag(str_detect(flag, "site visit"), n = 1), "sv window")
-    },
-    error = function(err) {
-        df})
+  # df <- tryCatch({
+  #   df %>% 
+  #     add_flag(lag(str_detect(flag, "site visit"), n = 3), "sv window") %>% 
+  #     add_flag(lag(str_detect(flag, "site visit"), n = 2), "sv window") %>%
+  #     add_flag(lag(str_detect(flag, "site visit"), n = 1), "sv window")
+  #   },
+  #   error = function(err) {
+  #       df})
   
   return(df)
 }
-# testing ----
-df <- all_data_summary_stats_list[["archery-Temperature"]]
-df %>% add_field_flags %>% View
 ```
 
 KATIE WILLI REQUEST Convert the "YAML" code below to use the seasonal sd, means, etc instead of YAML as we continue to explore what exactly we want to put in the YAML.
@@ -300,7 +300,7 @@ sensor_spec_ranges <- yaml::read_yaml("src/qaqc/range_limits/sensor_spec_thresho
 # sensor spec ranges flagging function
   # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
 add_range_flags <- function(df) {
-  # 
+
   # get the parameter from the parameter column in the df of interest
   parameter_name <- unique(na.omit(df$parameter))
   # Pull the sensor specification range from the yaml file
@@ -315,12 +315,21 @@ add_range_flags <- function(df) {
     add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
              paste0("outside of ", parameter_name," sensor specification range")) %>%
     # adding lab bound flags
-    add_flag(parameter == parameter_name & (mean < m_mean10 | mean > m_mean90),
+    add_flag(parameter == parameter_name & (mean < m_mean10 | mean > m_mean99),
              paste0("outside of ", parameter_name," seasonal range"))
   
   return(df)
   
 }
+
+# exploring data ----
+
+sd_df <- map(all_data_flagged, ~.x %>% 
+  select(site, parameter, month, year, season, m_sd, m_sd_1090) %>% 
+  group_by(season) %>% 
+  mutate(diff = abs(m_sd - m_sd_1090)) %>% 
+  distinct(month, year, season, m_sd, m_sd_1090, .keep_all = TRUE)) %>% 
+  bind_rows()
 ```
 
 
@@ -421,7 +430,10 @@ add_all_flags <- function(df) {
     # Need to put this somewhere else
     mutate(flag_binary = ifelse(is.na(flag), 0, 1),
            roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>%
-    add_flag((roll_bin >= (97*0.25)), "Surrounding weird")
+    # is this supposed to flag the entire 24 hour period?
+    # This should flag it and also make sure to check that it is not taking into account the same flag when it is doing it again.
+    add_flag((roll_bin >= (97*0.25)), "24hr anomaly flag")
+  
 }
 
 all_data_flagged <- map(all_data_summary_stats_list, add_all_flags)
@@ -465,55 +477,75 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
   site_param <- paste0(site_arg, "-", parameter_arg)
   
   # filter for all the days that are tagged within the site-param df of interest
-  site_flag_dates <- all_data_flagged[[site_param]] %>%
+  site_flag_dates <- all_data_flagged[[site_param]]
+  
+  if (!is.null(site_flag_dates)){
+    
+    site_flag_dates <- site_flag_dates %>% 
       filter(if (!is.null(flag_arg)) str_detect(flag, flag_arg) else !is.na(flag)) %>%
-      # why does adding the year here not exclude the 2023 data, but without it the 2023 data is excluded?
-      group_by(day(DT_join), year) %>%
+      group_by(day(DT_join), month, year) %>%
       slice(1)
   
-  # for loop to generate plots for everyday that was tagged by a flag
-  plot_list <- list()
-  
-  for (i in 1:nrow(site_flag_dates)) {
+    if (nrow(site_flag_dates > 0)) {
+      # for loop to generate plots for everyday that was tagged by a flag
+      plot_list <- list()
+      
+      for (i in 1:nrow(site_flag_dates)) {
+        
+        flag_title <- site_flag_dates$flag[i]
+        flag_year <- site_flag_dates$year[i]
+        flag_month <- site_flag_dates$month[i]
+        flag_day <- site_flag_dates$DT_round[i]
     
-    flag_title <- site_flag_dates$flag[i]
-    flag_year <- site_flag_dates$year[i]
-    flag_month <- site_flag_dates$month[i]
-    flag_day <- site_flag_dates$DT_round[i]
+        plot_data <- all_data_flagged[[site_param]] %>%
+          filter(year == flag_year,
+                 month == flag_month,
+                 day(DT_round) == day(flag_day))
+        
+        y_min <- site_flag_dates$m_mean10[i]
+        y_max <- site_flag_dates$m_mean99[i]
 
-    plot_data <- all_data_flagged[[site_param]] %>%
-      filter(year == flag_year,
-             month == flag_month,
-             day(DT_round) == day(flag_day))
-
-    plot <- ggplot(data = plot_data) +
-      geom_point(aes(x=DT_round, y = mean, color = flag)) +
-      # exceeding sd visualized
-      geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
-      geom_ribbon(aes(ymin = rollavg - m_sd, ymax = rollavg + m_sd, x = DT_round), alpha = 0.1, color = NA) +
-      geom_ribbon(aes(ymin = rollavg - (m_sd*2), ymax = rollavg + (m_sd*2), x = DT_round), alpha = 0.1, color = NA) +
-      geom_ribbon(aes(ymin = rollavg - (m_sd*3), ymax = rollavg + (m_sd*3), x = DT_round), alpha = 0.1, color = NA) +
-      # exceeding slope visualized
-      geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
-      theme_bw() +
-      theme(legend.position = 'bottom') +
-      ggtitle(paste(flag_arg ,"at", site_arg, "on", as.character(flag_day))) + # HERE
-      labs(x = "Datetime",
-           y = "Mean")
-
-    plot_list[[paste(site_param, as.character(flag_day))]] <- plot
+        plot <- ggplot(data = plot_data) +
+          geom_point(aes(x=DT_round, y = mean, color = flag)) +
+          # exceeding sd visualized
+          geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+          geom_ribbon(aes(ymin = rollavg - m_sd_1090, ymax = rollavg + m_sd_1090, x = DT_round), alpha = 0.1, color = NA) +
+          geom_ribbon(aes(ymin = rollavg - (m_sd_1090*2), ymax = rollavg + (m_sd_1090*2), x = DT_round), alpha = 0.1, color = NA) +
+          geom_ribbon(aes(ymin = rollavg - (m_sd_1090*3), ymax = rollavg + (m_sd_1090*3), x = DT_round), alpha = 0.1, color = NA) +
+          # exceeding slope visualized
+          # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
+          # sometimes these hlines are wrong
+          geom_hline(yintercept = y_min, color = "red") +
+          geom_hline(yintercept = y_max, color = "red") +
+          theme_bw() +
+          theme(legend.position = 'bottom') +
+          ggtitle(paste(site_arg, parameter_arg, flag_arg, "on", as.character(flag_day))) +
+          labs(x = "Datetime",
+               y = "Mean")
     
-    sorted_plot_names <- names(plot_list)[order(names(plot_list))]
+        plot_list[[paste(site_param, as.character(flag_day))]] <- plot #c(y_min, y_max)
+        
+        sorted_plot_names <- names(plot_list)[order(names(plot_list))]
+        
+        plot_list <- plot_list[sorted_plot_names]
+      
+      }
+      return(plot_list)
+    } else {
+      return(paste(flag_arg, "not detected"))
+    }
     
-    plot_list <- plot_list[sorted_plot_names]
-
+  } else {
+    return(paste(site_arg, parameter_arg, "combination not available"))
   }
-  
-  return(plot_list)
-  
 }
 
-generate_daily_flag_plots("archery", "Temperature", "slope flag suspect")
+# test <- generate_daily_flag_plots("archery", "Actual Conductivity", "outside of Actual Conductivity seasonal range")
+# test
+# map(params, ~generate_daily_flag_plots("archery",.x, "slope flag"))
+# surrounding weird is really inclusive...
+# map(sites, ~generate_daily_flag_plots(.x, "Chl-a Fluorescence", NULL))
+
 
 # Capture 62 days of suspicious data, which is more than we did before,
 # but all things considered not a super crazy high number either
@@ -627,7 +659,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
   return(plot_list)
 }
 
-generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
+# generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
 ```
 
 Stack the weekly and daily plots
@@ -652,7 +684,7 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   return(weekly_daily_plots)
 }
 
-weekly_daily_flag_plots("archery", "Temperature", "site visit")
+# weekly_daily_flag_plots("archery", "Temperature", "site visit")
 
 # april, may, june 2022 and 2023 was marked as an anomaly...
 ```
@@ -702,6 +734,12 @@ generate_seasonal_histogram <- function(df, df_index) {
   snowmelt <- c(4,5,6,NA)
   monsoon <- c(7,8,NA,NA)
   fall_baseflow <- c(9,10,11,NA)
+  
+  winter_baseflow <- c(12,1,2,3,4)
+  snowmelt <- c(5,6,NA,NA,NA)
+  monsoon <- c(7,8,9,NA,NA)
+  fall_baseflow <- c(10,11,NA,NA,NA)
+  
   seasons <- data.frame(winter_baseflow, snowmelt, monsoon, fall_baseflow)
   
   site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
@@ -735,8 +773,13 @@ generate_seasonal_histogram <- function(df, df_index) {
         bins <- seq(minimum, maximum)
       }
       
+      x_min <- filtered_df$m_mean10[1]
+      x_max <- filtered_df$m_mean90[1]
+      
       histogram <- ggplot(data = filtered_df, aes(x = mean)) +
         geom_histogram(breaks = bins) +
+        geom_vline(xintercept = x_min, color = "red", linetype = "dashed") +
+        geom_vline(xintercept = x_max, color = "red", linetype = "dashed") +
         facet_wrap(~ year, nrow = 1) +
         labs(title = title)},
       error = function(err) {
