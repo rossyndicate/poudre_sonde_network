@@ -172,6 +172,8 @@ all_data_summary_list <- map2(combinations$sites,
 
 # Bind rows for each df in list
 all_data_summary_df <- bind_rows(all_data_summary_list)
+
+n_unique_dates <- length(unique(as.Date(all_data_summary_df$DT_round)))
 ```
 
 #### Add summary statistics to the formatted data
@@ -231,6 +233,7 @@ generate_summary_statistics <- function(site_param_df) {
                 mutate(p10 = quantile(mean, 0.1, na.rm = TRUE),
                        p90 = quantile(mean, 0.99, na.rm = TRUE)) %>%
                 filter(mean > p10 & mean < p90) %>%
+                # need to pull some of this info out and use it for the range limits to test it
                 summarize(m_sd_1090 = sd(mean, na.rm = T)) %>%
                 select(season, m_sd_1090),
               by = "season")
@@ -250,9 +253,11 @@ Add flagging functions for each df in all_data_summary_list
 # This function will be called inside of add_x_flags() functions (ex. add_field_flags())
 # This function will be used to simply add flags into the flag column
 add_flag <- function(df, condition_arg, description_arg) {
+  # adding the flag
   df <- df %>% mutate(flag = case_when(
     {{condition_arg}} ~ if_else(is.na(flag), paste(description_arg), paste(flag, description_arg, sep = ";\n")),
-    TRUE ~ flag)) # <- KW question: what is this part of your code doing? 
+    TRUE ~ flag)) 
+  
   return(df)
 }
 
@@ -269,23 +274,12 @@ alter_flag <- function(df, condition_arg, old_description_arg, new_description_a
 
 # creating add_field_flags function
 add_field_flags <- function(df) {
-  
   df <- df %>% 
     add_flag(sonde_employed == 1, "sonde not employed") %>% 
     add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit") %>% 
     add_flag(lag(str_detect(flag, "site visit"), n = 3), "sv window") %>% 
     add_flag(lag(str_detect(flag, "site visit"), n = 2), "sv window") %>%
     add_flag(lag(str_detect(flag, "site visit"), n = 1), "sv window")
-  
-  # df <- tryCatch({
-  #   df %>% 
-  #     add_flag(lag(str_detect(flag, "site visit"), n = 3), "sv window") %>% 
-  #     add_flag(lag(str_detect(flag, "site visit"), n = 2), "sv window") %>%
-  #     add_flag(lag(str_detect(flag, "site visit"), n = 1), "sv window")
-  #   },
-  #   error = function(err) {
-  #       df})
-  
   return(df)
 }
 ```
@@ -366,7 +360,7 @@ sd_df <- map(all_data_flagged, ~.x %>%
 # }
 ```
 
-
+add slope flags function
 ```{r}
 # Add the function to add slope flags using parameter thresholds yaml file
 
@@ -379,13 +373,8 @@ add_slope_flags <- function(df) {
   return(df)
 
 }
-```
 
-
-
-
-```{r}
-# JUAN OG YAML CODE. MUST PRESERVE
+# JUAN OG YAML CODE. MUST PRESERVE ----
 # # Add the function to add slope flags using parameter thresholds yaml file
 # 
 # add_slope_flags <- function(df) {
@@ -405,16 +394,22 @@ add_slope_flags <- function(df) {
 # }
 ```
 
+add large anomaly flag function
+```{r}
+add_large_anomaly_flag <- function(df) {
+  df <- df %>% 
+    mutate(flag_binary = ifelse((is.na(flag) | flag == "24hr anomaly flag"), 0, 1),
+           roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>% 
+    add_flag((roll_bin >= (97*0.25)), "24hr anomaly flag")
+  return(df)
+}
+```
+
 
 For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
 
 Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
-# This adds the flags to all the dfs inside of all_data_summary_stats_list
-# all_data_summary_stats_list[["archery-Temperature"]] %>% add_field_flags()
-# all_data_summary_stats_list[["archery-Temperature"]] %>% add_range_flags()
-# all_data_summary_stats_list[["archery-Temperature"]] %>% add_slope_flags()
-
 add_all_flags <- function(df) {
   
   df <- df %>%
@@ -428,11 +423,7 @@ add_all_flags <- function(df) {
     # Missing data flag
     add_flag(is.na(mean), "missing data") %>%
     # Need to put this somewhere else
-    mutate(flag_binary = ifelse(is.na(flag), 0, 1),
-           roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>%
-    # is this supposed to flag the entire 24 hour period?
-    # This should flag it and also make sure to check that it is not taking into account the same flag when it is doing it again.
-    add_flag((roll_bin >= (97*0.25)), "24hr anomaly flag")
+    add_large_anomaly_flag 
   
 }
 
@@ -455,7 +446,7 @@ all_data_flagged <- map(all_data_flagged, add_verification_column)
 
 ```{r}
 # Current vis:
-plotly::ggplotly(ggplot() +
+plotly_plot <- plotly::ggplotly(ggplot() +
   geom_point(data = filter(all_data_flagged[["archery-Temperature"]], is.na(flag)), 
              aes(x=DT_round, y = mean)) +
   geom_point(data = filter(all_data_flagged[["archery-Temperature"]], !is.na(flag)), 
@@ -539,16 +530,8 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
     return(paste(site_arg, parameter_arg, "combination not available"))
   }
 }
-
-# test <- generate_daily_flag_plots("archery", "Actual Conductivity", "outside of Actual Conductivity seasonal range")
-# test
-# map(params, ~generate_daily_flag_plots("archery",.x, "slope flag"))
-# surrounding weird is really inclusive...
-# map(sites, ~generate_daily_flag_plots(.x, "Chl-a Fluorescence", NULL))
-
-
-# Capture 62 days of suspicious data, which is more than we did before,
-# but all things considered not a super crazy high number either
+generate_daily_flag_plots("archery", "Temperature", "outside of Temperature seasonal range")
+# slope flag is too inclusive, so is the 24hr anomaly flag
 ```
 
 Visualizing weekly plots
