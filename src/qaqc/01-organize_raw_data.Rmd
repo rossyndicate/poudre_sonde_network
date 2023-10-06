@@ -173,7 +173,7 @@ all_data_summary_list <- map2(combinations$sites,
 # Bind rows for each df in list
 all_data_summary_df <- bind_rows(all_data_summary_list)
 
-n_unique_dates <- length(unique(as.Date(all_data_summary_df$DT_round)))
+n_unique_dates <- length(unique(ymd(all_data_summary_df$DT_round)))
 ```
 
 #### Add summary statistics to the formatted data
