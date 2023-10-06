@@ -398,7 +398,8 @@ add large anomaly flag function
 ```{r}
 add_large_anomaly_flag <- function(df) {
   df <- df %>% 
-    mutate(flag_binary = ifelse((is.na(flag) | flag == "24hr anomaly flag"), 0, 1),
+    # add an indication where there is a flag, except when the flag is the 24h anomaly.
+    mutate(flag_binary = if_else((is.na(flag) | flag == "24hr anomaly flag"), 0, 1),
            # create a rolling count of flags over the 12-h prior and 12-h after the current row of data
            roll_bin = frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>% 
     # add flag for untrusworthy data if the total number of rows of data that have flags is greater than 25% of all rows
