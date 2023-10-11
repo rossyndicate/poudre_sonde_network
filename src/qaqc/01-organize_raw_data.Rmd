@@ -16,7 +16,7 @@ Load necessary packages:
 
 ```{r}
 source("src/package_loader.R")
-lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis"), package_loader)
+lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis", "janitor"), package_loader)
 ```
 
 # Import and collate data
@@ -215,10 +215,10 @@ generate_summary_statistics <- function(site_param_df) {
     # the 10%-90% percentile range. Therefore, we don't include any of the weird outliers
     # when trying to flag this way...
     mutate(
-      m_mean10 = quantile(mean, 0.1, na.rm = TRUE),
+      m_mean05 = quantile(mean, 0.05, na.rm = TRUE),
       m_mean99 = quantile(mean, 0.99, na.rm = TRUE),
       m_slope_behind_10 = quantile(slope_behind, 0.1, na.rm = TRUE),
-      m_slope_behind_90 = quantile(slope_behind, 0.9, na.rm = TRUE),
+      m_slope_behind_99 = quantile(slope_behind, 0.99, na.rm = TRUE),
       m_sd = sd(mean, na.rm = T)) %>% 
     ungroup() %>%
     # Find the 10th and 90th percentile of data.
@@ -260,18 +260,9 @@ add_flag <- function(df, condition_arg, description_arg) {
   
   return(df)
 }
+```
 
-# Flag alter function
-# This function can be used to alter flags that have been established
-alter_flag <- function(df, condition_arg, old_description_arg, new_description_arg) {
-  df <- df %>% mutate(flag = case_when(
-    {{condition_arg}} & str_detect(flag, old_description_arg) ~ str_replace(flag, old_description_arg, new_description_arg),
-    TRUE ~ flag))
-  return(df)
-}
-
-# Example with field flags
-
+```{r}
 # creating add_field_flags function
 add_field_flags <- function(df) {
   df <- df %>% 
@@ -309,104 +300,45 @@ add_range_flags <- function(df) {
     add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
              paste0("outside of ", parameter_name," sensor specification range")) %>%
     # adding lab bound flags
-    add_flag(parameter == parameter_name & (mean < m_mean10 | mean > m_mean99),
+    add_flag(parameter == parameter_name & (mean < m_mean05 | mean > m_mean99),
              paste0("outside of ", parameter_name," seasonal range"))
   
   return(df)
   
 }
-
-# exploring data ----
-
-sd_df <- map(all_data_flagged, ~.x %>% 
-  select(site, parameter, month, year, season, m_sd, m_sd_1090) %>% 
-  group_by(season) %>% 
-  mutate(diff = abs(m_sd - m_sd_1090)) %>% 
-  distinct(month, year, season, m_sd, m_sd_1090, .keep_all = TRUE)) %>% 
-  bind_rows()
-```
-
-
-```{r}
-## OG YAML CODE OF JUAN'S
-# # Add the function to add the range flags using the parameter thresholds yaml file
-# 
-# parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
-# sensor_spec_ranges <- yaml::read_yaml("src/qaqc/range_limits/sensor_spec_thresholds.yml")
-# 
-# # sensor spec ranges flagging function
-#   # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
-# add_range_flags <- function(df) {
-#   
-#   # get the parameter from the parameter column in the df of interest
-#   parameter_name <- unique(na.omit(df$parameter))
-#   # Pull the sensor specification range from the yaml file
-#   sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
-#   sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
-#   # Pull the lab bound range from the yaml file
-#   lab_min <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$min))
-#   lab_max <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$max))
-# 
-#   df <- df %>%
-#     # adding sensor range flags
-#     add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
-#              paste0("out of (", parameter_name,") sensor specification range")) %>%
-#     # adding lab bound flags
-#     add_flag(parameter == parameter_name & (mean < lab_min | mean > lab_max),
-#              paste0("out of (", parameter_name,") lab bounds"))
-#   
-#   return(df)
-#   
-# }
 ```
 
 add slope flags function
 ```{r}
 # Add the function to add slope flags using parameter thresholds yaml file
-
 add_slope_flags <- function(df) {
+  
   df <- df %>%
     # adding slope flag
-    add_flag((slope_ahead >= m_slope_behind_90| slope_behind >= m_slope_behind_90), "slope flag suspect") %>%
-    alter_flag((slope_ahead >= m_slope_behind_90 & slope_behind >= m_slope_behind_90), "slope flag suspect", "slope flag actual")
+    add_flag((slope_ahead >= m_slope_behind_99 | slope_behind >= m_slope_behind_99), "slope flag suspect")
 
   return(df)
 
 }
-
-# JUAN OG YAML CODE. MUST PRESERVE ----
-# # Add the function to add slope flags using parameter thresholds yaml file
-# 
-# add_slope_flags <- function(df) {
-#   
-#   # get the parameter from the parameter column in the df of interest
-#   parameter_name <- unique(na.omit(df$parameter))
-#   # Pull the threshold from the yaml file
-#   threshold <- eval(parse(text = parameter_ranges[[parameter_name]]$slope_threshold))
-# 
-#   df <- df %>%
-#     # adding slope flag
-#     add_flag((slope_ahead >= threshold | slope_behind >= threshold), "slope flag suspect") %>% 
-#     alter_flag((slope_ahead >= threshold & slope_behind >= threshold), "slope flag suspect", "slope flag actual") 
-#   
-#   return(df)
-#   
-# }
 ```
 
 add large anomaly flag function
 ```{r}
 add_large_anomaly_flag <- function(df) {
+  
   df <- df %>% 
     mutate(flag_binary = ifelse((is.na(flag) | flag == "24hr anomaly flag"), 0, 1),
            roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>% 
     add_flag((roll_bin >= (97*0.25)), "24hr anomaly flag")
+  
+  for (i in 1:48) {
+   df <- df %>% 
+     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly flag"), n = i)), "anomaly window") %>% 
+     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly flag"), n = i)), "anomaly window")
+  }
   return(df)
 }
 ```
-
-
-For wonky data next to each other (defined by roll sd) - here we make some seasonal summaries to help with this:
 
 Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
@@ -417,13 +349,13 @@ add_all_flags <- function(df) {
     add_range_flags %>%
     add_slope_flags %>%
     # SD flag
-    add_flag((mean <= rollavg - (3 * m_sd_1090) | mean >= rollavg + (3 * m_sd_1090)), "Outside SD range") %>%
+    add_flag((mean <= rollavg - (3 * m_sd_1090) | mean >= rollavg + (3 * m_sd_1090)), "outside sd range") %>%
     # For data that repeats
-    add_flag((mean == front1 | mean == back1), "Repeated value") %>%
+    add_flag((mean == front1 | mean == back1), "repeated value") %>%
     # Missing data flag
-    add_flag(is.na(mean), "missing data") %>%
+    add_flag(is.na(mean), "missing data") # %>%
     # Need to put this somewhere else
-    add_large_anomaly_flag 
+    # add_large_anomaly_flag
   
 }
 
@@ -434,8 +366,9 @@ add_verification_column <- function(df) {
   df <- df %>%
     mutate(verification = case_when(
       str_detect(flag, "missing data") ~ "fail",
+      # need to add more situations where data points fail
       is.na(flag) ~ "pass",
-      TRUE ~ NA))
+      TRUE ~ NA))   
   return(df)
 }
 
@@ -483,6 +416,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
       
       for (i in 1:nrow(site_flag_dates)) {
         
+        # do this for dates instead : date = format(DT_round, "%m-%d-%Y")
         flag_title <- site_flag_dates$flag[i]
         flag_year <- site_flag_dates$year[i]
         flag_month <- site_flag_dates$month[i]
@@ -493,7 +427,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
                  month == flag_month,
                  day(DT_round) == day(flag_day))
         
-        y_min <- site_flag_dates$m_mean10[i]
+        y_min <- site_flag_dates$m_mean05[i]
         y_max <- site_flag_dates$m_mean99[i]
 
         plot <- ggplot(data = plot_data) +
@@ -530,7 +464,12 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
     return(paste(site_arg, parameter_arg, "combination not available"))
   }
 }
-generate_daily_flag_plots("archery", "Temperature", "outside of Temperature seasonal range")
+
+# map(params, ~generate_daily_flag_plots("archery", .x, "outside SD range"))
+test <- generate_daily_flag_plots("prospect", "Temperature", "missing data")
+head(test, n = 20)
+length(test)
+
 # slope flag is too inclusive, so is the 24hr anomaly flag
 ```
 
@@ -539,6 +478,7 @@ Visualizing weekly plots
 # Visualizing weekly data ----
 
 generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) { 
+  
   # vector of sites in the order that they are in spatially
   # some sites have some funkiness going on
   sites_order <- c("tamasag", # rist 
@@ -557,7 +497,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
   # filter for all the days that are tagged within the site-param df of interest
   site_flag_dates <- all_data_flagged[[site_param]] %>% 
       filter(if (is.null(flag_arg)) !is.na(flag) else str_detect(flag, flag_arg)) %>%
-      group_by(day(DT_join), year) %>%
+      group_by(day(DT_join), month, year) %>%
       slice(1)
   
   # This for loop generates an overlayed plot of weekly data for the site of 
@@ -618,6 +558,9 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
       filter(year == flag_year,
            month == flag_month,
            day(DT_round) == day(flag_day))
+    
+    y_min <- site_day_data$m_mean05[i]
+    y_max <- site_day_data$m_mean99[i]
 
     week_plot <- ggplot(data = week_plot_data, aes(x=DT_round, y=mean, color=site)) +
       geom_rect(data = site_day_data, aes(xmin = min(DT_round), xmax = max(DT_round),
@@ -626,6 +569,8 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
                 alpha = 0.01,
                 color = NA)+
       geom_line() +
+      geom_hline(yintercept = y_min, color = "red") +
+      geom_hline(yintercept = y_max, color = "red") +
       theme_bw() +
       theme(legend.position = 'bottom') +
       ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
@@ -642,16 +587,11 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
   return(plot_list)
 }
 
-# generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
+length(generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect"))
 ```
 
 Stack the weekly and daily plots
 ```{r}
-# function to combine weekly and daily plots 
-stack_plots <- function(week_plot, day_plot) {
-  ggarrange(week_plot, day_plot, nrow = 2, ncol = 1)
-}
-
 # This function lets you combine the weekly and daily plots into one stacked plot
 # to compare the two. 
 weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
@@ -663,13 +603,11 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   
   # These two functions should always return the same amount of plots, so we can
   # use map2() to stack them with combine_plots()
-  weekly_daily_plots <- map2(weekly_plot_list, daily_plot_list, stack_plots)
+  weekly_daily_plots <- map2(.x = weekly_plot_list, .y = daily_plot_list, ~ggarrange(.x, .y, nrow = 2, ncol = 1))
   return(weekly_daily_plots)
 }
 
-# weekly_daily_flag_plots("archery", "Temperature", "site visit")
-
-# april, may, june 2022 and 2023 was marked as an anomaly...
+tail(weekly_daily_flag_plots("archery", "DO", "seasonal range"))
 ```
 
 Histograms of all parameter/site combos
@@ -703,7 +641,7 @@ temperature_hist_list <- all_data_flagged[grep("Temperature", names(all_data_sum
 ## use imap to use the index in the list for the plot titles
 ## (not loving imap, if there is a better way to do this please change this)
 temperature_hist_plots <- imap(temperature_hist_list, ~generate_general_histogram(.x, .y))
-temperature_hist_plots
+# temperature_hist_plots
 
 ## How to pull the histogram data that ggplot generates to make histograms
 temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]]) 
@@ -712,11 +650,6 @@ temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]
 ```{r}
 # seasonal histogram function
 generate_seasonal_histogram <- function(df, df_index) {
-  
-  winter_baseflow <- c(12,1,2,3)
-  snowmelt <- c(4,5,6,NA)
-  monsoon <- c(7,8,NA,NA)
-  fall_baseflow <- c(9,10,11,NA)
   
   winter_baseflow <- c(12,1,2,3,4)
   snowmelt <- c(5,6,NA,NA,NA)
@@ -756,15 +689,16 @@ generate_seasonal_histogram <- function(df, df_index) {
         bins <- seq(minimum, maximum)
       }
       
-      x_min <- filtered_df$m_mean10[1]
-      x_max <- filtered_df$m_mean90[1]
+      x_min <- filtered_df$m_mean05[1]
+      x_max <- filtered_df$m_mean99[1]
       
       histogram <- ggplot(data = filtered_df, aes(x = mean)) +
         geom_histogram(breaks = bins) +
         geom_vline(xintercept = x_min, color = "red", linetype = "dashed") +
         geom_vline(xintercept = x_max, color = "red", linetype = "dashed") +
         facet_wrap(~ year, nrow = 1) +
-        labs(title = title)},
+        labs(title = title)
+      },
       error = function(err) {
         cat("No finite values for", site_param, i, "\n")})
     
@@ -772,26 +706,26 @@ generate_seasonal_histogram <- function(df, df_index) {
     
   }
   
-  collated_hist <- ggarrange(plotlist = hist_list, nrow=2, ncol=2) %>% 
+  collated_hist <- ggarrange(plotlist = hist_list, nrow=2, ncol=2) %>%
     annotate_figure(top = site_param)
   
   return(collated_hist)
   
 }
 
-imap(all_data_flagged, ~generate_seasonal_histogram(.x, .y))
+head(imap(all_data_flagged, ~generate_seasonal_histogram(.x, .y)))
 
-# output_dir <- "/Users/juandlt_csu/Library/CloudStorage/OneDrive-Colostate/poudre_sonde_network/data/histogram_images"
-# 
-# # Use imap to iterate over the list and generate/save plots
-# imap(all_data_flagged, ~{
-#   df_name <- .y  # Get the name of the data frame
-#   plot <- generate_seasonal_histogram(.x, .y)  # Generate the plot
-# 
-#   # Create a filename based on the name of the data frame
-#   filename <- file.path(output_dir, paste0(df_name, ".png"))
-# 
-#   # Save the plot as an image (you can adjust the file format and options)
-#   ggsave(filename, plot, device = "png", width = 8, height = 6)
-# })
+output_dir <- "/Users/juandlt_csu/Library/CloudStorage/OneDrive-Colostate/poudre_sonde_network/data/histogram_images"
+
+# Use imap to iterate over the list and generate/save plots
+imap(all_data_flagged, ~{
+  df_name <- .y  # Get the name of the data frame
+  plot <- generate_seasonal_histogram(.x, .y)  # Generate the plot
+
+  # Create a filename based on the name of the data frame
+  filename <- file.path(output_dir, paste0(df_name, ".png"))
+
+  # Save the plot as an image (you can adjust the file format and options)
+  ggsave(filename, plot, device = "png", width = 8, height = 6)
+})
 ```
