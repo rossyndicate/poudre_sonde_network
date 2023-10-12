@@ -149,6 +149,7 @@ all_data_summary_list <- map2(combinations$sites,
 
 # Bind rows for each df in list
 # all_data_summary_df <- bind_rows(all_data_summary_list)
+all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
 #### Add summary statistics to the formatted data
@@ -321,7 +322,6 @@ add_large_anomaly_flag <- function(df) {
      add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>% 
      add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window")
   }
-  
   return(df)
 }
 ```
