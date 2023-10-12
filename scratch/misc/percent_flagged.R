@@ -13,7 +13,7 @@ generate_flag_report <- function(df, df_index) {
                      "outside sd range",
                      "repeated value",
                      "missing data",
-                     "24hr anomaly flag",
+                     "24hr anomaly",
                      "anomaly window")
 
   # summarize total data points
@@ -56,7 +56,7 @@ generate_flag_report <- function(df, df_index) {
       data_points_flagged_percentage = format(percent_flagged * 100, nsmall=2),
       data_points_flagged = flagged_observations,
       total_data_points = total_observations,
-      # days
+      # dates
       dates_flagged_percentage = format(percent_flagged_dates * 100, nsmall=2),
       dates_flagged = flagged_observations_dates,
       total_dates = total_observations_dates
@@ -72,6 +72,8 @@ generate_flag_report <- function(df, df_index) {
 
 flag_report <- imap(all_data_flagged, ~generate_flag_report(.x,.y)) %>%
   bind_rows()
+
+View(flag_report)
 
 flag_report_1 <- flag_report %>%
   group_by(site, parameter) %>%

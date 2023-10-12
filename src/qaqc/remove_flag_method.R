@@ -59,7 +59,7 @@ verify_flag_data <- function(weekly_plot_object, daily_plot_object) {
   flag_parameter <- flag_data$parameter[1]
 
   # which df are you working on:
-  cat("Currently verifying: ", flag_site, flag_parameter, " data.")
+  cat("Currently verifying: ", flag_site, flag_parameter, " data.\n")
 
   # initialize the df_join as an empty df to join to the df_data later
   df_join <- data.frame()
@@ -112,7 +112,7 @@ verify_flag_data <- function(weekly_plot_object, daily_plot_object) {
   }
 
   # Inform the user that they are done verifying which ever df
-  cat("Finished verifying: ", flag_site, flag_parameter, " data.")
+  cat("Finished verifying: ", flag_site, flag_parameter, " data.\n")
 
   # Join the original data with the decisions that the user made
   altered_df <- df_data %>%
@@ -138,9 +138,10 @@ test_weekly <- generate_weekly_flag_plots("archery", "Temperature", "slope flag 
 # Using the list of plots that we generated to verify just one of the dfs in the list
 
 # maybe we will use map2() so that it can take the input from both and then combine them?
-verify_flag_data(test_weekly[[1]], test_daily[[1]])
+verify_flag_data(test_weekly[[2]], test_daily[[2]])
 
 # Using the function that was made to map over the dfs in the list
-test_map <- map(test_daily, verify_flag_data)
+# make sure to put in the weekly information first
+test_map <- map2(head(test_weekly), head(test_daily), verify_flag_data)
 
 # For now only the daily plots are generated, but this can change in the future.

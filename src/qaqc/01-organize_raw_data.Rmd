@@ -40,29 +40,6 @@ field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
                            is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) #%>%
   # remove times in field notes where the sensor wasn't actually handled or visited
   # filter(!is.na(sensor_handled))
-
-
-# Determining when the sonde was employed (SE) based on `sensor_pulled` (SP) and `sensor_deployed` (SD) columns.
-## when (SP & SD) columns are NOT empty, SE = 0 (employed).
-## when (SP) column is NOT empty, but (SD) column is empty, SE = 1 (NOT employed).
-## when (SP) column is empty, but (SD) column is NOT empty, SE = 0 (employed).
-## when (SP & SD) columns are empty, SE = NA (unknown).
-
-## Downstream, fill() (fill in missing values with previous value)
-## is used on the sonde_employed column after it has been joined
-## to the pulled API data to determine if the sonde was employed for that data.
-# deployment_record <- field_notes %>%
-#   # filter for years that are 2022 and greater 
-#   filter(year(DT_round) >= 2022) %>% 
-#   arrange(site, DT_round) %>% 
-#   group_by(site) %>%
-#   # `sonde_employed` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
-#   mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-#                            !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
-#                            is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-#                            is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) %>% #,
-#          #last_site_visit = DT_round) %>%
-#   filter(!is.na(sonde_employed))
 ```
 
 Merge the data sets from all API pulls:
@@ -171,9 +148,7 @@ all_data_summary_list <- map2(combinations$sites,
   keep(~ !is.null(.))
 
 # Bind rows for each df in list
-all_data_summary_df <- bind_rows(all_data_summary_list)
-
-n_unique_dates <- length(unique(as.Date(all_data_summary_df$DT_round)))
+# all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
 #### Add summary statistics to the formatted data
@@ -245,25 +220,23 @@ all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_stati
 
 ```
 
-#### Add the flags
+#### Add flagging functions
 Add flagging functions for each df in all_data_summary_list
 
 ```{r}
 # flag addition function 
-# This function will be called inside of add_x_flags() functions (ex. add_field_flags())
-# This function will be used to simply add flags into the flag column
 add_flag <- function(df, condition_arg, description_arg) {
-  # adding the flag
   df <- df %>% mutate(flag = case_when(
     {{condition_arg}} ~ if_else(is.na(flag), paste(description_arg), paste(flag, description_arg, sep = ";\n")),
     TRUE ~ flag)) 
-  
   return(df)
 }
 ```
 
 ```{r}
-# creating add_field_flags function
+# Adding flags related to field notes
+  # site visits (and site visit window)
+  # sonde not employed 
 add_field_flags <- function(df) {
   df <- df %>% 
     add_flag(sonde_employed == 1, "sonde not employed") %>% 
@@ -275,12 +248,15 @@ add_field_flags <- function(df) {
 }
 ```
 
-KATIE WILLI REQUEST Convert the "YAML" code below to use the seasonal sd, means, etc instead of YAML as we continue to explore what exactly we want to put in the YAML.
 ```{r}
-# Add the function to add the range flags using the parameter thresholds yaml file
+# Adding flags related to parameter ranges
+# Sensor specification ranges are those which exceed manufacturer specified limits.
+# Seasonal ranges are mean values which are below the .05 quantile or exceed the
+# .99 quantile.
 
-#parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
+# parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
 sensor_spec_ranges <- yaml::read_yaml("src/qaqc/range_limits/sensor_spec_thresholds.yml")
+# this really does not need to be a yaml solution
 
 # sensor spec ranges flagging function
   # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
@@ -291,9 +267,6 @@ add_range_flags <- function(df) {
   # Pull the sensor specification range from the yaml file
   sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
   sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
-  # # Pull the lab bound range from the yaml file
-  # lab_min <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$min))
-  # lab_max <- eval(parse(text = parameter_ranges[[parameter_name]]$lab_bounds$max))
 
   df <- df %>%
     # adding sensor range flags
@@ -308,34 +281,47 @@ add_range_flags <- function(df) {
 }
 ```
 
-add slope flags function
 ```{r}
-# Add the function to add slope flags using parameter thresholds yaml file
+# Adding flags related to slopes between points
+# Flag when the slope between a data point and its previous or next point exceeds the 
+# .99 quantile for slopes.
 add_slope_flags <- function(df) {
-  
   df <- df %>%
-    # adding slope flag
-    add_flag((slope_ahead >= m_slope_behind_99 | slope_behind >= m_slope_behind_99), "slope flag suspect")
-
+    add_flag((slope_ahead >= m_slope_behind_99 | slope_behind >= m_slope_behind_99), "slope violation")
   return(df)
-
 }
 ```
 
-add large anomaly flag function
 ```{r}
+# Adding flags regarding large swaths of suspect data.
+
+# Takes a rolling window of data points (24 hours worth of data points), and if 
+# more than a quarter of that data has been flagged, the point in the center of that
+# rolling window will be flagged with "24hr anomaly flag". 
+
+# After a point has been determined to fall in the center of a large data anomaly,  
+# it will check if that point itself is part of another 24hr anomaly. 
+# This is done by looking for "24hr anomaly flags" within the 48 points behind and ahead
+# of it. If that flag is detected within that window, an "anomaly window" will also 
+# be added to that point. 
+
+# "24hr anomaly flag" and "anomaly window" flags do not count toward the total for the
+# "24hr anomaly flag"
+
 add_large_anomaly_flag <- function(df) {
   
   df <- df %>% 
-    mutate(flag_binary = ifelse((is.na(flag) | flag == "24hr anomaly flag"), 0, 1),
+    # str_detect to make sure we are not counting this same flag towards next count
+    mutate(flag_binary = ifelse((is.na(flag) | str_detect(x, "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window)$")), 0, 1),
            roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>% 
-    add_flag((roll_bin >= (97*0.25)), "24hr anomaly flag")
+    add_flag((roll_bin >= (97*0.25)), "24hr anomaly")
   
   for (i in 1:48) {
    df <- df %>% 
-     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly flag"), n = i)), "anomaly window") %>% 
-     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly flag"), n = i)), "anomaly window")
+     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>% 
+     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window")
   }
+  
   return(df)
 }
 ```
@@ -353,9 +339,9 @@ add_all_flags <- function(df) {
     # For data that repeats
     add_flag((mean == front1 | mean == back1), "repeated value") %>%
     # Missing data flag
-    add_flag(is.na(mean), "missing data") # %>%
+    add_flag(is.na(mean), "missing data") %>%
     # Need to put this somewhere else
-    # add_large_anomaly_flag
+    add_large_anomaly_flag
   
 }
 
@@ -715,17 +701,17 @@ generate_seasonal_histogram <- function(df, df_index) {
 
 head(imap(all_data_flagged, ~generate_seasonal_histogram(.x, .y)))
 
-output_dir <- "/Users/juandlt_csu/Library/CloudStorage/OneDrive-Colostate/poudre_sonde_network/data/histogram_images"
-
-# Use imap to iterate over the list and generate/save plots
-imap(all_data_flagged, ~{
-  df_name <- .y  # Get the name of the data frame
-  plot <- generate_seasonal_histogram(.x, .y)  # Generate the plot
-
-  # Create a filename based on the name of the data frame
-  filename <- file.path(output_dir, paste0(df_name, ".png"))
-
-  # Save the plot as an image (you can adjust the file format and options)
-  ggsave(filename, plot, device = "png", width = 8, height = 6)
-})
+# output_dir <- "/Users/juandlt_csu/Library/CloudStorage/OneDrive-Colostate/poudre_sonde_network/data/histogram_images"
+# 
+# # Use imap to iterate over the list and generate/save plots
+# imap(all_data_flagged, ~{
+#   df_name <- .y  # Get the name of the data frame
+#   plot <- generate_seasonal_histogram(.x, .y)  # Generate the plot
+# 
+#   # Create a filename based on the name of the data frame
+#   filename <- file.path(output_dir, paste0(df_name, ".png"))
+# 
+#   # Save the plot as an image (you can adjust the file format and options)
+#   ggsave(filename, plot, device = "png", width = 8, height = 6)
+# })
 ```
