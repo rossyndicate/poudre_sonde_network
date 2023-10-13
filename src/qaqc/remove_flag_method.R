@@ -30,14 +30,10 @@ alter_verification_column <- function(df, dt, choice_arg = choice) {
 
   if (choice_arg) {
     df <- df %>%
-      mutate(verification = ifelse(row_condition,
-                                   "pass",
-                                   verification))
+      mutate(verification = ifelse(row_condition, "pass", verification))
   } else {
     df <- df %>%
-      mutate(verification = ifelse(row_condition,
-                                   "fail",
-                                   verification))
+      mutate(verification = ifelse(row_condition, "fail", verification))
   }
 
   return(df)
@@ -49,11 +45,12 @@ alter_verification_column <- function(df, dt, choice_arg = choice) {
 ## makes a plot for each point of interest to ask the user if it is valid point
 ## or not. As it is how the user answers has not effect on any data.
 
-verify_flag_data <- function(plot_object) {
+# there will need to be some sort of imap so that we can verify that the weekly data and the daily data are the same
+verify_flag_data <- function(weekly_plot_object, daily_plot_object) {
 
   # filter the data from the plot object to get any points where the
   # verification column is NA
-  df_data <- ggplot_build(plot_object)$plot$data
+  df_data <- ggplot_build(daily_plot_object)$plot$data
   flag_data <- df_data %>%
     filter(is.na(verification))
 
@@ -62,7 +59,7 @@ verify_flag_data <- function(plot_object) {
   flag_parameter <- flag_data$parameter[1]
 
   # which df are you working on:
-  cat("Currently verifying: ", flag_site, flag_parameter, " data.")
+  cat("Currently verifying: ", flag_site, flag_parameter, " data.\n")
 
   # initialize the df_join as an empty df to join to the df_data later
   df_join <- data.frame()
@@ -72,7 +69,14 @@ verify_flag_data <- function(plot_object) {
     # Create a data frame with a single row containing the desired DT_round value
     flag_demarcation_data <- data.frame(DT_round = flag_data$DT_round[i])
 
-    day_plot <- plot_object +
+    day_plot <- daily_plot_object +
+      geom_vline(data = flag_demarcation_data,
+                 aes(xintercept = DT_round,
+                     color = "data point of interest",
+                     # size = 2, # fix this later
+                     alpha = 0.05))
+
+    week_plot <- weekly_plot_object +
       geom_vline(data = flag_demarcation_data,
                  aes(xintercept = DT_round,
                      color = "data point of interest",
@@ -80,10 +84,10 @@ verify_flag_data <- function(plot_object) {
                      alpha = 0.05))
 
     ### add the weekly data for verification as well
-    ### stacked_plot <- ggarrange(week_plot, day_plot, nrow = 2, ncol = 1)
+    stacked_plot <- ggarrange(week_plot, day_plot, nrow = 2, ncol = 1)
 
     # Print the plot so the user can see the data
-    print(day_plot)
+    print(stacked_plot)
 
     # Generate the prompt for the user to answer
     flag_dt <- as.character(flag_data$DT_round[i])
@@ -108,7 +112,7 @@ verify_flag_data <- function(plot_object) {
   }
 
   # Inform the user that they are done verifying which ever df
-  cat("Finished verifying: ", flag_site, flag_parameter, " data.")
+  cat("Finished verifying: ", flag_site, flag_parameter, " data.\n")
 
   # Join the original data with the decisions that the user made
   altered_df <- df_data %>%
@@ -126,14 +130,18 @@ verify_flag_data <- function(plot_object) {
 # Right now this takes in a list of plots, I don't love this but for now its the
 # easiest way to quickly get to the data that has flagged data.
 
-# Generating a list of plots (this example only has one plot that has a
-# repeated value flag)
-test_daily <- generate_daily_flag_plots("archery", "Temperature", "Repeated value")
+# Generating the list of plots (this example only has one plot that has a repeated value flag)
+# we are doing it this way so that we can get the data from the daily ggplot
+test_weekly <- generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+test_daily <- generate_daily_flag_plots("archery", "Temperature", "slope violation")
 
 # Using the list of plots that we generated to verify just one of the dfs in the list
-test <- verify_flag_data(test_daily[[1]])
+
+# maybe we will use map2() so that it can take the input from both and then combine them?
+verify_flag_data(test_weekly[[2]], test_daily[[2]])
 
 # Using the function that was made to map over the dfs in the list
-test_map <- map(test_daily, verify_flag_data)
+# make sure to put in the weekly information first
+test_map <- map2(head(test_weekly), head(test_daily), verify_flag_data)
 
 # For now only the daily plots are generated, but this can change in the future.
