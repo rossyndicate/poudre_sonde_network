@@ -9,7 +9,7 @@ generate_flag_report <- function(df, df_index) {
                      "sv window",
                      "sensor specification range",
                      "seasonal range",
-                     "slope flag suspect",
+                     "slope violation",
                      "outside sd range",
                      "repeated value",
                      "missing data",
