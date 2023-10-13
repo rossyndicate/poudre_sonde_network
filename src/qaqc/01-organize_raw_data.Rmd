@@ -313,7 +313,7 @@ add_large_anomaly_flag <- function(df) {
   
   df <- df %>% 
     # str_detect to make sure we are not counting this same flag towards next count
-    mutate(flag_binary = ifelse((is.na(flag) | str_detect(x, "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window)$")), 0, 1),
+    mutate(flag_binary = ifelse((is.na(flag) | str_detect(flag, "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window)$")), 0, 1),
            roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>% 
     add_flag((roll_bin >= (97*0.25)), "24hr anomaly")
   
@@ -598,8 +598,7 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   return(weekly_daily_plots)
 }
 
-test <- weekly_daily_flag_plots("archery", "Actual Conductivity", "seasonal range")
-tail(test)
+# weekly_daily_flag_plots("archery", "Actual Conductivity", "seasonal range")
 ```
 
 Histograms of all parameter/site combos

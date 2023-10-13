@@ -132,8 +132,8 @@ verify_flag_data <- function(weekly_plot_object, daily_plot_object) {
 
 # Generating the list of plots (this example only has one plot that has a repeated value flag)
 # we are doing it this way so that we can get the data from the daily ggplot
-test_daily <- generate_daily_flag_plots("archery", "Temperature", "slope flag suspect")
-test_weekly <- generate_weekly_flag_plots("archery", "Temperature", "slope flag suspect")
+test_weekly <- generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+test_daily <- generate_daily_flag_plots("archery", "Temperature", "slope violation")
 
 # Using the list of plots that we generated to verify just one of the dfs in the list
 
