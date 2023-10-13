@@ -1,8 +1,8 @@
-generate_flag_report <- function(df, df_index) {
+generate_flag_report <- function(df) {
 
   # Extract the site and parameter from the df_name
-  site <- sub("^([^\\-]+)-.*$", "\\1", df_index)
-  parameter <- sub("^[^-]+-(.*)$", "\\1", df_index)
+  site <- unique(na.omit(df$site))
+  parameter <- unique(na.omit(df$parameter))
 
   list_of_flags <- c("sonde not employed",
                      "site visit",
@@ -29,6 +29,7 @@ generate_flag_report <- function(df, df_index) {
 
   row_list <- list()
   for (i in list_of_flags) {
+
     # summarize flagged data points
     flagged_observations <- df %>%
       filter(str_detect(flag, i)) %>%
@@ -46,7 +47,7 @@ generate_flag_report <- function(df, df_index) {
     # summarize percent days that are flagged
     percent_flagged_dates <- flagged_observations_dates/total_observations_dates
 
-    # creating a vector with the information
+    # creating a row with the information
     calculated_values <- tibble(
       # metadata
       site = site,
@@ -70,7 +71,7 @@ generate_flag_report <- function(df, df_index) {
 
 }
 
-flag_report <- imap(all_data_flagged, ~generate_flag_report(.x,.y)) %>%
+flag_report <- map(all_data_flagged, generate_flag_report) %>%
   bind_rows()
 
 View(flag_report)

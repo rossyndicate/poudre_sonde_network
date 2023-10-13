@@ -450,11 +450,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
   }
 }
 
-# map(params, ~generate_daily_flag_plots("archery", .x, "outside SD range"))
-test <- generate_daily_flag_plots("archery", "Temperature", "slope violation")
-head(test)
-
-# anomaly window is too inclusive...
+# generate_daily_flag_plots("archery", "Temperature", "slope violation")
 ```
 
 Visualizing weekly plots
@@ -582,7 +578,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
   }
 }
 
-generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+# generate_weekly_flag_plots("archery", "Temperature", "slope violation")
 ```
 
 Stack the weekly and daily plots
@@ -602,7 +598,8 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   return(weekly_daily_plots)
 }
 
-tail(weekly_daily_flag_plots("archery", "DO", "seasonal range"))
+test <- weekly_daily_flag_plots("archery", "Actual Conductivity", "seasonal range")
+tail(test)
 ```
 
 Histograms of all parameter/site combos
