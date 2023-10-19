@@ -1,10 +1,10 @@
-library(tidyverse)
+
 
 download_pictures <- function(){
   # Find all the downloaded pictures
   all_file_names <- list.files(path = "data/field_pics/", recursive = TRUE)
   #grab notes
-  sampling_photos <- all_notes%>%
+  sampling_photos <- all_notes_cleaned%>%
     #grab needed columns
     select(site, start_dt,photos_downloaded,upstream_pic,downstream_pic,clarity,filter_pic,other_pic,other_pic_descriptor)%>%
     mutate(
@@ -54,7 +54,7 @@ path <- "data/field_pics/"
 
 
   # loop thru dataset and download the photo ONLY if it is not yet downloaded and not NA
-  for (i in 1:length(sampling_photos$site)) {
+  for (i in 1:nrow(sampling_photos)) {
     if (!is.na(sampling_photos$upstream_downloaded[i]) && !sampling_photos$upstream_downloaded[i]) {
       download.file(sampling_photos$upstream_pic[i], destfile = paste0(path,sampling_photos$upstream_filename[i]))
     }
@@ -71,7 +71,7 @@ path <- "data/field_pics/"
   }
 
   #grab notes for sites with other pictures
-  other_photos <- all_notes%>%
+  other_photos <- all_notes_cleaned%>%
     #grab needed columns
     select(site, start_dt,other_pic,other_pic_descriptor)%>%
     #get rid of instances with no other pics
@@ -98,10 +98,10 @@ path <- "data/field_pics/"
            ))
 
   # loop thru dataset and download the photo ONLY if it is not yet downloaded and not NA
-  for (i in 1:length(other_photos$site)) {
+  for (i in 1:nrow(other_photos)) {
     if (!is.na(other_photos$other_downloaded[i]) && !other_photos$other_downloaded[i]) {
       download.file(other_photos$other_pic[i], destfile = paste0(path,other_photos$other_filename[i]))
     }}
 
-
+cat("All Available Pictures Downloaded")
 }
