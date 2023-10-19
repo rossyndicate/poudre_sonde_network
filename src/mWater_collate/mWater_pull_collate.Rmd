@@ -11,38 +11,53 @@ library(tidyverse)
 
 #grab site metadata
 sampling_sites <- read_csv("data/water_sampling_sites.csv")
-# sort for
+# sort for sites in upper network (ie. acronyms rather than street names)
 upper_sites <- sampling_sites%>%
   filter(watershed != "CLP  Mainstem-Fort Collins")%>%
+  #this is to help match with user input
   mutate(site_code = tolower(site_code))
+
+`%nin%` = Negate(`%in%`)
 ```
 
-# API Pull and download raw sensor notes
+# API Pull of mWater submitted notes
 
 ```{r}
-# 
+# Grab API url from yml
+# Contact Sam Struthers if you need access
 creds = yaml::read_yaml("src/mWater_collate/mWater_API.yml")
 api_url = as.character(creds["url"])
-rm(creds)
-#create raw download spreadsheet
-download.file(api_url, destfile = "data/mWater_raw_sensor_notes.csv")
 
+
+#read in datasheet from mWater portal API
+all_notes <- read_csv(url(api_url))
+
+rm(creds, api_url)
 ```
 
+# Tidying for downstream use
 
-# Tidying
+This is basic tidying of data set to:
 
-## ALL NOTES
+-    correct datetime from UTC to Denver time
+
+-   correct columns where Other input is allowed (Site, visit type, photos downloaded)
+
+-   Add rounded date time
+
 ```{r}
-#read in file
-all_notes <- read_csv(file = "data/mWater_raw_sensor_notes.csv")%>%
+
+all_notes_cleaned <- all_notes%>%
   mutate(
-    #start dt comes in UTC -> to MST
-    start_dt = with_tz(start_dt, tz = "America/Denver"),
+    #start and end dt comes in as UTC -> to MST
+        start_dt = with_tz(ymd_hms(start_dt), tz = "America/Denver"),
+        end_dt = with_tz(ymd_hms(end_dt), tz = "America/Denver"),
          date = as.Date(start_dt),
          time_start = format(start_dt, "%H:%M"),
-    # If other is chose, make site == other response and make it lowercase     
-    site = ifelse(site == "Other (please specify)", tolower(site_other), site),
+        
+    # If other is chosen, make site == other response      
+    site = ifelse(site == "Other (please specify)", tolower(str_replace_all(site_other, " ", "")), site),
+    #correct names if it is in our upper sites (acronyms)
     site = ifelse(site %in% upper_sites$site_code, toupper(site), site),
          site_other = NULL,
          #this part does not work yet
@@ -53,114 +68,88 @@ all_notes <- read_csv(file = "data/mWater_raw_sensor_notes.csv")%>%
          #If other is chosen, make photos downloaded equal to response
          photos_downloaded = ifelse(photos_downloaded == "Other (please specify)", photos_downloaded_other, photos_downloaded),
          photos_downloaded_other = NULL, 
-         #Date/field season columns to match QAQC workflow
-         DT_round = floor_date(start_dt, "15 minutes"),
-         DT_join = as.character(DT_round),
-         field_season = year(DT_round),
-         last_site_visit = DT_round) %>%
+         #Rounded start date time
+         DT_round = floor_date(start_dt, "15 minutes")) %>%
 #arrange by most recent visit
     arrange(DT_round)
 ```
 
+# Sensor Notes
 
-## Sensor Notes
+These are the notes that will be added to the QAQC workflow notes Most of the code in this chunk is to get the df to match the one in the QAQC workflow It can be saved as a CSV or pulled directly into QAQC workflow
 
 ```{r}
 #grab only notes where technician is interacting with sensor
-sensor_notes <- all_notes%>%
+
+sensor_notes <- all_notes_cleaned%>%
   filter(grepl("Sensor",visit_type))%>%
-  select(-c(chla_volume_ml, vol_filtered_blank_dup, sample_collected,do_mgl,
-            cond_ms_cm, temp_c, upstream_pic, downstream_pic, clarity, other_pic, other_pic_descriptor))%>%
+  select(-c(visit_type_other, chla_volume_ml, vol_filtered_blank_dup, sample_collected,do_mgl,
+            cond_ms_cm, temp_c, upstream_pic, downstream_pic, clarity, filter_pic, other_pic, other_pic_descriptor))%>%
+  # determining sonde employed status based on sensor_change 
   mutate(sonde_employed = case_when(is.na(sensor_change)  ~ 1,
                                     sensor_change == "Pulled" ~ 0,
-                                    sensor_change %in% c("Swapped", "Deployed") ~ 1), 
-         # Create basis for calibration report name
-         # this will be used to check for calibration report in data files and then b
-         cal_report_name = case_when(cal_report_collected == TRUE ~ paste0(site, "_", format(start_dt, "%Y%m%d")),
-                                    cal_report_collected == NA ~ NA), 
-         log1_mmdd = case_when(nchar(as.character(log1_mmdd)) == 3 ~ paste0("0",log1_mmdd),
-                               TRUE ~ as.character(log1_mmdd)),
-         log1_type = tolower(log1_type),
-         log2_type = tolower(log2_type),
-         log2_mmdd = case_when(nchar(as.character(log2_mmdd)) == 3 ~ paste0("0",log2_mmdd),
-                               TRUE ~ as.character(log2_mmdd)),
-         log1_user_error = case_when( is.na(log_downloaded)~ FALSE,
-                                     log_downloaded == FALSE ~ FALSE,
-                                     is.na(log1_mmdd) | is.na(log1_type) ~ TRUE,
-                                TRUE ~ FALSE ),
-         log2_user_error = case_when(is.na(log_downloaded)~ FALSE,
-                                     log_downloaded == FALSE ~ FALSE,
-                                     is.na(log2_mmdd) | is.na(log2_type) ~ TRUE,
-                                TRUE ~ FALSE),
-         log1_name = case_when(!(is.na(log1_mmdd) | is.na(log1_type)) ~ paste0(site,"_",year(start_dt),log1_mmdd,
-                                                               "_", format(start_dt, "%Y%m%d"), "_", log1_type),
-                               (is.na(log1_mmdd) | is.na(log1_type))  ~ NA),
-         log2_name = case_when(!(is.na(log2_mmdd) | is.na(log2_type)) ~ paste0(site,"_",year(start_dt),log2_mmdd,
-                                                               "_", format(start_dt, "%Y%m%d"), "_", log2_type),
-                               (is.na(log2_mmdd) | is.na(log2_type))  ~ NA)
-        )%>%
-  arrange(desc(start_dt))%>%
-  nest(data =   c(cal_report_name, log1_name, log2_name, log1_user_error, log2_user_error, log1_mmdd,log1_type, log2_mmdd, log2_type))%>%
-  rename(log_cal_report_info = data)
-
-#unnest for csv
-sensor_notes_unnested <- sensor_notes%>%
-  unnest(log_cal_report_info)
+                                    sensor_change %in% c("Swapped", "Deployed") ~ 1),
+         #Date/field season columns to match QAQC workflow
+         DT_join = as.character(DT_round),
+         field_season = year(DT_round),
+         last_site_visit = DT_round
+  )%>%
+  arrange(desc(start_dt))
+         
 #write to CSV
-write_csv(sensor_notes_unnested, "data/mWater_sensor_field_notes.csv")
+write_csv(sensor_notes, "data/mWater_sensor_field_notes.csv")
 
 ```
 
+## Determining uploads
 
-## Water sampling
+This function looks at the user inputs for calibration report collect and logs collected. Based on these inputs, it looks at all the uploaded logs or calibration reports and will print out what logs are missing and who to contact to get those files uploaded.
 
 ```{r}
-# create df of all water samples and save DT, handheld probe and chla volume data
-sampling_notes <- all_notes%>%
-  filter(grepl("Sampling",visit_type))%>% 
-  mutate(all_pics_taken = case_when(!is.na(downstream_pic)&!is.na(upstream_pic)&!is.na(clarity)&!is.na(filter_pic) ~ TRUE, TRUE ~ FALSE))%>%
-  select(site,crew, DT_round, date, time = time_start, sample_collected, chla_volume_ml, vol_filtered_blank_dup, do_mgl, cond_ms_cm, temp_c, visit_comments, all_pics_taken)
 
-# Distinguish BLANK and DUPLICATE values
-blanks_dups <- sampling_notes %>%
-  filter(grepl("DUPLICATE|BLANK", sample_collected)) %>%
-  mutate(sample_collected = ifelse(grepl("DUPLICATE", sample_collected), "DUPLICATE", "BLANK"), 
-         chla_volume_ml = vol_filtered_blank_dup, 
-         vol_filtered_blank_dup = NULL)
+source("src/mWater_collate/files_missing.R")
 
-# Add blank and duplicate values back to main
-sampling_notes <- sampling_notes%>%
-  mutate(sample_collected = gsub("DUPLICATE|BLANK| |,", "", sample_collected), 
-         vol_filtered_blank_dup = NULL)%>%
-  rbind(blanks_dups)%>%
-  arrange(DT_round, site)
+files_missing()
 
 ```
 
-### Save data for RMRS spreadsheet
+## Water Sampling Data:
 
+Goal:
+
+-   Save data in the correct format for RMRS spreadsheet
+
+-   Save all water sampling probe values in a spreadsheet
 
 ```{r}
-#FORMAT FOR RMRS Spreadsheet
+#source function
 source("src/mWater_collate/sampling_spreadsheet_creator.R")
-#Site	SiteDescr	SiteLabel	Date SampleType
-sampling_spreadsheet_creator("2023-10-16")
+# To get the RMRS style data for a specfic date of sampling, 
+# Input the date of interest in sampling_spreadsheet_creator
+sampling_spreadsheet_creator(date_oi = "2023-10-16")
+
+# To get all the water sampling data and save to CSV in sampling notes
+# This also returns the df sampling_notes in case you want to review in R
+sampling_spreadsheet_creator(all_dates = TRUE)
 ```
 
 ## Photos
 
-```{r}
-# This downloads upstream, downstream, clarity and filter pictures
+Goal:
 
+-   Download all user created photos ( upstream, downstream, clarity, filter and other pictures)
+
+-   Label according to site, date, description in the format site_YYYYMMDD_descriptor.jpg
+
+-   Only download photos which have not yet been downloaded
+
+```{r}
 source("src/mWater_collate/download_pictures.R")
   
 #RUN TO DOWNLOAD NEW PICTURES
+# It takes about 2-5 minutes to download ~25-50 photos
 
 download_pictures()
         
 
 ```
-
-
-```
-
