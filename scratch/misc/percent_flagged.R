@@ -21,8 +21,22 @@ generate_flag_report <- function(df) {
     summarise(n_total = n_distinct(DT_round)) %>%
     pull(n_total)
 
+  # summarize total data points sans missing data
+  total_observations_1 <- df %>%
+    # filter out when flag has only missing data or only sonde not employed and missing data
+    filter(!str_detect(flag, "^(missing data|sonde not employed;\\nmissing data)$")) %>%
+    summarise(n_total = n_distinct(DT_round)) %>%
+    pull(n_total)
+
   # summarize total days
   total_observations_dates <- df %>%
+    group_by(date = format(DT_round, "%m-%d-%Y")) %>%
+    summarize(n_total = nrow(date)) %>%
+    nrow()
+
+  # summarize total days sans missing data
+  total_observations_dates_1 <- df %>%
+    filter(!str_detect(flag, "^(missing data|sonde not employed;\\nmissing data)$")) %>%
     group_by(date = format(DT_round, "%m-%d-%Y")) %>%
     summarize(n_total = nrow(date)) %>%
     nrow()
@@ -35,8 +49,16 @@ generate_flag_report <- function(df) {
       filter(str_detect(flag, i)) %>%
       summarise(n_flag = n_distinct(DT_round)) %>%
       pull(n_flag)
+    # summarize flagged data points
+    flagged_observations_1 <- df %>%
+      filter(!str_detect(flag, "^(missing data|sonde not employed;\\nmissing data)$")) %>%
+      filter(str_detect(flag, i)) %>%
+      summarise(n_flag = n_distinct(DT_round)) %>%
+      pull(n_flag)
     # summarize percent data points that are flagged
     percent_flagged <- flagged_observations/total_observations
+    # summarize percent data points that are flagged sans missing data
+    percent_flagged_1 <- flagged_observations_1/total_observations_1
 
     # summarize flagged days
     flagged_observations_dates <- df %>%
@@ -44,8 +66,17 @@ generate_flag_report <- function(df) {
       group_by(date = format(DT_round, "%m-%d-%Y")) %>%
       summarize(n_total = nrow(date)) %>%
       nrow()
+    # summarize flagged days
+    flagged_observations_dates_1 <- df %>%
+      filter(!str_detect(flag, "^(missing data|sonde not employed;\\nmissing data)$")) %>%
+      filter(str_detect(flag, i)) %>%
+      group_by(date = format(DT_round, "%m-%d-%Y")) %>%
+      summarize(n_total = nrow(date)) %>%
+      nrow()
     # summarize percent days that are flagged
     percent_flagged_dates <- flagged_observations_dates/total_observations_dates
+    # summarize percent days that are flagged
+    percent_flagged_dates_1 <- flagged_observations_dates_1/total_observations_dates_1
 
     # creating a row with the information
     calculated_values <- tibble(
@@ -57,10 +88,16 @@ generate_flag_report <- function(df) {
       data_points_flagged_percentage = format(percent_flagged * 100, nsmall=2),
       data_points_flagged = flagged_observations,
       total_data_points = total_observations,
+      data_points_flagged_percentage_sans_na = format(percent_flagged_1 * 100, nsmall=2),
+      data_points_flagged_sans_na = flagged_observations_1,
+      total_data_points_sans_na = total_observations_1,
       # dates
       dates_flagged_percentage = format(percent_flagged_dates * 100, nsmall=2),
       dates_flagged = flagged_observations_dates,
-      total_dates = total_observations_dates
+      total_dates = total_observations_dates,
+      dates_flagged_percentage_sans_na = format(percent_flagged_dates_1 * 100, nsmall=2),
+      dates_flagged_sans_na = flagged_observations_dates_1,
+      total_dates_sans_na = total_observations_dates_1
       )
 
     row_list[[i]] <- calculated_values
@@ -75,6 +112,8 @@ flag_report <- map(all_data_flagged, generate_flag_report) %>%
   bind_rows()
 
 View(flag_report)
+
+# write_csv(flag_report, "data/flag_report.csv")
 
 flag_report_1 <- flag_report %>%
   group_by(site, parameter) %>%

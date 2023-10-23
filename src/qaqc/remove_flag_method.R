@@ -62,13 +62,19 @@ verify_flag_data <- function(weekly_plot_object, daily_plot_object) {
   if (day_choice == "pass") { # if choice is true
     # add pass to verification column for all rows
     altered_df <- df_data %>%
-      mutate(verification = "pass")
+      mutate(verification = ifelse(is.na(verification), "pass", verification),
+             mean_verified = ifelse(verification == "pass", mean, NA)) %>%
+      relocate(mean_verified, .after = "mean_public")
     cat("All points for ", df_name, "have PASSED.\n")
     return(altered_df)
   } else if (day_choice == "fail") { # if choice is false
     # add fail to verification column for all rows
     altered_df <- df_data %>%
-      mutate(verification = "fail")
+      # do we want any points to automatically pass? we already have some points that automatically fail
+      # ex: missing data
+      mutate(verification = ifelse(is.na(verification), "fail", verification),
+             mean_verified = ifelse(verification == "pass", mean, NA)) %>%
+      relocate(mean_verified, .after = "mean_public")
     cat("All points for ", df_name, "have FAILED.\n")
     return(altered_df)
   } else if (day_choice == "inspect") {
@@ -105,8 +111,9 @@ verify_flag_data <- function(weekly_plot_object, daily_plot_object) {
       flag_choice <- get_flag_decision(flag_choice_prompt)
 
       df_data <- df_data %>%
-        mutate(verification = ifelse(as.character(DT_round) == flag_dt, ifelse(flag_choice, "pass", "fail"), verification))
-
+        mutate(verification = ifelse(as.character(DT_round) == flag_dt, ifelse(flag_choice, "pass", "fail"), verification),
+               mean_verified = ifelse(verification == "pass", mean, NA)) %>%
+        relocate(mean_verified, .after = "mean_public")
     }
     # Inform the user that they are done verifying which ever df
     cat("Finished verifying: ", df_name, " data.\n")
@@ -133,7 +140,7 @@ test_daily <- generate_daily_flag_plots("archery", "Temperature", "slope violati
 # Using the list of plots that we generated to verify just one of the dfs in the list
 
 # maybe we will use map2() so that it can take the input from both and then combine them?
-verify_flag_data(test_weekly[[4]], test_daily[[4]]) %>% View()
+verify_flag_data(test_weekly[[1]], test_daily[[1]]) %>% View()
 
 # Using the function that was made to map over the dfs in the list
 # make sure to put in the weekly information first

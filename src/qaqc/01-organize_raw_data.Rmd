@@ -17,6 +17,7 @@ Load necessary packages:
 ```{r}
 source("src/package_loader.R")
 lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis", "janitor"), package_loader)
+sapply(list.files("src/qaqc/flagging_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
 ```
 
 # Import and collate data
@@ -224,133 +225,19 @@ all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_stati
 #### Add flagging functions
 Add flagging functions for each df in all_data_summary_list
 
-```{r}
-# flag addition function 
-add_flag <- function(df, condition_arg, description_arg) {
-  df <- df %>% mutate(flag = case_when(
-    {{condition_arg}} ~ if_else(is.na(flag), paste(description_arg), paste(flag, description_arg, sep = ";\n")),
-    TRUE ~ flag)) 
-  return(df)
-}
-```
-
-```{r}
-# Adding flags related to field notes
-  # site visits (and site visit window)
-  # sonde not employed 
-add_field_flags <- function(df) {
-  df <- df %>% 
-    add_flag(sonde_employed == 1, "sonde not employed") %>% 
-    add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit") %>% 
-    add_flag(lag(str_detect(flag, "site visit"), n = 3), "sv window") %>% 
-    add_flag(lag(str_detect(flag, "site visit"), n = 2), "sv window") %>%
-    add_flag(lag(str_detect(flag, "site visit"), n = 1), "sv window")
-  return(df)
-}
-```
-
-```{r}
-# Adding flags related to parameter ranges
-# Sensor specification ranges are those which exceed manufacturer specified limits.
-# Seasonal ranges are mean values which are below the .05 quantile or exceed the
-# .99 quantile.
-
-# parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
-sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
-# this not need to be a yaml solution
-
-# sensor spec ranges flagging function
-  # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
-add_range_flags <- function(df) {
-
-  # get the parameter from the parameter column in the df of interest
-  parameter_name <- unique(na.omit(df$parameter))
-  # Pull the sensor specification range from the yaml file
-  sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
-  sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
-
-  df <- df %>%
-    # adding sensor range flags
-    add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
-             paste0("outside of ", parameter_name," sensor specification range")) %>%
-    # adding lab bound flags
-    add_flag(parameter == parameter_name & (mean < m_mean05 | mean > m_mean99),
-             paste0("outside of ", parameter_name," seasonal range"))
-  
-  return(df)
-  
-}
-```
-
-```{r}
-# Adding flags related to slopes between points
-# Flag when the slope between a data point and its previous or next point exceeds the 
-# .99 quantile for slopes.
-add_slope_flags <- function(df) {
-  df <- df %>%
-    add_flag((slope_ahead >= m_slope_behind_99 | slope_behind >= m_slope_behind_99), "slope violation")
-  return(df)
-}
-```
-
-```{r}
-# Adding flags regarding large swaths of suspect data.
-
-# Takes a rolling window of data points (24 hours worth of data points), and if 
-# more than a quarter of that data has been flagged, the point in the center of that
-# rolling window will be flagged with "24hr anomaly flag". 
-
-# After a point has been determined to fall in the center of a large data anomaly,  
-# it will check if that point itself is part of another 24hr anomaly. 
-# This is done by looking for "24hr anomaly flags" within the 48 points behind and ahead
-# of it. If that flag is detected within that window, an "anomaly window" will also 
-# be added to that point. 
-
-# "24hr anomaly flag" and "anomaly window" flags do not count toward the total for the
-# "24hr anomaly flag"
-
-add_large_anomaly_flag <- function(df) {
-  
-  df <- df %>% 
-    # str_detect to make sure we are not counting this same flag towards next count
-    mutate(flag_binary = ifelse((is.na(flag) | str_detect(flag, "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window)$")), 0, 1),
-           roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>% 
-    add_flag((roll_bin >= (97*0.25)), "24hr anomaly")
-  
-  for (i in 1:48) {
-   df <- df %>% 
-     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>% 
-     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window")
-  }
-  return(df)
-}
-```
-
 Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
-add_all_flags <- function(df) {
-  
-  df <- df %>%
-    add_field_flags %>%
-    add_range_flags %>%
-    add_slope_flags %>%
-    # SD flag
-    add_flag((mean <= rollavg - (3 * m_sd_1090) | mean >= rollavg + (3 * m_sd_1090)), "outside sd range") %>%
-    # For data that repeats
-    add_flag((mean == front1 | mean == back1), "repeated value") %>%
-    # Missing data flag
-    add_flag(is.na(mean), "missing data") %>%
-    # Need to put this somewhere else
-    add_large_anomaly_flag
-  
-}
-
 all_data_flagged <- map(all_data_summary_stats_list, add_all_flags)
+```
 
+#### Add verification column
+```{r}
 # add pass/fail column and apply this to every df
 add_verification_column <- function(df) {
   df <- df %>%
     mutate(verification = case_when(
+      # are there other conditions where a data point should automatically fail?
+      # str_detect(flag, "outside sd range") ~ "fail",
       str_detect(flag, "missing data") ~ "fail",
       # need to add more situations where data points fail
       is.na(flag) ~ "pass",
@@ -450,7 +337,7 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) 
   }
 }
 
-# generate_daily_flag_plots("archery", "Temperature", "slope violation")
+# generate_daily_flag_plots("timberline", "Turbidity", "outside sd range")[[7]]
 ```
 
 Visualizing weekly plots
@@ -578,7 +465,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
   }
 }
 
-# generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+#generate_weekly_flag_plots("archery", "Temperature", "slope violation")
 ```
 
 Stack the weekly and daily plots
@@ -598,7 +485,7 @@ weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
   return(weekly_daily_plots)
 }
 
-# weekly_daily_flag_plots("archery", "Actual Conductivity", "seasonal range")
+weekly_daily_flag_plots("boxelder", "Turbidity", "outside sd range")
 ```
 
 Histograms of all parameter/site combos
@@ -646,6 +533,8 @@ generate_seasonal_histogram <- function(df, df_index) {
   snowmelt <- c(5,6,NA,NA,NA)
   monsoon <- c(7,8,9,NA,NA)
   fall_baseflow <- c(10,11,NA,NA,NA)
+  
+  # do water years
   
   seasons <- data.frame(winter_baseflow, snowmelt, monsoon, fall_baseflow)
   
