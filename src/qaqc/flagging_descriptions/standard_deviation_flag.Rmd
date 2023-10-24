@@ -12,9 +12,12 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
 ```
 
-# Standard Deviation Flag
+```{r, include=FALSE}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "kableExtra"), package_loader)
+```
 
-#### The slope deviation flag is triggered when the mean value of a specific data row deviates by more than 3 standard deviations from the rolling average.
+#### The slope deviation flag uses the `add_flag()` method and is triggered when the mean value of a data point deviates by more than 3 standard deviations from the rolling average.
 
 ```{r, eval=FALSE}
 # SD flag
@@ -23,24 +26,41 @@ add_flag((mean <= rollavg - (3 * m_sd_1090) | mean >= rollavg + (3 * m_sd_1090))
 ```
 
 _where_ :
-- `mean` = the average of all the data points collected in a 15 minute period for a sonde parameter.
-- `rollavg` = a rolling window average of 7 data points, with the data point that is being evaluated in the center.
+
+- `mean` = The average of all the data points collected in a 15 minute period for a sonde parameter.
+- `rollavg` = A rolling average of 7 data points, with the data point that is being evaluated in the center.
 - `m_sd_1090` = The seasonal standard deviation within the 10th and 90th quantiles for the season.
-- "outside sd range" = flag descriptor inserted into `flag` column.
+- `"outside sd range"` = Flag descriptor inserted into `flag` column.
+
+## Analysis:
+```{r, echo=FALSE}
+sd_flag_data <- read_csv("data/flag_report.csv") %>% 
+  filter(flag == "outside sd range",
+         !(parameter %in% c("Baro", "Battery Level", "External Voltage")),
+         data_points_flagged_percentage_sans_na > 0 | dates_flagged_percentage_sans_na > 0
+         ) %>% 
+  select(Site = site, 
+         Parameter = parameter,
+         `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
+         `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
+
+kable(sd_flag_data, format = "markdown", align = "c")
+```
+
 
 ## Examples:
 
 ### Good
-```{r}
-generate_daily_flag_plots("timberline", "Turbidity", "outside sd range")[[7]]
-```
+
+![Example of sd flag working properly](../../../data/QAQC_images/flag_examples/timberline_turb_sd_flag_good.png)
+
 - Extreme outliers will be detected and deemed unsuitable.
 - This flag is often associated with the seasonal range flag.
 - This flag is often associated with the slope violation flag.
 
 ### Bad
-```{r}
-generate_daily_flag_plots("timberline", "Turbidity", "outside sd range")[[51]]
-```
+
+![Example of sd flag working improperly](../../../data/QAQC_images/flag_examples/timberline_turb_sd_flag_bad.png)
+
 - When several points are following a suspicious trend they are captured in the rolling average window and do not get flagged.
 - Fortunately, as this flag is often associated with other flags, those other flags will get triggered as well.

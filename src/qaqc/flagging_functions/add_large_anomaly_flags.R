@@ -24,9 +24,15 @@ add_large_anomaly_flags <- function(df) {
   # only "sonde not employed" and "missing data"
   # only "missing data" and "anomaly window"
   # only "missing data" and "24hr anomaly"
+
+  # remove site visit. ie make site visit = 1 in flag binary
   flag_string <- "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window|
                   missing data|sonde not employed;\\nmissing data|
-                  missing data;\\nanomaly window|missing data;\\n24hr anomaly)$"
+                  missing data;\\nanomaly window|missing data;\\n24hr anomaly|
+                  sonde not employed;\nmissing data;\nanomaly window|
+                  missing data;\n24hr anomaly;\nanomaly window|
+                  site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
+                  sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
 
   df <- df %>%
     # str_detect to make sure we are not counting this same flag towards next count
@@ -37,8 +43,8 @@ add_large_anomaly_flags <- function(df) {
 
   for (i in 1:48) {
     df <- df %>%
-      add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>%
-      add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window")
+      add_flag((!str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>%
+      add_flag((!str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window")
   }
   return(df)
 }

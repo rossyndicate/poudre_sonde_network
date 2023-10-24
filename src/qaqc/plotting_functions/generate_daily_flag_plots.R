@@ -2,13 +2,13 @@
 
 ## This function will generate a list of plots for site-parameters
 ## that have been tagged by a specific flag
-generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) {
+generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL, df_list = all_data_flagged) {
 
   # Generating df name to pull from all_data_flagged list
   site_param <- paste0(site_arg, "-", parameter_arg)
 
   # filter for all the days that are tagged within the site-param df of interest
-  site_flag_dates <- all_data_flagged[[site_param]]
+  site_flag_dates <- df_list[[site_param]]
 
   if (!is.null(site_flag_dates)){
 
