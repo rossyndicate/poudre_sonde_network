@@ -1,5 +1,7 @@
 # Pulling in field notes and adding relevant datetime columns
+
 clean_field_notes <- function(field_note_path="data/sensor_field_notes.xlsx"){
+
   field_notes <- read_excel(field_note_path) %>%
     mutate(start_DT = ymd_hm(paste(date, start_time_mst, tzone = "MST"))) %>%
     mutate(#start_DT = with_tz(start_DT, tzone = "MST"),
@@ -13,9 +15,12 @@ clean_field_notes <- function(field_note_path="data/sensor_field_notes.xlsx"){
     mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
                                       !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
                                       is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                                      is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) #%>%
-  # remove times in field notes where the sensor wasn't actually handled or visited
-  # filter(!is.na(sensor_handled))
+                                      is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) %>%
+    # remove field dates where sensor was not handled:
+    filter(!visit_type %in% c("Camera Check")) %>% # camera check only
+    filter(!grepl("Other", visit_type)) %>% # "Other" indicates sonde not manipulated
+
   return(field_notes)
+
 }
 
