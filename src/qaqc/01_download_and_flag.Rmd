@@ -1,0 +1,112 @@
+---
+title: "Organizing raw data"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
+```
+
+Load necessary packages:
+
+```{r}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis", "janitor"), package_loader)
+
+walk(list.files('src/qaqc/functions', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
+```
+
+# Import and collate data
+
+Load field notes and define the start time as the 15 minute preceding the field time
+```{r}
+field_notes <- clean_field_notes()
+```
+
+Merge the data sets from all API pulls:
+```{r}
+all_data <- munge_api_data()
+```
+
+### Export collated raw file
+
+```{r}
+# This will be a parquet file in the future?
+#write_feather(all_data, paste0('data/SOME_FOLDER_FOR_POSTERITY/collated_raw_sonde_v', Sys.Date(), '.feather'))
+```
+
+# Level 1 QA-QC
+
+### Temperature at Archery
+
+I think we will want to develop pipelines specific for each site and parameter for processing speed (targets?).
+
+#### Format data
+```{r}
+# Determine each site and parameter in all_data 
+sites <- unique(all_data$site)
+params <- c("Actual Conductivity", "Battery Level", "Baro", "Chl-a Fluorescence", 
+            "Depth", "DO", "External Voltage", "FDOM Fluorescence", "ORP", 
+            "pH", "Specific Conductivity", "Temperature", "Turbidity")
+ 
+# Constructing a df to iterate over each site-parameter combination
+combinations <- crossing(sites, params)
+
+# Make a list of the summarized data
+all_data_summary_list <- map2(combinations$sites, 
+                         combinations$params, 
+                         summarize_site_param,
+                         api_data = all_data) %>% 
+  # set the names for the dfs in the list
+  set_names(paste0(combinations$sites, "-", combinations$params)) %>% 
+  # remove NULL values from the list
+  keep(~ !is.null(.))
+
+# Bind rows for each df in list
+all_data_summary_df <- bind_rows(all_data_summary_list)
+```
+
+#### Add summary statistics to the formatted data
+```{r}
+all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
+```
+
+## Create a lookup table for site-parameter thresholds to use in flagging strange data. These thresholds are based on data from the 2022 and 2023 field season. In future seasons, this data will be fixed (i.e., unchanging). 
+
+```{r}
+threshold_lookup <- map(all_data_summary_stats_list, make_threshold_table) %>%
+  bind_rows()
+
+# this does not need to be a yaml solution
+sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
+
+```
+
+#### Add flagging functions
+
+Add flagging functions for each df in all_data_summary_list
+
+Pass the dfs in all_data_summary_stats_list through the flagging functions:
+
+```{r}
+all_data_flagged <- map(all_data_summary_stats_list, function(data) {
+  data %>%
+    add_field_flag() %>%
+    add_spec_flag() %>%
+    add_seasonal_flag() %>%
+    add_na_flag() %>%
+    add_large_anomaly_flag() %>%
+    mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
+    relocate(mean_public, .after = "mean")
+})
+
+saveRDS(all_data_flagged, 'data/flagged/all_data_flagged.RDS')
+write_feather(all_data_flagged %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
+```
+
+All data has now gone through all flagging steps and is ready for immediate public viewing.
