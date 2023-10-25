@@ -17,54 +17,22 @@ Load necessary packages:
 ```{r}
 source("src/package_loader.R")
 lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis", "janitor"), package_loader)
+sapply(list.files("src/qaqc/flagging_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
+sapply(list.files("src/qaqc/plotting_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
+sapply(list.files("src/qaqc/data_munging_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
+sapply(list.files("src/qaqc/verification_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
 ```
 
 # Import and collate data
 
 Load field notes and define the start time as the 15 minute preceding the field time
 ```{r}
-# Pulling in field notes and adding relevant datetime columns
-field_notes <- read_excel("data/sensor_field_notes.xlsx") %>%
-  mutate(start_DT = ymd_hm(paste(date, start_time_mst, tzone = "MST"))) %>%
-  mutate(#start_DT = with_tz(start_DT, tzone = "MST"),
-         DT_round = floor_date(start_DT, "15 minutes"),
-         DT_join = as.character(DT_round),
-         site = tolower(site),
-         field_season = year(DT_round),
-         last_site_visit = DT_round) %>%
-  arrange(site, DT_round) %>% 
-  # `sonde_employed` determines if the sonde is deployed or not. 0 = sonde deployed, 1 = sonde is not deployed
-  mutate(sonde_employed = case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                           !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
-                           is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                           is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) #%>%
-  # remove times in field notes where the sensor wasn't actually handled or visited
-  # filter(!is.na(sensor_handled))
+field_notes <- clean_field_notes()
 ```
 
 Merge the data sets from all API pulls:
 ```{r}
-all_data <- list.files(path = "data/api/", full.names = TRUE, pattern = "*.csv") %>%
-  map_dfr(~data.table::fread(.) %>% select(-id)) %>%
-  # remove overlapping API-pull data
-  distinct() %>%
-  # remove VuLink data
-  filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
-  # remove Virridy data (for now)
-  filter(!grepl("virridy", name, ignore.case = TRUE)) %>%
-  # Convert DT to MST:
-  mutate(DT = as_datetime(timestamp, tz = "UTC")) %>%
-  mutate(DT = with_tz(DT, tzone = "MST"),
-         DT_round = round_date(DT, "15 minutes"),
-         DT_join = as.character(DT_round),
-         site = tolower(site)) %>%
-  # filter for years that are 2022 and greater 
-  filter(year(DT_round) >= 2022) %>% 
-  # These sites will be considered the same site for this workflow
-  mutate(site = ifelse(site == "rist", "tamasag", 
-                ifelse(site == "elc", "boxelder", site))) %>%
-  # Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
-  mutate(site = ifelse(site == "tamasag" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
+all_data <- munge_api_data()
 ```
 
 ### Export collated raw file
@@ -92,51 +60,6 @@ params <- c("Actual Conductivity", "Battery Level", "Baro", "Chl-a Fluorescence"
 # Constructing a df to iterate over each site-parameter combination
 combinations <- crossing(sites, params)
 
-# Function to summarize site-parameter combinations
-summarize_site_param <- function(site_arg, parameter_arg, api_data) {
-  
-  # filter deployment records for the full join
-  site_field_notes <- field_notes %>% 
-    filter(site == site_arg)
-  
-  # filtering the data and generating results
-  summary <- tryCatch({ 
-    api_data %>%
-    filter(site == site_arg & parameter == parameter_arg) %>% 
-    select(-name) %>%
-    distinct() %>%
-    group_by(DT_round) %>% # site & parameter does not need to be here anymore
-    # to do: preserve values used with nest()
-    summarize(mean = as.numeric(mean(value, na.rm = T)),
-              diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
-              n_obs = n()) %>%
-    ungroup() %>%
-    arrange(DT_round) %>%
-    # pad the dataset so that all 15-min timestamps are present
-    pad(by = "DT_round", interval = "15 min") %>%
-    mutate(DT_join = as.character(DT_round),
-           site = site_arg,
-           parameter = parameter_arg,
-           flag = NA) %>% 
-    left_join(filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, DT_join, site, visit_comments, sensor_malfunction, cals_performed)),
-                 by = c('DT_join', 'site')) %>% 
-    # the mutate dt_round is similar to what was done prior to tz stuff... lmk if this looks weird -j
-    mutate(DT_round = as_datetime(DT_join, tz = "MST")) %>%
-    # Use fill() to determine when sonde was in the field, and when the last site visit was. 
-    fill(c(sonde_employed, last_site_visit, sensor_malfunction))
-    },
-    
-    error = function(err) {
-      # error message
-      cat("An error occurred with site ", site_arg, " parameter ", parameter_arg, ".\n")
-      cat("Error message:", conditionMessage(err), "\n")
-      flush.console() # Immediately print the error messages
-      NULL  # Return NULL in case of an error
-    })
-    
-    return(summary)
-}
-
 # Make a list of the summarized data
 all_data_summary_list <- map2(combinations$sites, 
                          combinations$params, 
@@ -154,210 +77,19 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
 
 #### Add summary statistics to the formatted data
 ```{r}
-winter_baseflow <- c(12,1,2,3,4)
-snowmelt <- c(5,6,NA,NA,NA)
-monsoon <- c(7,8,9,NA,NA)
-fall_baseflow <- c(10,11,NA,NA,NA)
-
-seasons <- cbind(winter_baseflow, snowmelt, monsoon, fall_baseflow) %>%
-  as_tibble() %>%
-  pivot_longer(cols = names(.), values_to = "month", names_to = "season") %>% drop_na()
-
-generate_summary_statistics <- function(site_param_df) {
-  # This should get wrapped up in a function to map over all_data_summary_list
-  summary_stats_df <- site_param_df %>%
-    # ... so that we can get the proper leading/lagging values across our entire timeseries:
-    mutate(
-      # Add the next value and previous value for mean.
-      front1 = lead(mean, n = 1),
-      back1 = lag(mean, n = 1),
-      # Add the median for a point centered in a rolling median of 7 points.
-      rollmed = roll_median(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-      # Add the mean for a point centered in a rolling mean of 7 points.
-      rollavg = roll_mean(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-      # Add the standard deviation for a point centered in a rolling mean of 7 points.
-      rollsd = roll_sd(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
-      # Determine the slope of a point in relation to the point ahead and behind.
-      slope_ahead = abs(front1 - mean)/15,
-      slope_behind = abs(mean - back1)/15,
-      #KRW Comment: add monthly sd. add monthly avg. add 10th and 90th quantiles. 
-      # add some summary info for future us
-      month = month(DT_round),
-      year = year(DT_round),
-      y_m = paste(year, '-', month)) %>%
-    left_join(seasons, by = "month") %>%
-    group_by(season) %>% 
-    # KW:: wondering if, there's a way to develop the sd using ONLY the range of data in
-    # the 10%-90% percentile range. Therefore, we don't include any of the weird outliers
-    # when trying to flag this way...
-    mutate(
-      m_mean05 = quantile(mean, 0.05, na.rm = TRUE),
-      m_mean99 = quantile(mean, 0.99, na.rm = TRUE),
-      m_slope_behind_10 = quantile(slope_behind, 0.1, na.rm = TRUE),
-      m_slope_behind_99 = quantile(slope_behind, 0.99, na.rm = TRUE),
-      m_sd = sd(mean, na.rm = T)) %>% 
-    ungroup() %>%
-    # Find the 10th and 90th percentile of data.
-    # Using 10-90th percentile data, get the standard deviation of the
-    # values.
-    left_join(., site_param_df %>%
-                mutate(month = month(DT_round),
-                       year = year(DT_round),
-                       y_m = paste(year, '-', month)) %>%
-                left_join(seasons, by = "month") %>%
-                group_by(season) %>% 
-                mutate(p10 = quantile(mean, 0.1, na.rm = TRUE),
-                       p90 = quantile(mean, 0.99, na.rm = TRUE)) %>%
-                filter(mean > p10 & mean < p90) %>%
-                # need to pull some of this info out and use it for the range limits to test it
-                summarize(m_sd_1090 = sd(mean, na.rm = T)) %>%
-                select(season, m_sd_1090),
-              by = "season")
-  
-  return(summary_stats_df)
-}
-
 all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
-
 ```
 
 #### Add flagging functions
 Add flagging functions for each df in all_data_summary_list
 
-```{r}
-# flag addition function 
-add_flag <- function(df, condition_arg, description_arg) {
-  df <- df %>% mutate(flag = case_when(
-    {{condition_arg}} ~ if_else(is.na(flag), paste(description_arg), paste(flag, description_arg, sep = ";\n")),
-    TRUE ~ flag)) 
-  return(df)
-}
-```
-
-```{r}
-# Adding flags related to field notes
-  # site visits (and site visit window)
-  # sonde not employed 
-add_field_flags <- function(df) {
-  df <- df %>% 
-    add_flag(sonde_employed == 1, "sonde not employed") %>% 
-    add_flag(as.character(last_site_visit) == as.character(DT_round), "site visit") %>% 
-    add_flag(lag(str_detect(flag, "site visit"), n = 3), "sv window") %>% 
-    add_flag(lag(str_detect(flag, "site visit"), n = 2), "sv window") %>%
-    add_flag(lag(str_detect(flag, "site visit"), n = 1), "sv window")
-  return(df)
-}
-```
-
-```{r}
-# Adding flags related to parameter ranges
-# Sensor specification ranges are those which exceed manufacturer specified limits.
-# Seasonal ranges are mean values which are below the .05 quantile or exceed the
-# .99 quantile.
-
-# parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
-sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
-# this not need to be a yaml solution
-
-# sensor spec ranges flagging function
-  # Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged. 
-add_range_flags <- function(df) {
-
-  # get the parameter from the parameter column in the df of interest
-  parameter_name <- unique(na.omit(df$parameter))
-  # Pull the sensor specification range from the yaml file
-  sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
-  sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
-
-  df <- df %>%
-    # adding sensor range flags
-    add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
-             paste0("outside of ", parameter_name," sensor specification range")) %>%
-    # adding lab bound flags
-    add_flag(parameter == parameter_name & (mean < m_mean05 | mean > m_mean99),
-             paste0("outside of ", parameter_name," seasonal range"))
-  
-  return(df)
-  
-}
-```
-
-```{r}
-# Adding flags related to slopes between points
-# Flag when the slope between a data point and its previous or next point exceeds the 
-# .99 quantile for slopes.
-add_slope_flags <- function(df) {
-  df <- df %>%
-    add_flag((slope_ahead >= m_slope_behind_99 | slope_behind >= m_slope_behind_99), "slope violation")
-  return(df)
-}
-```
-
-```{r}
-# Adding flags regarding large swaths of suspect data.
-
-# Takes a rolling window of data points (24 hours worth of data points), and if 
-# more than a quarter of that data has been flagged, the point in the center of that
-# rolling window will be flagged with "24hr anomaly flag". 
-
-# After a point has been determined to fall in the center of a large data anomaly,  
-# it will check if that point itself is part of another 24hr anomaly. 
-# This is done by looking for "24hr anomaly flags" within the 48 points behind and ahead
-# of it. If that flag is detected within that window, an "anomaly window" will also 
-# be added to that point. 
-
-# "24hr anomaly flag" and "anomaly window" flags do not count toward the total for the
-# "24hr anomaly flag"
-
-add_large_anomaly_flag <- function(df) {
-  
-  df <- df %>% 
-    # str_detect to make sure we are not counting this same flag towards next count
-    mutate(flag_binary = ifelse((is.na(flag) | str_detect(flag, "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window)$")), 0, 1),
-           roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>% 
-    add_flag((roll_bin >= (97*0.25)), "24hr anomaly")
-  
-  for (i in 1:48) {
-   df <- df %>% 
-     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>% 
-     add_flag((is.na(flag) | !str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window")
-  }
-  return(df)
-}
-```
-
 Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
-add_all_flags <- function(df) {
-  
-  df <- df %>%
-    add_field_flags %>%
-    add_range_flags %>%
-    add_slope_flags %>%
-    # SD flag
-    add_flag((mean <= rollavg - (3 * m_sd_1090) | mean >= rollavg + (3 * m_sd_1090)), "outside sd range") %>%
-    # For data that repeats
-    add_flag((mean == front1 | mean == back1), "repeated value") %>%
-    # Missing data flag
-    add_flag(is.na(mean), "missing data") %>%
-    # Need to put this somewhere else
-    add_large_anomaly_flag
-  
-}
-
 all_data_flagged <- map(all_data_summary_stats_list, add_all_flags)
+```
 
-# add pass/fail column and apply this to every df
-add_verification_column <- function(df) {
-  df <- df %>%
-    mutate(verification = case_when(
-      str_detect(flag, "missing data") ~ "fail",
-      # need to add more situations where data points fail
-      is.na(flag) ~ "pass",
-      TRUE ~ NA))   
-  return(df)
-}
-
+#### Add verification column
+```{r}
 all_data_flagged <- map(all_data_flagged, add_verification_column)
 ```
 
@@ -376,335 +108,39 @@ plotly_plot <- plotly::ggplotly(ggplot() +
 ```
 
 Visualizing daily plots
-```{r}
-# Visualizing daily plots
-
-## This function will generate a list of plots for site-parameters
-## that have been tagged by a specific flag 
-generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) {
-  
-  # Generating df name to pull from all_data_flagged list
-  site_param <- paste0(site_arg, "-", parameter_arg)
-  
-  # filter for all the days that are tagged within the site-param df of interest
-  site_flag_dates <- all_data_flagged[[site_param]]
-  
-  if (!is.null(site_flag_dates)){
-    
-    site_flag_dates <- site_flag_dates %>% 
-      filter(if (!is.null(flag_arg)) str_detect(flag, flag_arg) else !is.na(flag)) %>%
-      group_by(day(DT_join), month, year) %>%
-      slice(1)
-  
-    if (nrow(site_flag_dates > 0)) {
-      # for loop to generate plots for everyday that was tagged by a flag
-      plot_list <- list()
-      
-      for (i in 1:nrow(site_flag_dates)) {
-        
-        # do this for dates instead : date = format(DT_round, "%m-%d-%Y")
-        flag_title <- site_flag_dates$flag[i]
-        flag_year <- site_flag_dates$year[i]
-        flag_month <- site_flag_dates$month[i]
-        flag_day <- site_flag_dates$DT_round[i]
-    
-        plot_data <- all_data_flagged[[site_param]] %>%
-          filter(year == flag_year,
-                 month == flag_month,
-                 day(DT_round) == day(flag_day))
-        
-        y_min <- site_flag_dates$m_mean05[i]
-        y_max <- site_flag_dates$m_mean99[i]
-
-        plot <- ggplot(data = plot_data) +
-          geom_point(aes(x=DT_round, y = mean, color = flag)) +
-          # exceeding sd visualized
-          geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
-          geom_ribbon(aes(ymin = rollavg - m_sd_1090, ymax = rollavg + m_sd_1090, x = DT_round), alpha = 0.1, color = NA) +
-          geom_ribbon(aes(ymin = rollavg - (m_sd_1090*2), ymax = rollavg + (m_sd_1090*2), x = DT_round), alpha = 0.1, color = NA) +
-          geom_ribbon(aes(ymin = rollavg - (m_sd_1090*3), ymax = rollavg + (m_sd_1090*3), x = DT_round), alpha = 0.1, color = NA) +
-          # exceeding slope visualized
-          # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
-          # sometimes these hlines are wrong
-          geom_hline(yintercept = y_min, color = "red") +
-          geom_hline(yintercept = y_max, color = "red") +
-          theme_bw() +
-          theme(legend.position = 'bottom') +
-          ggtitle(paste(site_arg, parameter_arg, flag_arg, "on", as.character(flag_day))) +
-          labs(x = "Datetime",
-               y = "Mean")
-    
-        plot_list[[paste(site_param, as.character(flag_day))]] <- plot #c(y_min, y_max)
-        
-        sorted_plot_names <- names(plot_list)[order(names(plot_list))]
-        
-        plot_list <- plot_list[sorted_plot_names]
-      
-      }
-      return(plot_list)
-    } else {
-      return(paste(flag_arg, "not detected"))
-    }
-  } else {
-    return(paste(site_arg, parameter_arg, "combination not available"))
-  }
-}
-
-# generate_daily_flag_plots("archery", "Temperature", "slope violation")
+```{r, fig.width=12, fig.height=7}
+generate_daily_flag_plots("lincoln", "Chl-a Fluorescence", "outside sd range")
 ```
 
 Visualizing weekly plots
-```{r}
-# Visualizing weekly data ----
-
-generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) { 
-  
-  site_param <- paste0(site_arg, "-", parameter_arg)
-  
-  site_flag_dates <- all_data_flagged[[site_param]]
-  
-  if (!is.null(site_flag_dates)){
-  # vector of sites in the order that they are in spatially
-  # some sites have some funkiness going on
-  sites_order <- c("tamasag", # rist 
-                "legacy",
-                "lincoln",
-                "timberline",
-                "prospect",
-                "boxelder", # elc
-                "archery",
-                "river bluffs")
-  # determining the index for the site of interest.
-  site_index <- which(sites_order == site_arg)
-  
-  # Generating df name to pull from all_data_flagged list
-  site_param <- paste0(site_arg, "-", parameter_arg)
-  # filter for all the days that are tagged within the site-param df of interest
-  site_flag_dates <- site_flag_dates %>% 
-      filter(if (is.null(flag_arg)) !is.na(flag) else str_detect(flag, flag_arg)) %>%
-      group_by(day(DT_join), month, year) %>%
-      slice(1)
-  
-  if (nrow(site_flag_dates > 0)) {
-      # This for loop generates an overlayed plot of weekly data for the site of 
-      # interest sandwiched by the site above and below it for each day that was 
-      # tagged by a flag of interest
-      plot_list <- list()
-    
-      for(i in 1:nrow(site_flag_dates)) {
-        
-        flag_title <- site_flag_dates$flag[i]
-        flag_year <- site_flag_dates$year[i]
-        flag_month <- site_flag_dates$month[i]
-        flag_day <- site_flag_dates$DT_round[i]
-        # Getting the prior and subsequent 3 days to the flag day
-        start_day <- flag_day - days(3)
-        end_day <- flag_day + days(3)
-        
-        # filtering dfs of interest for the weeks where a flag was detected
-        site_df <- all_data_flagged[[site_param]] %>%
-          filter(year == flag_year,
-          month == flag_month,
-          DT_round >= start_day & DT_round <= end_day)
-        
-        # TryCatch used here to avoid erroring out on the first and last values of
-        # sites_order object (there is no prior/next record after the first/last record).
-        # Return df as NULL in case of an error
-        prev_site_df <- NULL
-        next_site_df <- NULL
-        
-        tryCatch({
-          previous_site <- paste0(sites_order[site_index-1],"-",parameter_arg)
-          prev_site_df <- all_data_flagged[[previous_site]] %>%
-            filter(year == flag_year,
-            month == flag_month,
-            DT_round >= start_day & DT_round <= end_day)},
-          error = function(err) {
-            cat("No previous site")}) 
-    
-        tryCatch({
-          next_site <- paste0(sites_order[site_index+1],"-",parameter_arg)
-          next_site_df <- all_data_flagged[[next_site]] %>%
-            filter(year == flag_year,
-            month == flag_month,
-            DT_round >= start_day & DT_round <= end_day)},
-          error = function(err) {
-            cat("No next site")})
-    
-        # Bind all three dfs
-        week_plot_data <- list(site_df, prev_site_df, next_site_df) %>% 
-          # remove NULL values from the list
-          keep(~ !is.null(.)) %>% 
-          bind_rows()
-        
-        # Using the data from the day where a flag was detected to generate a window
-        # to easily distinguish the data of interest in comparison with the rest of 
-        # the data
-        site_day_data <- all_data_flagged[[site_param]] %>%
-          filter(year == flag_year,
-               month == flag_month,
-               day(DT_round) == day(flag_day))
-        
-        y_min <- site_day_data$m_mean05[i]
-        y_max <- site_day_data$m_mean99[i]
-    
-        week_plot <- ggplot(data = week_plot_data, aes(x=DT_round, y=mean, color=site)) +
-          geom_rect(data = site_day_data, aes(xmin = min(DT_round), xmax = max(DT_round),
-                                              ymin = -Inf, ymax = Inf),
-                    fill = "grey",
-                    alpha = 0.01,
-                    color = NA)+
-          geom_line() +
-          geom_hline(yintercept = y_min, color = "red") +
-          geom_hline(yintercept = y_max, color = "red") +
-          theme_bw() +
-          theme(legend.position = 'bottom') +
-          ggtitle(paste(flag_arg,"at", site_arg, "on", as.character(flag_day))) +
-          labs(x = "Datetime",
-               y = "Mean")
-    
-        plot_list[[paste(site_param, as.character(flag_day))]] <- week_plot
-        
-        sorted_plot_names <- names(plot_list)[order(names(plot_list))]
-        
-        plot_list <- plot_list[sorted_plot_names]
-      }
-      return(plot_list)
-    } else {
-      return(paste(flag_arg, "not detected"))
-    }
-  } else {
-    return(paste(site_arg, parameter_arg, "combination not available"))
-  }
-}
-
-# generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+```{r, fig.width=12, fig.height=7}
+#generate_weekly_flag_plots("archery", "Temperature", "slope violation")
 ```
 
 Stack the weekly and daily plots
-```{r}
-# This function lets you combine the weekly and daily plots into one stacked plot
-# to compare the two. 
-weekly_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
-  
-  # Call on the weekly and daily functions and fill their args with this 
-  # functions args
-  weekly_plot_list <- generate_weekly_flag_plots(site_arg = site_arg, parameter_arg = parameter_arg, flag_arg = flag_arg)
-  daily_plot_list <- generate_daily_flag_plots(site_arg = site_arg, parameter_arg = parameter_arg, flag_arg = flag_arg)
-  
-  # These two functions should always return the same amount of plots, so we can
-  # use map2() to stack them with combine_plots()
-  weekly_daily_plots <- map2(.x = weekly_plot_list, .y = daily_plot_list, ~ggarrange(.x, .y, nrow = 2, ncol = 1))
-  return(weekly_daily_plots)
-}
-
-# weekly_daily_flag_plots("archery", "Actual Conductivity", "seasonal range")
+```{r, fig.width=12, fig.height=12}
+# stack_flag_plots("boxelder", "Turbidity", "outside sd range")
 ```
 
 Histograms of all parameter/site combos
 ```{r}
-# generate basic histograms for dfs
-generate_general_histogram <- function(df, df_index) {
-  
-  site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
-  n <- as.character(sum(!is.na(df$mean)))
-  title <- paste0("Histogram of ", site_param, " (n = ", n, ")")
-  
-  # there should be checks for data here 
-  minimum <- floor(min(df$mean, na.rm = TRUE)) 
-  maximum <- ceiling(max(df$mean, na.rm = TRUE))
-  
-  histogram <- ggplot(data = df, aes(x = mean)) +
-    geom_histogram(
-      breaks = seq(minimum, maximum, by = 1)
-    ) +
-    labs(title = title)
-
-  return(histogram)
-}
-
-
-
 # making histograms for temperatures
 ## pulling all the temperature dfs from the all_data list
-temperature_hist_list <- all_data_flagged[grep("Temperature", names(all_data_summary_list), ignore.case = TRUE)]
+
+# temperature_hist_list <- all_data_flagged[grep("Temperature", names(all_data_summary_list), ignore.case = TRUE)]
 
 ## use imap to use the index in the list for the plot titles
 ## (not loving imap, if there is a better way to do this please change this)
-temperature_hist_plots <- imap(temperature_hist_list, ~generate_general_histogram(.x, .y))
+
+# temperature_hist_plots <- imap(temperature_hist_list, ~generate_general_histogram(.x, .y))
 # temperature_hist_plots
 
 ## How to pull the histogram data that ggplot generates to make histograms
-temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]]) 
+# temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]]) 
 ```
 
 ```{r}
-# seasonal histogram function
-generate_seasonal_histogram <- function(df, df_index) {
-  
-  winter_baseflow <- c(12,1,2,3,4)
-  snowmelt <- c(5,6,NA,NA,NA)
-  monsoon <- c(7,8,9,NA,NA)
-  fall_baseflow <- c(10,11,NA,NA,NA)
-  
-  seasons <- data.frame(winter_baseflow, snowmelt, monsoon, fall_baseflow)
-  
-  site_param <- toupper(sub("-", " ", df_index, fixed = TRUE))
-  
-  param <- unique(na.omit(df$parameter))
-  
-  hist_list <- list()
-  for (i in colnames(seasons)){
-  
-    filtered_df <- df %>%
-      filter(month %in% seasons[[i]],
-             !str_detect(flag, "sensor specification range"))
-    
-    n <- as.character(sum(!is.na(filtered_df$mean)))
-    
-    title <- paste0(i," (n = ",n ,")")
-    
-    histogram <- ggplot() +
-          geom_histogram() +
-          labs(title = title)
-    
-    tryCatch({
-      minimum <- floor(min(filtered_df$mean, na.rm = TRUE))
-      maximum <- ceiling(max(filtered_df$mean, na.rm = TRUE))
-      
-      if (param %in% c("Specific Conductivity", "Actual Conductivity", "Turbidity")) {
-        bins <- seq(minimum, maximum, by = 10)
-      } else if (param %in% c("ORP", "pH", "Depth")) {
-        bins <- seq(minimum, maximum, by = 0.05)
-      } else {
-        bins <- seq(minimum, maximum)
-      }
-      
-      x_min <- filtered_df$m_mean05[1]
-      x_max <- filtered_df$m_mean99[1]
-      
-      histogram <- ggplot(data = filtered_df, aes(x = mean)) +
-        geom_histogram(breaks = bins) +
-        geom_vline(xintercept = x_min, color = "red", linetype = "dashed") +
-        geom_vline(xintercept = x_max, color = "red", linetype = "dashed") +
-        facet_wrap(~ year, nrow = 1) +
-        labs(title = title)
-      },
-      error = function(err) {
-        cat("No finite values for", site_param, i, "\n")})
-    
-    hist_list[[i]] <- histogram
-    
-  }
-  
-  collated_hist <- ggarrange(plotlist = hist_list, nrow=2, ncol=2) %>%
-    annotate_figure(top = site_param)
-  
-  return(collated_hist)
-  
-}
-
-head(imap(all_data_flagged, ~generate_seasonal_histogram(.x, .y)))
+# imap(all_data_flagged, ~generate_seasonal_histogram(.x, .y))
 
 # output_dir <- "/Users/juandlt_csu/Library/CloudStorage/OneDrive-Colostate/poudre_sonde_network/data/histogram_images"
 # 
