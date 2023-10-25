@@ -1,50 +1,12 @@
 # Verify flag data
-## This uses the data that is generated from the function generate_daily_flag_plots()
-## to ask the user whether or not a flagged data point should pass or fail.
+# @param weekly_plot_object A ggplot object of the weekly flagged data.
+# @param daily_plot_object A ggplot object of the daily flagged data.
+# @return A dataframe with an updated verification column.
+# @examples
+# weekly_data <- generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+# daily_data <- generate_daily_flag_plots("archery", "Temperature", "slope violation")
+# verify_flag_data(weekly_plot_object = weekly_data[[1]], daily_plot_object = daily_data[[1]]))
 
-# get day decision function ----
-# returns "pass", "fail", or "inspect depending on input from the user
-get_day_decision <- function(prompt_text) {
-  while (TRUE) {
-    user_input <- readline(prompt = paste(prompt_text))
-    user_input <- tolower(user_input)
-
-    if (user_input %in% c("pass", "p")) {
-      return("pass")
-    } else if (user_input %in% c("fail", "f")) {
-      return("fail")
-    } else if (user_input %in% c("inspect", "i")){
-      return("inspect")
-    } else {
-      cat("Invalid input. Please enter 'yes', 'no', or 'inspect'.\n")
-    }
-  }
-}
-
-# get flag decision function ----
-# returns a binary TRUE or FALSE depending on the input from the user
-get_flag_decision <- function(prompt_text) {
-  while (TRUE) {
-    user_input <- readline(prompt = paste(prompt_text))
-    user_input <- tolower(user_input)
-
-    if (user_input %in% c("pass", "p")) {
-      return(TRUE)
-    } else if (user_input %in% c("fail", "f")) {
-      return(FALSE)
-    } else {
-      cat("Invalid input. Please enter 'pass' or 'fail'.\n")
-    }
-  }
-}
-
-# Verify flag data function and testing ----
-## Right now this function takes in a ggplot object, extracts its data and then
-## makes a plot for each point of interest to ask the user if it is valid point
-## or not. As it is how the user answers has no effect on any generated data.
-## Instead, new dfs will be generated with the users decisions.
-
-# there will need to be some sort of imap so that we can verify that the weekly data and the daily data are the same
 verify_flag_data <- function(weekly_plot_object, daily_plot_object) {
 
   # get data from daily plot
