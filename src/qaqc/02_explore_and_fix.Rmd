@@ -1,0 +1,81 @@
+---
+title: "02_exploring_data"
+author: "Katie Willi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#### Add verification column
+```{r}
+all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
+all_data_flagged <- map(all_data_flagged, add_verification_column)
+```
+
+#### Visualize the flags
+
+```{r}
+# Current vis:
+plotly_plot <- plotly::ggplotly(ggplot() +
+  geom_point(data = filter(all_data_flagged[["archery-Temperature"]], is.na(flag)), 
+             aes(x=DT_round, y = mean)) +
+  geom_point(data = filter(all_data_flagged[["archery-Temperature"]], !is.na(flag)), 
+             aes(x=DT_round, y = mean, color = flag)) +
+  theme_bw() +
+  theme(legend.position = 'bottom') +
+  facet_wrap(~year, scales = "free_x"))
+```
+
+Visualizing daily plots
+```{r, fig.width=12, fig.height=7}
+generate_daily_flag_plots("lincoln", "Chl-a Fluorescence", "outside sd range")
+```
+
+Visualizing weekly plots
+```{r, fig.width=12, fig.height=7}
+#generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+```
+
+Stack the weekly and daily plots
+```{r, fig.width=12, fig.height=12}
+# stack_flag_plots("boxelder", "Turbidity", "outside sd range")
+```
+
+Histograms of all parameter/site combos
+```{r}
+# making histograms for temperatures
+## pulling all the temperature dfs from the all_data list
+
+# temperature_hist_list <- all_data_flagged[grep("Temperature", names(all_data_summary_list), ignore.case = TRUE)]
+
+## use imap to use the index in the list for the plot titles
+## (not loving imap, if there is a better way to do this please change this)
+
+# temperature_hist_plots <- imap(temperature_hist_list, ~generate_general_histogram(.x, .y))
+# temperature_hist_plots
+
+## How to pull the histogram data that ggplot generates to make histograms
+# temperature_hist_data <- map(temperature_hist_plots, ~ ggplot_build(.x)$data[[1]]) 
+```
+
+```{r}
+# imap(all_data_flagged, ~generate_seasonal_histogram(.x, .y))
+
+# output_dir <- "/Users/juandlt_csu/Library/CloudStorage/OneDrive-Colostate/poudre_sonde_network/data/histogram_images"
+# 
+# # Use imap to iterate over the list and generate/save plots
+# imap(all_data_flagged, ~{
+#   df_name <- .y  # Get the name of the data frame
+#   plot <- generate_seasonal_histogram(.x, .y)  # Generate the plot
+# 
+#   # Create a filename based on the name of the data frame
+#   filename <- file.path(output_dir, paste0(df_name, ".png"))
+# 
+#   # Save the plot as an image (you can adjust the file format and options)
+#   ggsave(filename, plot, device = "png", width = 8, height = 6)
+# })
+```
