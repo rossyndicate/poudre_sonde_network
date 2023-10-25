@@ -1,10 +1,19 @@
-# Visualizing weekly data ----
+# Generate weekly plots of flagged data.
+  # This function will generate a list of weekly plots for site-parameters that have been tagged by a specific flag.
+# @param site_arg A string of the site name.
+# @param parameter_arg A string of the parameter name.
+# @param flag_arg A string of the flag name.
+# @param df_list A list of dataframes that have been flagged.
+# @return A list of weekly plots for site-parameters that have been tagged by a specific flag.
+# @examples
+# generate_weekly_flag_plots(site_arg = "archery", parameter_arg = "Actual Conductivity", flag_arg = "outside of Actual Conductivity sensor specification range", df_list = all_data_flagged)
+# generate_weekly_flag_plots(site_arg = "boxelder", parameter_arg = "Temperature", flag_arg = "outside of Temperature sensor specification range", df_list = all_data_flagged)
 
-generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) {
+generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL, df_list = all_data_flagged) {
 
   site_param <- paste0(site_arg, "-", parameter_arg)
 
-  site_flag_dates <- all_data_flagged[[site_param]]
+  site_flag_dates <- df_list[[site_param]]
 
   if (!is.null(site_flag_dates)){
     # vector of sites in the order that they are in spatially

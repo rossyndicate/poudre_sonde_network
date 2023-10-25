@@ -1,7 +1,14 @@
-# Visualizing daily plots
+# Generate daily plots of flagged data.
+  # This function will generate a list of daily plots for site-parameters that have been tagged by a specific flag.
+# @param site_arg A string of the site name.
+# @param parameter_arg A string of the parameter name.
+# @param flag_arg A string of the flag name.
+# @param df_list A list of dataframes that have been flagged.
+# @return A list of daily plots for site-parameters that have been tagged by a specific flag.
+# @examples
+# generate_daily_flag_plots(site_arg = "archery", parameter_arg = "Actual Conductivity", flag_arg = "outside of Actual Conductivity sensor specification range", df_list = all_data_flagged)
+# generate_daily_flag_plots(site_arg = "boxelder", parameter_arg = "Temperature", flag_arg = "outside of Temperature sensor specification range", df_list = all_data_flagged)
 
-## This function will generate a list of plots for site-parameters
-## that have been tagged by a specific flag
 generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL, df_list = all_data_flagged) {
 
   # Generating df name to pull from all_data_flagged list
