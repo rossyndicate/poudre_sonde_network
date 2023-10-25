@@ -1,4 +1,12 @@
-# Function to summarize site-parameter combinations
+# Summarize site parameter data from the API and field notes data frames.
+# @param site_arg A site name.
+# @param parameter_arg A parameter name.
+# @param api_data A dataframe with the munged API data.
+# @return A dataframe with summary statistics for a given site parameter data frame.
+# @examples
+# summarize_site_param(site_arg = "archery", parameter_arg = "Actual Conductivity", api_data = api_data)
+# summarize_site_param(site_arg = "boxelder", parameter_arg = "Temperature", api_data = api_data)
+
 summarize_site_param <- function(site_arg, parameter_arg, api_data) {
 
   # filter deployment records for the full join

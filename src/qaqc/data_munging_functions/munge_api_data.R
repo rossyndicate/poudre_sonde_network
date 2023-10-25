@@ -1,3 +1,9 @@
+# Munge API data for QAQC workflow
+# @param api_path Path to the API data.
+# @return A dataframe with the munged API data.
+# @examples
+# munge_api_data(api_path = "data/api/")
+
 munge_api_data <- function(api_path = "data/api/") {
   api_data <- list.files(path = api_path, full.names = TRUE, pattern = "*.csv") %>%
     map_dfr(~data.table::fread(.) %>% select(-id)) %>%

@@ -1,3 +1,10 @@
+# Generate summary statistics for a given site parameter data frame.
+# @param site_param_df A dataframe with a `mean` column retrieved from HydroVu API.
+# @return A dataframe with summary statistics for a given site parameter data frame.
+# @examples
+# generate_summary_statistics(site_param_df = all_data_flagged$`archery-Actual Conductivity`)
+# generate_summary_statistics(site_param_df = all_data_flagged$`boxelder-Temperature`)
+
 generate_summary_statistics <- function(site_param_df) {
 
   # create seasons table

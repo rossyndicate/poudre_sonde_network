@@ -1,4 +1,10 @@
-# Pulling in field notes and adding relevant datetime columns
+# Clean field notes
+  # Pulling in field notes and adding relevant datetime columns
+# @param field_note_path Path to the field notes excel file.
+# @return A dataframe with the field notes.
+# @examples
+# clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
+
 clean_field_notes <- function(field_note_path="data/sensor_field_notes.xlsx"){
   field_notes <- read_excel(field_note_path) %>%
     mutate(start_DT = ymd_hm(paste(date, start_time_mst, tzone = "MST"))) %>%
