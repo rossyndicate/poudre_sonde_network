@@ -1,3 +1,15 @@
+# Add all flags to a dataframe from the flagging functions. Add additional single line flags here. Add public facing mean column.
+  # "slope violation" flag is added if the slope is greater than the 99th percentile of the slope behind.
+  # "outside sd range" flag is added if the mean is outside of the 10th and 90th percentile of the rolling average.
+  # "repeated value" flag is added if the mean is the same as the value in front or behind.
+  # "missing data" flag is added if the mean is NA.
+  # `mean_public` column is added to the dataframe with the public facing mean.
+# @param df A dataframe with a `flag` column.
+# @return A dataframe with a `flag` column that has been updated with the relevant flags.
+# @examples
+# add_all_flags(df = all_data_flagged$`archery-Actual Conductivity`)
+# add_all_flags(df = all_data_flagged$`boxelder-Temperature`)
+
 add_all_flags <- function(df) {
 
   df <- df %>%

@@ -1,14 +1,12 @@
-# Adding flags related to parameter ranges
-# Sensor specification ranges are those which exceed manufacturer specified limits.
-# Seasonal ranges are mean values which are below the .05 quantile or exceed the
-# .99 quantile.
+# Add flags to the `flag` column of a dataframe based on sensor specification ranges and seasonal ranges.
+  # "outside of sensor specification range" flag is added if the mean is outside of the sensor specification range.
+  # "outside of seasonal range" flag is added if the mean is outside of the seasonal range.
+# @param df A dataframe with a `flag` column.
+# @return A dataframe with a `flag` column that has been updated with the relevant range flag description.
+# @examples
+# add_range_flags(df = all_data_flagged$`archery-Actual Conductivity`)
+# add_range_flags(df = all_data_flagged$`boxelder-Temperature`)
 
-# parameter_ranges <- yaml::read_yaml("src/qaqc/range_limits/parameter_thresholds.yml")
-sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
-# this not need to be a yaml solution
-
-# sensor spec ranges flagging function
-# Some parameters are derived from a combination of other parameters. If any of those are wrong then they should be flagged.
 add_range_flags <- function(df) {
 
   # get the parameter from the parameter column in the df of interest

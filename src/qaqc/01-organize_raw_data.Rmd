@@ -28,6 +28,7 @@ sapply(list.files("src/qaqc/verification_functions", pattern = "*.R", full.names
 Load field notes and define the start time as the 15 minute preceding the field time
 ```{r}
 field_notes <- clean_field_notes()
+# there are some warnings here, I think they are okay but we want to make sure to explore this
 ```
 
 Merge the data sets from all API pulls:
@@ -85,6 +86,9 @@ Add flagging functions for each df in all_data_summary_list
 
 Pass the dfs in all_data_summary_stats_list through the flagging functions
 ```{r}
+# this should be a look up table too
+sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
+
 all_data_flagged <- map(all_data_summary_stats_list, add_all_flags)
 ```
 
