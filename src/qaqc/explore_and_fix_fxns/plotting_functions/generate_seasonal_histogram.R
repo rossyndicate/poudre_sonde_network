@@ -1,4 +1,11 @@
-# seasonal histogram function
+# Generate seasonal histograms for a given site parameter data frame based on the mean column.
+# @param df A dataframe with a `mean` column.
+# @param df_index The index of the dataframe.
+# @return A plot with a histogram of the mean column for each season.
+# @examples
+# generate_seasonal_histogram(df = all_data_flagged$`archery-Actual Conductivity`, df_index = "archery-Actual Conductivity")
+# generate_seasonal_histogram(df = all_data_flagged$`boxelder-Temperature`, df_index = "boxelder-Temperature")
+
 generate_seasonal_histogram <- function(df, df_index) {
 
   winter_baseflow <- c(12,1,2,3,4)

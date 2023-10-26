@@ -1,5 +1,13 @@
-# This function lets you combine the weekly and daily plots into one stacked plot
-# to compare the two.
+# Generate plots with both weekly and daily flagged data.
+# This function will generate a list of plots with both weekly and daily flagged data.
+# @param site_arg A string of the site name.
+# @param parameter_arg A string of the parameter name.
+# @param flag_arg A string of the flag name.
+# @return A list of plots with both weekly and daily flagged data.
+# @examples
+# stack_flag_plots(site_arg = "archery", parameter_arg = "Actual Conductivity", flag_arg = "outside of Actual Conductivity sensor specification range")
+# stack_flag_plots(site_arg = "boxelder", parameter_arg = "Temperature", flag_arg = "outside of Temperature sensor specification range")
+
 stack_flag_plots <- function(site_arg, parameter_arg, flag_arg) {
 
   # Call on the weekly and daily functions and fill their args with this

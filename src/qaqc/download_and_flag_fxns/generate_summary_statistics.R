@@ -1,3 +1,10 @@
+# Generate summary statistics for a given site parameter data frame.
+# @param site_param_df A data frame with a `mean` column retrieved from HydroVu API.
+# @return A data frame with summary statistics for a given site parameter data frame.
+# @examples
+# generate_summary_statistics(site_param_df = all_data_flagged$`archery-Actual Conductivity`)
+# generate_summary_statistics(site_param_df = all_data_flagged$`boxelder-Temperature`)
+
 generate_summary_statistics <- function(site_param_df) {
 
   # create seasons table
@@ -36,28 +43,28 @@ generate_summary_statistics <- function(site_param_df) {
     # the 10%-90% percentile range. Therefore, we don't include any of the weird outliers
     # when trying to flag this way...
     mutate(
-      m_mean05 = quantile(mean, 0.05, na.rm = TRUE),
+      # Seasonal 1st/99th percentile means and slope
+      m_mean01 = quantile(mean, 0.01, na.rm = TRUE),
       m_mean99 = quantile(mean, 0.99, na.rm = TRUE),
-      m_slope_behind_10 = quantile(slope_behind, 0.1, na.rm = TRUE),
-      m_slope_behind_99 = quantile(slope_behind, 0.99, na.rm = TRUE),
-      m_sd = sd(mean, na.rm = T)) %>%
+      m_slope_behind_01 = quantile(slope_behind, 0.01, na.rm = TRUE),
+      m_slope_behind_99 = quantile(slope_behind, 0.99, na.rm = TRUE)) %>%
     ungroup() %>%
-    # Find the 10th and 90th percentile of data.
-    # Using 10-90th percentile data, get the standard deviation of the
-    # values.
+    # Using ONLY data within the seasonal 1-99th percentile, get the standard deviation. Done to reduce
+    # noise from the major outliers of the dataset...
     left_join(., site_param_df %>%
                 mutate(month = month(DT_round),
                        year = year(DT_round),
                        y_m = paste(year, '-', month)) %>%
                 left_join(seasons, by = "month") %>%
                 group_by(season) %>%
-                mutate(p10 = quantile(mean, 0.1, na.rm = TRUE),
-                       p90 = quantile(mean, 0.99, na.rm = TRUE)) %>%
-                filter(mean > p10 & mean < p90) %>%
+                mutate(p01 = quantile(mean, 0.01, na.rm = TRUE),
+                       p99 = quantile(mean, 0.99, na.rm = TRUE)) %>%
+                filter(mean > p01 & mean < p99) %>%
                 # need to pull some of this info out and use it for the range limits to test it
-                summarize(m_sd_1090 = sd(mean, na.rm = T)) %>%
-                select(season, m_sd_1090),
+                summarize(m_sd_0199 = sd(mean, na.rm = T)) %>%
+                select(season, m_sd_0199),
               by = "season")
 
   return(summary_stats_df)
+
 }

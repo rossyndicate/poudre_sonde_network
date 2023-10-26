@@ -1,21 +1,14 @@
-# Adding flags regarding large swaths of suspect data.
+# Add flags to the `flag` column of a dataframe based on large swaths of suspect data.
+# "24hr anomaly flag" is added if more than 50% of the data points in a 24 hour window are flagged.
+# "anomaly window" flag is added if the point is included in a 24hr anomaly.
+# @param df A dataframe with a `flag` column.
+# @return A dataframe with a `flag` column that has been updated with the relevant large anomaly flags.
+# @examples
+# add_large_anomaly_flags(df = all_data_flagged$`archery-Actual Conductivity`)
+# add_large_anomaly_flags(df = all_data_flagged$`boxelder-Temperature`)
 
-# Takes a rolling window of data points (24 hours worth of data points), and if
-# more than a quarter of that data has been flagged, the point in the center of that
-# rolling window will be flagged with "24hr anomaly flag".
+add_large_anomaly_flag <- function(df) {
 
-# After a point has been determined to fall in the center of a large data anomaly,
-# it will check if that point itself is part of another 24hr anomaly.
-# This is done by looking for "24hr anomaly flags" within the 48 points behind and ahead
-# of it. If that flag is detected within that window, an "anomaly window" will also
-# be added to that point.
-
-# "24hr anomaly flag" and "anomaly window" flags do not count toward the total for the
-# "24hr anomaly flag"
-
-add_large_anomaly_flags <- function(df) {
-
-  # should we not be counting flags that have only missing data and nothing else?
   # cases that should result in 0 in flag_binary column:
   # only "24hr anomaly"
   # only "anomaly window"
@@ -24,8 +17,9 @@ add_large_anomaly_flags <- function(df) {
   # only "sonde not employed" and "missing data"
   # only "missing data" and "anomaly window"
   # only "missing data" and "24hr anomaly"
-
-  # remove site visit. ie make site visit = 1 in flag binary
+  # only "sonde not employed", "missing data", and "anomaly window"
+  # only "site visit", "missing data", "24hr anomaly", and "anomaly window"
+  # only "sv window", "missing data", "24hr anomaly", and "anomaly window"
   flag_string <- "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window|
                   missing data|sonde not employed;\\nmissing data|
                   missing data;\\nanomaly window|missing data;\\n24hr anomaly|
@@ -35,8 +29,6 @@ add_large_anomaly_flags <- function(df) {
                   sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
 
   df <- df %>%
-    # str_detect to make sure we are not counting this same flag towards next count
-    # add missing data to stringr
     mutate(flag_binary = ifelse((is.na(flag) | str_detect(flag, flag_string)), 0, 1),
            roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>%
     add_flag((roll_bin >= (97*0.5)), "24hr anomaly") # we can tweak the lower limit
