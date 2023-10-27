@@ -6,10 +6,10 @@
 # @param df_list A list of dataframes that have been flagged.
 # @return A list of weekly plots for site-parameters that have been tagged by a specific flag.
 # @examples
-# generate_weekly_flag_plots(site_arg = "archery", parameter_arg = "Actual Conductivity", flag_arg = "outside of Actual Conductivity sensor specification range", df_list = all_data_flagged)
-# generate_weekly_flag_plots(site_arg = "boxelder", parameter_arg = "Temperature", flag_arg = "outside of Temperature sensor specification range", df_list = all_data_flagged)
+# generate_weekly_flag_plots(site_arg = "archery", parameter_arg = "Actual Conductivity", flag_arg = "outside of Actual Conductivity sensor specification range", df_list = df_list)
+# generate_weekly_flag_plots(site_arg = "boxelder", parameter_arg = "Temperature", flag_arg = "outside of Temperature sensor specification range", df_list = df_list)
 
-generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL) {
+generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL, df_list) {
 
   site_param <- paste0(site_arg, "-", parameter_arg)
 
@@ -29,7 +29,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
     # determining the index for the site of interest.
     site_index <- which(sites_order == site_arg)
 
-    # Generating df name to pull from all_data_flagged list
+    # Generating df name to pull from df_list list
     site_param <- paste0(site_arg, "-", parameter_arg)
     # filter for all the days that are tagged within the site-param df of interest
     site_flag_dates <- site_flag_dates %>%
@@ -54,7 +54,7 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
         end_day <- flag_day + days(3)
 
         # filtering dfs of interest for the weeks where a flag was detected
-        site_df <- all_data_flagged[[site_param]] %>%
+        site_df <- df_list[[site_param]] %>%
           filter(year == flag_year,
                  month == flag_month,
                  DT_round >= start_day & DT_round <= end_day)
@@ -67,21 +67,21 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
 
         tryCatch({
           previous_site <- paste0(sites_order[site_index-1],"-",parameter_arg)
-          prev_site_df <- all_data_flagged[[previous_site]] %>%
+          prev_site_df <- df_list[[previous_site]] %>%
             filter(year == flag_year,
                    month == flag_month,
                    DT_round >= start_day & DT_round <= end_day)},
           error = function(err) {
-            cat("No previous site")})
+            cat("No previous site.\n")})
 
         tryCatch({
           next_site <- paste0(sites_order[site_index+1],"-",parameter_arg)
-          next_site_df <- all_data_flagged[[next_site]] %>%
+          next_site_df <- df_list[[next_site]] %>%
             filter(year == flag_year,
                    month == flag_month,
                    DT_round >= start_day & DT_round <= end_day)},
           error = function(err) {
-            cat("No next site")})
+            cat("No next site.\n")})
 
         # Bind all three dfs
         week_plot_data <- list(site_df, prev_site_df, next_site_df) %>%
@@ -92,14 +92,15 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
         # Using the data from the day where a flag was detected to generate a window
         # to easily distinguish the data of interest in comparison with the rest of
         # the data
-        site_day_data <- all_data_flagged[[site_param]] %>%
+        site_day_data <- df_list[[site_param]] %>%
           filter(year == flag_year,
                  month == flag_month,
                  day(DT_round) == day(flag_day))
 
-        y_min <- site_day_data$m_mean05[i]
+        y_min <- site_day_data$m_mean01[i]
         y_max <- site_day_data$m_mean99[i]
-
+        # there is a join somewhere that adds two site and parameter cols
+        # need to find it and fix that
         week_plot <- ggplot(data = week_plot_data, aes(x=DT_round, y=mean, color=site)) +
           geom_rect(data = site_day_data, aes(xmin = min(DT_round), xmax = max(DT_round),
                                               ymin = -Inf, ymax = Inf),
@@ -123,9 +124,9 @@ generate_weekly_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL)
       }
       return(plot_list)
     } else {
-      return(paste(flag_arg, "not detected"))
+      return(paste(flag_arg, "not detected.\n"))
     }
   } else {
-    return(paste(site_arg, parameter_arg, "combination not available"))
+    return(paste(site_arg, parameter_arg, "combination not available.\n"))
   }
 }

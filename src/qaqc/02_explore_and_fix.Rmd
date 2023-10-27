@@ -13,9 +13,9 @@ knitr::opts_chunk$set(echo = TRUE)
 source("src/package_loader.R")
 lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis", "janitor"), package_loader)
 
-sapply(list.files("src/explore_and_fix_fxs/verification_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
+sapply(list.files("src/qaqc/explore_and_fix_fxns/verification_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
 
-sapply(list.files("src/explore_and_fix_fxs/plotting_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
+sapply(list.files("src/qaqc/explore_and_fix_fxns/plotting_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
 ```
 
 #### Add verification column
@@ -40,12 +40,12 @@ plotly_plot <- plotly::ggplotly(ggplot() +
 
 Visualizing daily plots
 ```{r, fig.width=12, fig.height=7}
-generate_daily_flag_plots("lincoln", "Chl-a Fluorescence", "outside sd range")
+# generate_daily_flag_plots("archery", "Temperature", "missing data", df_list = all_data_flagged)
 ```
 
 Visualizing weekly plots
 ```{r, fig.width=12, fig.height=7}
-#generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+# generate_weekly_flag_plots("archery", "Temperature", "slope violation", df_list = all_data_flagged)
 ```
 
 Stack the weekly and daily plots

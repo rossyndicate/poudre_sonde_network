@@ -5,7 +5,6 @@
 # @examples
 # clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
 
-
 clean_field_notes <- function(field_note_path = "data/sensor_field_notes.xlsx"){
 
   field_notes <- read_excel(field_note_path) %>%
@@ -23,8 +22,7 @@ clean_field_notes <- function(field_note_path = "data/sensor_field_notes.xlsx"){
                                       is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
                                       is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA)) %>%
     # remove field dates where sensor was not handled:
-    filter(!visit_type %in% c("Camera Check")) %>% # camera check only
-    filter(!grepl("Other", visit_type)) %>% # "Other" indicates sonde not manipulated
+    filter(grepl("Sensor Cleaning or Check|Sensor Calibration", visit_type, ignore.case = TRUE))
 
   return(field_notes)
 

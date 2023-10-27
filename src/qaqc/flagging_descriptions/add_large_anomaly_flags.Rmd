@@ -1,0 +1,12 @@
+# Takes a rolling window of data points (24 hours worth of data points), and if
+# more than a quarter of that data has been flagged, the point in the center of that
+# rolling window will be flagged with "24hr anomaly flag".
+
+# After a point has been determined to fall in the center of a large data anomaly,
+# it will check if that point itself is part of another 24hr anomaly.
+# This is done by looking for "24hr anomaly flags" within the 48 points behind and ahead
+# of it. If that flag is detected within that window, an "anomaly window" will also
+# be added to that point.
+
+# "24hr anomaly flag" and "anomaly window" flags do not count toward the total for the
+# "24hr anomaly flag"

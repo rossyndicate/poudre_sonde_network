@@ -1,0 +1,7 @@
+# add_flag()
+# Add a flag to the `flag` column of a dataframe based on a condition and a description of the flag.
+# The condition is a logical statement that is evaluated in the context of the dataframe.
+# The description is a string that is added to the flag column if the condition is true.
+# If the flag column is NA, then the description is added to the flag column.
+# If the flag column is not NA, then the description is appended to the flag column.
+# The description is separated from the existing flag by a semicolon and a newline.

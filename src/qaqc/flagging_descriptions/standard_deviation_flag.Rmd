@@ -1,8 +1,12 @@
 ---
-title: "Standard Deviation Flag"
+title: "Add Seasonal Flag"
 author: "ROSSyndicate"
 date: "`r Sys.Date()`"
-output: html_document
+output: 
+  html_document:
+    number_sections: true
+    toc: true
+    toc_float: true
 editor_options: 
   markdown: 
     wrap: 90
@@ -17,6 +21,40 @@ source("src/package_loader.R")
 lapply(c("data.table", "tidyverse", "kableExtra"), package_loader)
 ```
 
+# The `add_seasonal_flag()` function
+- explain what the overall function does
+
+```{r}
+add_seasonal_flag <- function(df) {
+
+  # get the site name from the site column in the df of interest
+  site_name <- unique(na.omit(df$site))
+  # get the parameter from the parameter column in the df of interest
+  parameter_name <- unique(na.omit(df$parameter))
+
+  lookup <- threshold_lookup %>%
+    filter(site == site_name & parameter == parameter_name)
+
+  df <- df %>%
+    # Using seasonal cut-offs...
+    left_join(lookup, by = "season") %>%
+    select(!c(site.y, parameter.y),
+           site = site.x,
+           parameter = parameter.x) %>%
+    # ... flag obs that are outside the seasonal 1-99 percentile range:
+    add_flag((mean < t_mean01 | mean > t_mean99), paste0("outside of seasonal range")) %>%
+    # flag obs whose slope is greater than the 99th percentile range
+    add_flag((slope_ahead >= t_slope_behind_99 | slope_behind >= t_slope_behind_99), "slope violation") %>%
+    # ... flag obs that are outside of the rolling mean times 3 sd's of the 1-99 percentile seasonal values
+    add_flag((mean <= rollavg - (3 * t_sd_0199) | mean >= rollavg + (3 * t_sd_0199)), "outside sd range")
+
+  return(df)
+
+}
+```
+
+
+# Add `"outside sd range"` flag
 #### The slope deviation flag uses the `add_flag()` method and is triggered when the mean value of a data point deviates by more than 3 standard deviations from the rolling average.
 
 ```{r, eval=FALSE}
@@ -29,7 +67,11 @@ _where_ :
 
 - `mean` = The average of all the data points collected in a 15 minute period for a sonde parameter.
 - `rollavg` = A rolling average of 7 data points, with the data point that is being evaluated in the center.
-- `m_sd_1090` = The seasonal standard deviation within the 10th and 90th quantiles for the season.
+- `m_sd_1090` = The seasonal standard deviation within the 10th and 90th quantiles for the season, where a season falls into one of the following categories:
+  - winter_baseflow = December, January, February, March, April
+  - snowmelt = May, June
+  - monsoon = June, July, August
+  - fall_baseflow = October, November
 - `"outside sd range"` = Flag descriptor inserted into `flag` column.
 
 ## Analysis:
@@ -49,18 +91,32 @@ kable(sd_flag_data, format = "markdown", align = "c")
 
 
 ## Examples:
+```{r, include=FALSE}
+# all_data_summary_stats_list <- readRDS('data/summary_stats/all_data_summary_stats_list.RDS')
+# daily_flag_list <- map(all_data_summary_stats_list, add_seasonal_flag)
+```
 
 ### Good
+```{r, include=FALSE}
+# ggsave(filename = 'data/QAQC_images/flag_examples/timberline_turb_sd_flag_good.png',
+#        plot = stack_flag_plots(site_arg = "timberline", parameter_arg = "Turbidity", flag_arg = "outside sd range", df_list = daily_flag_list)[[7]],
+#        height = 8, width = 10)
+```
 
 ![Example of sd flag working properly](../../../data/QAQC_images/flag_examples/timberline_turb_sd_flag_good.png)
-
 - Extreme outliers will be detected and deemed unsuitable.
 - This flag is often associated with the seasonal range flag.
 - This flag is often associated with the slope violation flag.
 
 ### Bad
+```{r, include=FALSE}
+# ggsave(filename = 'data/QAQC_images/flag_examples/timberline_turb_sd_flag_bad.png',
+#        plot = stack_flag_plots(site_arg = "timberline", parameter_arg = "Turbidity", flag_arg = "outside sd range", df_list = daily_flag_list)[[51]],
+#        height = 8, width = 10)
+```
 
 ![Example of sd flag working improperly](../../../data/QAQC_images/flag_examples/timberline_turb_sd_flag_bad.png)
 
 - When several points are following a suspicious trend they are captured in the rolling average window and do not get flagged.
 - Fortunately, as this flag is often associated with other flags, those other flags will get triggered as well.
+- Even though this flag is working properly, it seems to have captured a real event as false.
