@@ -1,0 +1,65 @@
+---
+title: "Add Sensor Specifications Flag"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    number_sections: true
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
+```
+
+```{r, include=FALSE}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "kableExtra"), package_loader)
+```
+
+# `add_spec_flag()`
+
+This function will add a flag if a data point's value falls outside of In Situ's sensor range specifications.
+
+```{r}
+add_spec_flag <- function(df){
+
+  # get the parameter from the parameter column in the df of interest
+  parameter_name <- unique(na.omit(df$parameter))
+  # Pull the sensor specification range from the yaml file
+  sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
+  sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
+
+  df <- df %>%
+    add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
+             paste("outside of", parameter_name, "sensor specification range")) %>%
+
+    return(df)
+
+}
+```
+- `parameter_name` = The sensor under evaluation for that data point.
+- `sensor_min` = The lower limit for the sensor.
+- `sensor_max` = The upper limit for the sensor.
+- `paste("outside of", parameter_name, "sensor specification range")` = Dynamic flag descriptor inserted into the `flag` column.
+
+# Analysis
+```{r, echo=FALSE}
+sd_flag_data <- read_csv("data/flag_report.csv") %>% 
+  filter(str_detect(flag, "sensor specification range"),
+         !(parameter %in% c("Baro", "Battery Level", "External Voltage")),
+         data_points_flagged_percentage_sans_na > 0 | dates_flagged_percentage_sans_na > 0
+         ) %>% 
+  select(Site = site, 
+         Parameter = parameter,
+         Flag = flag, 
+         `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
+         `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
+
+kable(sd_flag_data, format = "markdown", align = "c")
+```
+# Examples

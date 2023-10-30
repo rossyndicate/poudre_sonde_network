@@ -1,0 +1,52 @@
+---
+title: "Add Repeat Flag"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    number_sections: true
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
+```
+
+```{r, include=FALSE}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "kableExtra"), package_loader)
+```
+
+# `add_repeat_flag()`
+**Add a flag when a data point is equal to the point behind it or ahead of it.**
+```{r, eval=FALSE}
+add_repeat_flag <- function(df){
+  df %>%
+    add_flag((mean == front1 | mean == back1), 
+             "repeated value")
+}
+```
+- `mean` = The data point of interest.
+- `front1` = The data point ahead of the data point of interest.
+- `back1` = The data point behind the data point of interest.
+- `"repeated value"` = Flag descriptor inserted into the `flag` column.
+# Analysis:
+```{r, echo=FALSE}
+sd_flag_data <- read_csv("data/flag_report.csv") %>% 
+  filter(flag == "repeated value",
+         !(parameter %in% c("Baro", "Battery Level", "External Voltage")),
+         data_points_flagged_percentage_sans_na > 0 | dates_flagged_percentage_sans_na > 0
+         ) %>% 
+  select(Site = site,
+         Parameter = parameter,
+         Flag = flag, 
+         `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
+         `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
+
+kable(sd_flag_data, format = "markdown", align = "c")
+```
+# Examples:

@@ -21,29 +21,40 @@ source("src/package_loader.R")
 lapply(c("data.table", "tidyverse", "kableExtra"), package_loader)
 ```
 
-# The `add_seasonal_flag()` function
-- explain what the overall function does
+# `add_seasonal_flag()`
 
-```{r}
+This function adds three flags:
+
+1. `"outside of seasonal range"`
+2. `"slope violation"`
+3. `"outside sd range"`
+
+These flags are determined using the values within the the seasonal ranges threshold table which are joined to the data from our cleaned HydroVu API data. The seasonal ranges threshold table holds the thresholds for the 1st and 99th percentile for mean range (`t_mean01, t_mean99`), the 99th percentile for slopes behind (`t_slope_behind_99`), and the standard deviation of the values within the 1st and 99th percentile for each season, site, parameter combination. 
+
+The seasons that we consider in the seasonal ranges threshold table is as follows:
+
+- winter_baseflow = December, January, February, March, April
+- snowmelt = May, June
+- monsoon = June, July, August
+- fall_baseflow = October, November
+
+```{r, eval=FALSE}
 add_seasonal_flag <- function(df) {
 
-  # get the site name from the site column in the df of interest
   site_name <- unique(na.omit(df$site))
-  # get the parameter from the parameter column in the df of interest
   parameter_name <- unique(na.omit(df$parameter))
 
   lookup <- threshold_lookup %>%
     filter(site == site_name & parameter == parameter_name)
 
   df <- df %>%
-    # Using seasonal cut-offs...
     left_join(lookup, by = "season") %>%
     select(!c(site.y, parameter.y),
            site = site.x,
            parameter = parameter.x) %>%
     # ... flag obs that are outside the seasonal 1-99 percentile range:
-    add_flag((mean < t_mean01 | mean > t_mean99), paste0("outside of seasonal range")) %>%
-    # flag obs whose slope is greater than the 99th percentile range
+    add_flag((mean < t_mean01 | mean > t_mean99), paste("outside of", parameter_name, "seasonal range")) %>%
+    # ... flag obs whose slope is greater than the 99th percentile range
     add_flag((slope_ahead >= t_slope_behind_99 | slope_behind >= t_slope_behind_99), "slope violation") %>%
     # ... flag obs that are outside of the rolling mean times 3 sd's of the 1-99 percentile seasonal values
     add_flag((mean <= rollavg - (3 * t_sd_0199) | mean >= rollavg + (3 * t_sd_0199)), "outside sd range")
@@ -53,44 +64,55 @@ add_seasonal_flag <- function(df) {
 }
 ```
 
-
-# Add `"outside sd range"` flag
-#### The slope deviation flag uses the `add_flag()` method and is triggered when the mean value of a data point deviates by more than 3 standard deviations from the rolling average.
-
+## Add `"outside of seasonal range"` flag.
+**The seasonal range flag is triggered when the mean value of a data point exceeds the 1st or 99th quantiles of the mean data for that specific site, parameter, and season combination.**
 ```{r, eval=FALSE}
-# SD flag
-add_flag((mean <= rollavg - (3 * m_sd_1090) | mean >= rollavg + (3 * m_sd_1090)), 
+add_flag((mean < t_mean01 | mean > t_mean99), 
+         paste("outside of", parameter_name, "seasonal range"))
+```
+- `mean` = The average of all the data points collected in a 15 minute period for a sonde parameter.
+- `t_mean01` = 1st percentile threshold.
+- `t_mean99` = 99th percentile threshold.
+- `paste("outside of", parameter_name, "seasonal range")` = Dynamic flag descriptor inserted into the `flag` column.
+
+## Add `"slope violation"` flag. 
+**The slope violation flag is triggered when the slope ahead or behind of a data point exceeds the 99th quantiles of the slope behind for that specific site, parameter, and season combination.**
+```{r, eval=FALSE}
+add_flag((slope_ahead >= t_slope_behind_99 | slope_behind >= t_slope_behind_99), 
+         "slope violation")
+```
+- `slope_ahead` = The slope between the current data point and the following data point.
+- `slope_behind` = The slope between the previous data point and the previous data point.
+- `t_slope_behind_99` = 99th percentile slope threshold.
+- `"slope violation"` = Flag descriptor inserted into the `flag` column.
+
+## Add `"outside sd range"` flag
+**The standard deviation flag is triggered when the mean value of a data point deviates by more than 3 standard deviations from the rolling average.**
+```{r, eval=FALSE}
+add_flag((mean <= rollavg - (3 * t_sd_1090) | mean >= rollavg + (3 * t_sd_1090)), 
          "outside sd range")
 ```
-
-_where_ :
-
 - `mean` = The average of all the data points collected in a 15 minute period for a sonde parameter.
 - `rollavg` = A rolling average of 7 data points, with the data point that is being evaluated in the center.
-- `m_sd_1090` = The seasonal standard deviation within the 10th and 90th quantiles for the season, where a season falls into one of the following categories:
-  - winter_baseflow = December, January, February, March, April
-  - snowmelt = May, June
-  - monsoon = June, July, August
-  - fall_baseflow = October, November
-- `"outside sd range"` = Flag descriptor inserted into `flag` column.
+- `t_sd_1090` = The seasonal standard deviation within the 10th and 90th quantiles for the season.
+- `"outside sd range"` = Flag descriptor inserted into the `flag` column.
 
-## Analysis:
+# Analysis:
 ```{r, echo=FALSE}
 sd_flag_data <- read_csv("data/flag_report.csv") %>% 
-  filter(flag == "outside sd range",
+  filter(flag %in% c("slope violation", "outside sd range") | str_detect(flag, "seasonal range"),
          !(parameter %in% c("Baro", "Battery Level", "External Voltage")),
          data_points_flagged_percentage_sans_na > 0 | dates_flagged_percentage_sans_na > 0
          ) %>% 
-  select(Site = site, 
+  select(Site = site,
          Parameter = parameter,
+         Flag = flag, 
          `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
          `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
 
 kable(sd_flag_data, format = "markdown", align = "c")
 ```
-
-
-## Examples:
+# Examples:
 ```{r, include=FALSE}
 # all_data_summary_stats_list <- readRDS('data/summary_stats/all_data_summary_stats_list.RDS')
 # daily_flag_list <- map(all_data_summary_stats_list, add_seasonal_flag)
