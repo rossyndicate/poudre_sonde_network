@@ -24,6 +24,16 @@ all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
 all_data_flagged <- map(all_data_flagged, add_verification_column)
 ```
 
+#### Generate flag report
+```{r}
+flag_report <- map(all_data_flagged, generate_flag_report) %>%
+  bind_rows()
+
+saveRDS(flag_report, 'data/flag_report.RDS')
+write_csv(flag_report, 'data/flag_report.csv')
+```
+
+
 #### Visualize the flags
 
 ```{r}
@@ -50,7 +60,7 @@ Visualizing weekly plots
 
 Stack the weekly and daily plots
 ```{r, fig.width=12, fig.height=12}
-# stack_flag_plots("boxelder", "Turbidity", "outside sd range")
+# stack_flag_plots("archery", "Temperature", "missing data", all_data_flagged)
 ```
 
 Histograms of all parameter/site combos

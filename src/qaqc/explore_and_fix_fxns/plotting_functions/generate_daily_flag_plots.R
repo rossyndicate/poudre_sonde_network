@@ -51,9 +51,8 @@ generate_daily_flag_plots <- function(site_arg, parameter_arg, flag_arg = NULL, 
           geom_ribbon(aes(ymin = rollavg - m_sd_0199, ymax = rollavg + m_sd_0199, x = DT_round), alpha = 0.1, color = NA) +
           geom_ribbon(aes(ymin = rollavg - (m_sd_0199*2), ymax = rollavg + (m_sd_0199*2), x = DT_round), alpha = 0.1, color = NA) +
           geom_ribbon(aes(ymin = rollavg - (m_sd_0199*3), ymax = rollavg + (m_sd_0199*3), x = DT_round), alpha = 0.1, color = NA) +
-          # exceeding slope visualized
+          # exceeding range limits visualized
           # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
-          # sometimes these hlines are wrong
           geom_hline(yintercept = y_min, color = "red") +
           geom_hline(yintercept = y_max, color = "red") +
           theme_bw() +

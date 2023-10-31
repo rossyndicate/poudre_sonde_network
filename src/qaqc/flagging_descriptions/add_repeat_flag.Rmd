@@ -34,6 +34,7 @@ add_repeat_flag <- function(df){
 - `front1` = The data point ahead of the data point of interest.
 - `back1` = The data point behind the data point of interest.
 - `"repeated value"` = Flag descriptor inserted into the `flag` column.
+
 # Analysis:
 ```{r, echo=FALSE}
 sd_flag_data <- read_csv("data/flag_report.csv") %>% 
@@ -49,4 +50,19 @@ sd_flag_data <- read_csv("data/flag_report.csv") %>%
 
 kable(sd_flag_data, format = "markdown", align = "c")
 ```
+
 # Examples:
+```{r, eval=FALSE, include=FALSE}
+# pull in 
+summary_data <- readRDS('data/summary_stats/all_data_summary_stats_list.RDS')
+summary_data_flagged <- map(summary_data, add_repeat_flag)
+# explore
+repeated_value_plots <- stack_flag_plots("tamasag", "Turbidity", "repeated value", summary_data_flagged)
+# repeated_value_plots
+# example
+example_plot <- repeated_value_plots[[13]]
+ggsave(filename = 'data/QAQC_images/flag_examples/repeated_value_example.png',
+       plot = example_plot,
+       height = 8, width = 10)
+```
+!["repeated value" flag example](../../../data/QAQC_images/flag_examples/repeated_value_example.png)
