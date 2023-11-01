@@ -20,19 +20,24 @@ add_large_anomaly_flag <- function(df) {
   # only "sonde not employed", "missing data", and "anomaly window"
   # only "site visit", "missing data", "24hr anomaly", and "anomaly window"
   # only "sv window", "missing data", "24hr anomaly", and "anomaly window"
-  flag_string <- "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window|
-                  missing data|sonde not employed;\\nmissing data|
-                  missing data;\\nanomaly window|missing data;\\n24hr anomaly|
-                  sonde not employed;\nmissing data;\nanomaly window|
-                  missing data;\n24hr anomaly;\nanomaly window|
-                  site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
-                  sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
+  flag_string <- "^(24hr anomaly|
+    anomaly window|
+    24hr anomaly;\\nanomaly window|
+    missing data|
+    sonde not employed;\\nmissing data|
+    missing data;\\nanomaly window|
+    missing data;\\n24hr anomaly|
+    sonde not employed;\nmissing data;\nanomaly window|
+    missing data;\n24hr anomaly;\nanomaly window|
+    site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
+    sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
 
   df <- df %>%
     mutate(flag_binary = ifelse((is.na(flag) | str_detect(flag, flag_string)), 0, 1),
            roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>%
     add_flag((roll_bin >= (97*0.5)), "24hr anomaly") # we can tweak the lower limit
 
+  # Mutate here!
   for (i in 1:48) {
     df <- df %>%
       add_flag((!str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>%

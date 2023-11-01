@@ -72,20 +72,17 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
 #### Add summary statistics to the formatted data
+
+##### Create a lookup table for site-parameter thresholds to use in flagging strange data. These thresholds are based on data from the 2022 and 2023 field season. In future seasons, this data will be fixed (i.e., unchanging). 
 ```{r}
 all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
-```
 
-## Create a lookup table for site-parameter thresholds to use in flagging strange data. These thresholds are based on data from the 2022 and 2023 field season. In future seasons, this data will be fixed (i.e., unchanging). 
+saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
 
-```{r}
 threshold_lookup <- map(all_data_summary_stats_list, make_threshold_table) %>%
   bind_rows()
 
-# this does not need to be a yaml solution
-sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
-
-saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
+saveRDS(threshold_lookup, 'data/summary_stats/threshold_lookup.RDS')
 ```
 
 #### Add flagging functions
@@ -95,6 +92,10 @@ Add flagging functions for each df in all_data_summary_list
 Pass the dfs in all_data_summary_stats_list through the flagging functions:
 
 ```{r}
+# this does not need to be a yaml solution
+# reading this in so it works for our add_spec_flag function, but this will change
+sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
+
 all_data_flagged <- map(all_data_summary_stats_list, function(data) {
   data %>%
     add_field_flag() %>%
@@ -108,6 +109,7 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
 })
 
 saveRDS(all_data_flagged, 'data/flagged/all_data_flagged.RDS')
+# saveRDS(all_data_flagged %>% bind_rows(), 'data/flagged/all_data_flagged_bound.RDS')
 write_feather(all_data_flagged %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
 ```
 

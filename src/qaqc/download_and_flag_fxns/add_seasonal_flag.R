@@ -19,7 +19,7 @@ add_seasonal_flag <- function(df) {
            site = site.x,
            parameter = parameter.x) %>%
     # ... flag obs that are outside the seasonal 1-99 percentile range:
-    add_flag((mean < t_mean01 | mean > t_mean99), paste0("outside of seasonal range")) %>%
+    add_flag((mean < t_mean01 | mean > t_mean99), "outside of seasonal range") %>%
     # flag obs whose slope is greater than the 99th percentile range
     add_flag((slope_ahead >= t_slope_behind_99 | slope_behind >= t_slope_behind_99), "slope violation") %>%
     # ... flag obs that are outside of the rolling mean times 3 sd's of the 1-99 percentile seasonal values
