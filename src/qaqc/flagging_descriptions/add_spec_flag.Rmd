@@ -1,0 +1,91 @@
+---
+title: "Add Sensor Specifications Flag"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    number_sections: true
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
+```
+
+```{r, include=FALSE}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "kableExtra"), package_loader)
+```
+
+# `add_spec_flag()`
+
+This function will add a flag if a data point's value falls outside of In Situ's sensor range specifications.
+
+```{r}
+add_spec_flag <- function(df){
+
+  # get the parameter from the parameter column in the df of interest
+  parameter_name <- unique(na.omit(df$parameter))
+  # Pull the sensor specification range from the yaml file
+  sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
+  sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
+
+  df <- df %>%
+    add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
+             paste("outside of sensor specification range")) %>%
+
+    return(df)
+
+}
+```
+- `parameter_name` = The sensor under evaluation for that data point.
+- `sensor_min` = The lower limit for the sensor.
+- `sensor_max` = The upper limit for the sensor.
+- `"outside of sensor specification range"` = Flag descriptor inserted into the `flag` column.
+
+# Analysis
+```{r, echo=FALSE}
+sd_flag_data <- read_csv("data/flag_report.csv") %>% 
+  filter(str_detect(flag, "sensor specification range"),
+         !(parameter %in% c("Baro", "Battery Level", "External Voltage")),
+         data_points_flagged_percentage_sans_na > 0 | dates_flagged_percentage_sans_na > 0
+         ) %>% 
+  select(Site = site, 
+         Parameter = parameter,
+         Flag = flag, 
+         `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
+         `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
+
+kable(sd_flag_data, format = "markdown", align = "c")
+```
+
+# Examples:
+```{r, eval=FALSE, include=FALSE}
+# pull in
+summary_data <- readRDS('data/summary_stats/all_data_summary_stats_list.RDS')
+summary_data_flagged <- map(summary_data, add_spec_flag)
+# explore
+spec_plots <- stack_flag_plots("legacy", "Turbidity", "outside of sensor specification range", summary_data_flagged)
+# spec_plots
+# good example
+example_plot_good <- spec_plots[[3]]
+ggsave(filename = 'data/QAQC_images/flag_examples/spec_good_example.png',
+       plot = example_plot_good,
+       height = 8, width = 10)
+# bad examples
+example_plot_bad <- spec_plots[[8]]
+ggsave(filename = 'data/QAQC_images/flag_examples/spec_bad_example.png',
+       plot = example_plot_bad,
+       height = 8, width = 10)
+```
+## Example of sensor specification flag working properly
+!["outside of sensor specification range" flag example](../../../data/QAQC_images/flag_examples/spec_good_example.png)
+
+## Example of sensor specification flag working improperly
+!["outside of sensor specification range" flag example](../../../data/QAQC_images/flag_examples/spec_bad_example.png)
+
+- Since we include these values in our statistical analysis of the data, our data is being skewed.

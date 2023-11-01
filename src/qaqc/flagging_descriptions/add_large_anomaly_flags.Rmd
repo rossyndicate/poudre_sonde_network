@@ -1,0 +1,106 @@
+---
+title: "Add Seasonal Flag"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    number_sections: true
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
+```
+
+```{r, include=FALSE}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "kableExtra"), package_loader)
+```
+
+# `add_large_anomaly_flag()`
+
+This function uses a 24 hour rolling window of data points with the data point of interest at its center. If more than half of the data points in the 24 hour window have been flagged the data point of interest will be flagged with "24hr anomaly flag".
+
+After a point has been determined to fall in the center of a 24 hour data anomaly, the function will check if that point itself is part of another 24hr anomaly. This is done by looking for "24hr anomaly flags" within the 48 points behind and ahead of it. If that flag is detected within that window, an "anomaly window" will also be added to that point.
+
+- cases that should result in 0 in flag_binary column:
+  - only "24hr anomaly"
+  - only "anomaly window"
+  - only "24hr anomaly" and "anomaly window"
+  - only "missing data"
+  - only "sonde not employed" and "missing data"
+  - only "missing data" and "anomaly window"
+  - only "missing data" and "24hr anomaly"
+  - only "sonde not employed", "missing data", and "anomaly window"
+  - only "site visit", "missing data", "24hr anomaly", and "anomaly window"
+  - only "sv window", "missing data", "24hr anomaly", and "anomaly window"
+
+```{r}
+add_large_anomaly_flag <- function(df) {
+  
+  flag_string <- "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window|
+                  missing data|sonde not employed;\\nmissing data|
+                  missing data;\\nanomaly window|missing data;\\n24hr anomaly|
+                  sonde not employed;\nmissing data;\nanomaly window|
+                  missing data;\n24hr anomaly;\nanomaly window|
+                  site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
+                  sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
+
+  df <- df %>%
+    mutate(flag_binary = ifelse((is.na(flag) | str_detect(flag, flag_string)), 0, 1),
+           roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>%
+    add_flag((roll_bin >= (97*0.5)), "24hr anomaly")
+
+  for (i in 1:48) {
+    df <- df %>%
+      add_flag((!str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>%
+      add_flag((!str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window")
+  }
+  return(df)
+}
+```
+
+## Add `"24hr anomaly"` flag.
+**The 24hr anomaly flag is triggered when the data point of interest lies within a period of 24 hours where more than 50% of the data points have some sort of flag that is not included in the `flag_string` object.**
+```{r, eval=FALSE}
+add_flag((roll_bin >= (97*0.5)), 
+         "24hr anomaly")
+```
+- `roll_bin` = The rolling sum of `flag_binary` for that data point. 
+- `"24hr anomaly"` = Flag descriptor inserted into the `flag` column.
+
+## Add `"anomaly window"` flag.
+**The anomly window flag is triggered when the data point of interest lies within the range of a 24hr anomaly window.**
+
+- If the current data point's flag column does not have "anomaly window" already, it will check 48 data points before and after for a "24hr anomaly" flag, and if it detects it will tack on the "anomaly window" flag to the flag column of the current data point. 
+```{r, eval=FALSE}
+for (i in 1:48) {
+    df <- df %>%
+      add_flag((!str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), 
+               "anomaly window") %>%
+      add_flag((!str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), 
+               "anomaly window")
+  }
+```
+- `"anomly window"` = Flag descriptor inserted into the `flag` column.
+
+# Analysis
+```{r, echo=FALSE}
+sd_flag_data <- read_csv("data/flag_report.csv") %>% 
+  filter(flag %in% c("24hr anomaly", "anomaly window"),
+         !(parameter %in% c("Baro", "Battery Level", "External Voltage")),
+         data_points_flagged_percentage_sans_na > 0 | dates_flagged_percentage_sans_na > 0
+         ) %>% 
+  select(Site = site, 
+         Parameter = parameter,
+         Flag = flag, 
+         `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
+         `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
+
+kable(sd_flag_data, format = "markdown", align = "c")
+```
+# Examples

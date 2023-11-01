@@ -13,9 +13,9 @@ knitr::opts_chunk$set(echo = TRUE)
 source("src/package_loader.R")
 lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis", "janitor"), package_loader)
 
-sapply(list.files("src/explore_and_fix_fxs/verification_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
+sapply(list.files("src/qaqc/explore_and_fix_fxns/verification_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
 
-sapply(list.files("src/explore_and_fix_fxs/plotting_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
+sapply(list.files("src/qaqc/explore_and_fix_fxns/plotting_functions", pattern = "*.R", full.names = TRUE), source, .GlobalEnv)
 ```
 
 #### Add verification column
@@ -23,6 +23,16 @@ sapply(list.files("src/explore_and_fix_fxs/plotting_functions", pattern = "*.R",
 all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
 all_data_flagged <- map(all_data_flagged, add_verification_column)
 ```
+
+#### Generate flag report
+```{r}
+flag_report <- map(all_data_flagged, generate_flag_report) %>%
+  bind_rows()
+
+saveRDS(flag_report, 'data/flag_report.RDS')
+write_csv(flag_report, 'data/flag_report.csv')
+```
+
 
 #### Visualize the flags
 
@@ -40,17 +50,17 @@ plotly_plot <- plotly::ggplotly(ggplot() +
 
 Visualizing daily plots
 ```{r, fig.width=12, fig.height=7}
-generate_daily_flag_plots("lincoln", "Chl-a Fluorescence", "outside sd range")
+# generate_daily_flag_plots("archery", "Temperature", "missing data", df_list = all_data_flagged)
 ```
 
 Visualizing weekly plots
 ```{r, fig.width=12, fig.height=7}
-#generate_weekly_flag_plots("archery", "Temperature", "slope violation")
+# generate_weekly_flag_plots("archery", "Temperature", "slope violation", df_list = all_data_flagged)
 ```
 
 Stack the weekly and daily plots
 ```{r, fig.width=12, fig.height=12}
-# stack_flag_plots("boxelder", "Turbidity", "outside sd range")
+# stack_flag_plots("archery", "Temperature", "missing data", all_data_flagged)
 ```
 
 Histograms of all parameter/site combos

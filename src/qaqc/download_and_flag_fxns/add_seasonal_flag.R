@@ -15,6 +15,9 @@ add_seasonal_flag <- function(df) {
   df <- df %>%
     # Using seasonal cut-offs...
     left_join(lookup, by = "season") %>%
+    select(!c(site.y, parameter.y),
+           site = site.x,
+           parameter = parameter.x) %>%
     # ... flag obs that are outside the seasonal 1-99 percentile range:
     add_flag((mean < t_mean01 | mean > t_mean99), paste0("outside of seasonal range")) %>%
     # flag obs whose slope is greater than the 99th percentile range

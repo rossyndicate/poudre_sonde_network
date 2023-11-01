@@ -18,7 +18,7 @@ Load necessary packages:
 source("src/package_loader.R")
 lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis", "janitor"), package_loader)
 
-walk(list.files('src/qaqc/functions', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
+walk(list.files('src/qaqc/download_and_flag_fxns', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
 ```
 
 # Import and collate data
@@ -85,6 +85,7 @@ threshold_lookup <- map(all_data_summary_stats_list, make_threshold_table) %>%
 # this does not need to be a yaml solution
 sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
 
+saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
 ```
 
 #### Add flagging functions
@@ -100,6 +101,7 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
     add_spec_flag() %>%
     add_seasonal_flag() %>%
     add_na_flag() %>%
+    add_repeat_flag() %>% 
     add_large_anomaly_flag() %>%
     mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
     relocate(mean_public, .after = "mean")

@@ -1,5 +1,4 @@
 # Add a flag to the `flag` column of a dataframe based on a condition and a description of the flag.
-#
 # @param df A dataframe with a `flag` column.
 # @param condition_arg A logical statement that is evaluated in the context of the dataframe.
 # @param description_arg A string that is added to the flag column if the condition is true.

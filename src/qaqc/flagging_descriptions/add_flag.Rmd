@@ -1,0 +1,37 @@
+---
+title: "Add Flag Method"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    number_sections: true
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
+```
+
+```{r, include=FALSE}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "kableExtra"), package_loader)
+```
+
+**Add a flag to the `flag` column of a dataframe based on a condition and a description of the flag.**
+
+```{r, eval=FALSE}
+add_flag <- function(df, condition_arg, description_arg) {
+  df <- df %>% mutate(flag = case_when(
+    {{condition_arg}} ~ if_else(is.na(flag), paste(description_arg), paste(flag, description_arg, sep = ";\n")),
+    TRUE ~ flag))
+  return(df)
+}
+```
+
+- `df` = A data frame that is being flagged.
+- `condition_arg` = Logical statement that is evaluated in the context of the dataframe.
+- `description_arg` = A string that is added to the flag column if the condition is true.
