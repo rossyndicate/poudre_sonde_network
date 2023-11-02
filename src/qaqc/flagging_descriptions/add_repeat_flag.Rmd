@@ -48,7 +48,9 @@ sd_flag_data <- read_csv("data/flag_report.csv") %>%
          `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
          `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
 
-kable(sd_flag_data, format = "markdown", align = "c")
+kable(sd_flag_data, format = "html", align = "c") %>%
+  kable_styling(position='center') %>%
+  scroll_box(width='800px',height='500px')
 ```
 
 # Examples:

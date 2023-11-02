@@ -53,7 +53,7 @@ add_seasonal_flag <- function(df) {
            site = site.x,
            parameter = parameter.x) %>%
     # ... flag obs that are outside the seasonal 1-99 percentile range:
-    add_flag((mean < t_mean01 | mean > t_mean99), paste0("outside of seasonal range")) %>%
+    add_flag((mean < t_mean01 | mean > t_mean99), "outside of seasonal range") %>%
     # ... flag obs whose slope is greater than the 99th percentile range
     add_flag((slope_ahead >= t_slope_behind_99 | slope_behind >= t_slope_behind_99), "slope violation") %>%
     # ... flag obs that are outside of the rolling mean times 3 sd's of the 1-99 percentile seasonal values
@@ -63,6 +63,8 @@ add_seasonal_flag <- function(df) {
 
 }
 ```
+
+---
 
 ## Add `"outside of seasonal range"` flag.
 **The seasonal range flag is triggered when the mean value of a data point exceeds the 1st or 99th quantiles of the mean data for that specific site, parameter, and season combination.**
@@ -97,6 +99,8 @@ add_flag((mean <= rollavg - (3 * t_sd_1090) | mean >= rollavg + (3 * t_sd_1090))
 - `t_sd_1090` = The seasonal standard deviation within the 10th and 90th quantiles for the season.
 - `"outside sd range"` = Flag descriptor inserted into the `flag` column.
 
+---
+
 # Analysis:
 ```{r, echo=FALSE}
 sd_flag_data <- read_csv("data/flag_report.csv") %>% 
@@ -110,35 +114,122 @@ sd_flag_data <- read_csv("data/flag_report.csv") %>%
          `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
          `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
 
-kable(sd_flag_data, format = "markdown", align = "c")
+kable(sd_flag_data, format = "html", align = "c") %>%
+  kable_styling(position='center') %>%
+  scroll_box(width='800px',height='500px')
 ```
+
+---
+
 # Examples:
+
+---
+
+2. `"slope violation"`
+3. `"outside sd range"`
+
+```{r, include=FALSE, eval=FALSE}
+# pull in
+summary_data <- readRDS('data/summary_stats/all_data_summary_stats_list.RDS')
+
+add_threshold <- function(df) {
+  
+  site_name <- unique(na.omit(df$site))
+  parameter_name <- unique(na.omit(df$parameter))
+  
+  lookup <- threshold_lookup %>%
+    filter(site == site_name & parameter == parameter_name)
+  
+  df <- df %>%
+    left_join(lookup, by = "season") %>%
+    select(!c(site.y, parameter.y),
+           site = site.x,
+           parameter = parameter.x)
+}
+
+summary_data <- map(summary_data, add_threshold)
+
+# add flags
+seasonal_range_data <- map(summary_data, ~add_flag(.x, (mean < t_mean01 | mean > t_mean99), "outside of seasonal range"))
+slope_violation_data <- map(summary_data, ~add_flag(.x, (slope_ahead >= t_slope_behind_99 | slope_behind >= t_slope_behind_99), "slope violation"))
+sd_data <- map(summary_data, ~add_flag(.x, (mean <= rollavg - (3 * t_sd_0199) | mean >= rollavg + (3 * t_sd_0199)), "outside sd range"))
+# explore
+seasonal_range_plots <- stack_flag_plots("archery", "Temperature", "outside of seasonal range", seasonal_range_data)
+slope_violation_plots <- stack_flag_plots("timberline", "Temperature", "slope violation", slope_violation_data)
+sd_plots <- stack_flag_plots("timberline", "Temperature", "outside sd range", sd_data)
+```
+
+## outside of seasonal range
+```{r, include=FALSE, eval=FALSE}
+# good example
+example_plot_good <- seasonal_range_plots[[28]]
+ggsave(filename = 'data/QAQC_images/flag_examples/range_good_example.png',
+       plot = example_plot_good,
+       height = 8, width = 10)
+# bad examples
+example_plot_bad <- tail(seasonal_range_plots, n = 1)[[1]]
+ggsave(filename = 'data/QAQC_images/flag_examples/range_bad_example.png',
+       plot = example_plot_bad,
+       height = 8, width = 10)
+```
+
+### Good
+![Example of outside of seasonal range flag working properly](../../../data/QAQC_images/flag_examples/range_good_example.png)
+
+- These points are flagged even though they are pushing the rolling average up.
+
+### Bad
+![Example of outside of seasonal range flag working improperly](../../../data/QAQC_images/flag_examples/range_bad_example.png)
+
+- These points are being flagged even though they are legitimate.
+
+---
+
+## slope violation
 ```{r, include=FALSE, eval=FALSE}
 # pull in
 summary_data <- readRDS('data/summary_stats/all_data_summary_stats_list.RDS')
 summary_data_flagged <- map(summary_data, add_seasonal_flag)
 # explore
-seasonal_plots <- stack_flag_plots("legacy", "Turbidity", "outside of seasonal range", summary_data_flagged)
-seasonal_plots
+slope_violation_plots1 <- stack_flag_plots("timberline", "Turbidity", "slope violation", summary_data_flagged)
+slope_violation_plots1
+slope_violation_plots2 <- stack_flag_plots("timberline", "Temperature", "slope violation", summary_data_flagged)
+slope_violation_plots2
 # good example
-example_plot_good <- spec_plots[[3]]
-ggsave(filename = 'data/QAQC_images/flag_examples/spec_good_example.png',
+example_plot_good <- slope_violation_plots1[[14]]
+ggsave(filename = 'data/QAQC_images/flag_examples/range_good_example.png',
        plot = example_plot_good,
        height = 8, width = 10)
 # bad examples
-example_plot_bad <- spec_plots[[8]]
-ggsave(filename = 'data/QAQC_images/flag_examples/spec_bad_example.png',
+example_plot_bad <- slope_violation_plots2[[9]]
+ggsave(filename = 'data/QAQC_images/flag_examples/range_bad_example.png',
        plot = example_plot_bad,
        height = 8, width = 10)
 ```
 
-## Good
+### Good
+![Example of slope violation flag working properly](../../../data/QAQC_images/flag_examples/range_good_example.png)
+
+- This point is flagged for a slope violation.
+- This point would not have been capture by the sd or range limit flag. 
+
+### Bad
+![Example of slope violation flag working properly](../../../data/QAQC_images/flag_examples/range_bad_example.png)
+
+---
+
+## outside sd range
+
+- This point was flagged despite being legitimate.
+
+### Good
 ![Example of sd flag working properly](../../../data/QAQC_images/flag_examples/timberline_turb_sd_flag_good.png)
+
 - Extreme outliers will be detected and deemed unsuitable.
 - This flag is often associated with the seasonal range flag.
 - This flag is often associated with the slope violation flag.
 
-## Bad
+### Bad
 ![Example of sd flag working improperly](../../../data/QAQC_images/flag_examples/timberline_turb_sd_flag_bad.png)
 
 - When several points are following a suspicious trend they are captured in the rolling average window and do not get flagged.

@@ -3,6 +3,7 @@
 
 add_spec_flag <- function(df){
 
+  # make this a non yaml solution and add it to the threshold table
   # get the parameter from the parameter column in the df of interest
   parameter_name <- unique(na.omit(df$parameter))
   # Pull the sensor specification range from the yaml file
