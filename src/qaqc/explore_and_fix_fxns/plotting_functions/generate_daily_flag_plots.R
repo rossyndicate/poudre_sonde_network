@@ -3,7 +3,7 @@
 # @param site_arg A string of the site name.
 # @param parameter_arg A string of the parameter name.
 # @param flag_arg A string of the flag name.
-# @param df_list A list of dataframes that have been flagged.
+# @param df_list A list of data frames that have been flagged.
 # @return A list of daily plots for site-parameters that have been tagged by a specific flag.
 # @examples
 # generate_daily_flag_plots(site_arg = "archery", parameter_arg = "Actual Conductivity", flag_arg = "outside of Actual Conductivity sensor specification range", df_list = df_list)

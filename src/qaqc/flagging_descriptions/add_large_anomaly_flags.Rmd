@@ -90,6 +90,7 @@ for (i in 1:48) {
 
 # Analysis
 ```{r, echo=FALSE}
+# table
 sd_flag_data <- read_csv("data/flag_report.csv") %>% 
   filter(flag %in% c("24hr anomaly", "anomaly window"),
          !(parameter %in% c("Baro", "Battery Level", "External Voltage")),
@@ -101,6 +102,98 @@ sd_flag_data <- read_csv("data/flag_report.csv") %>%
          `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
          `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
 
-kable(sd_flag_data, format = "markdown", align = "c")
+kable(sd_flag_data, format = "html", align = "c") %>%
+  kable_styling(position='center') %>%
+  scroll_box(width='800px',height='500px')
 ```
-# Examples
+
+```{r, echo=FALSE}
+# pie chart
+# pie <- grouped_more %>%
+#   filter(grouped=="Colorimetry") %>%
+#   group_by(method_status) %>%
+#   summarize(count=n()) %>%
+#   ungroup() %>%
+#   mutate(method_status=ifelse(is.na(method_status), "Ambiguous Colorimetry", method_status))
+# pie <- pie %>% mutate(method_status = factor(x = method_status, levels = method_status)) %>% 
+#   mutate(prop = count/sum(pie$count)) %>%  
+#   mutate(ypos = cumsum(prop)- 0.5*prop) %>%
+#   mutate(legend = paste0(method_status, " (", percent(prop), ")"))
+# 
+# ggplot(data=pie, aes(x="", y=count, fill=legend)) +
+#   geom_bar(stat="identity", width=1, color="white") +
+#   coord_polar("y", start=0) +
+#   scale_fill_manual(values=c("#009E73","#E69F00","#56B4E9","#CC79A7","#0072B2","#F0E442","#D55E00")) +
+#   guides(fill=guide_legend(title="Colorimetry Techniques")) +
+#   theme_void() + # remove background, grid, numeric label
+#   theme(text = element_text(size = 20))
+```
+
+
+# Examples:
+```{r}
+# make custom functions to explain them
+
+add_large_anomaly_flag <- function(df) {
+  # flag strings that will result in 0 in flag binary ----
+  flag_string <- "^(24hr anomaly|
+    anomaly window|
+    24hr anomaly;\\nanomaly window|
+    missing data|
+    sonde not employed;\\nmissing data|
+    missing data;\\nanomaly window|
+    missing data;\\n24hr anomaly|
+    sonde not employed;\nmissing data;\nanomaly window|
+    missing data;\n24hr anomaly;\nanomaly window|
+    site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
+    sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
+  
+  # add 24hr anomaly flag
+  df <- df %>%
+    mutate(flag_binary = ifelse((is.na(flag) | str_detect(flag, flag_string)), 0, 1),
+           roll_bin = data.table::frollsum(flag_binary, n = 97, align = 'center', na.rm = F, fill = NA_real_)) %>%
+    add_flag((roll_bin >= (97*0.5)), "24hr anomaly") # we can tweak the lower limit
+  
+  # add anomaly window flag
+  # Mutate here!
+  for (i in 1:48) {
+    df <- df %>%
+      add_flag((!str_detect(flag, "anomaly window") & lag(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window") %>%
+      add_flag((!str_detect(flag, "anomaly window") & lead(str_detect(flag, "24hr anomaly"), n = i)), "anomaly window")
+  }
+  return(df)
+}
+```
+
+---
+
+## 24hr anomaly
+```{r, include=FALSE, eval=FALSE}
+# explore
+daily_anomaly_plots1 <- stack_flag_plots("timberline", "Turbidity", "24hr anomaly", all_data_flagged)
+daily_anomaly_plots1
+daily_anomaly_plots2 <- stack_flag_plots("timberline", "Temperature", "24hr anomaly", all_data_flagged)
+daily_anomaly_plots2
+# good example
+example_plot_good <- daily_anomaly_plots1[[10]]
+ggsave(filename = 'data/QAQC_images/flag_examples/daily_anomaly_good_example.png',
+       plot = example_plot_good,
+       height = 8, width = 10)
+# bad examples
+example_plot_bad <- daily_anomaly_plots2[[4]]
+ggsave(filename = 'data/QAQC_images/flag_examples/daily_anomaly_bad_example.png',
+       plot = example_plot_bad,
+       height = 8, width = 10)
+```
+
+### Good
+![Example of sd flag working properly](../../../data/QAQC_images/flag_examples/daily_anomaly_good_example.png)
+
+- Here we see that a large swath of bad data is being flagged
+
+### Bad
+![Example of sd flag working improperly](../../../data/QAQC_images/flag_examples/daily_anomaly_bad_example.png)
+
+- These points should not be flagged.
+
+---

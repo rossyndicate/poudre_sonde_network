@@ -46,6 +46,8 @@ add_field_flag <- function(df) {
 }
 ```
 
+---
+
 ## Add `"sonde not employed"` flag.
 **The sonde not employed flag is triggered when the `sonde_employed` column is equal to one. The `sonde_employed` column is generated in the `clean_field_notes` function and uses the `sensor_pulled` and `sensor_deployed` columns from the original field notes**
 ```{r, eval=FALSE}
@@ -69,6 +71,8 @@ add_flag(lag(str_detect(flag, "site visit"), n = [1/2/3]),
          "sv window")
 ```
 
+---
+
 # Analysis
 ```{r, echo=FALSE}
 sd_flag_data <- read_csv("data/flag_report.csv") %>% 
@@ -82,7 +86,88 @@ sd_flag_data <- read_csv("data/flag_report.csv") %>%
          `% of Total Data Points Flagged` = data_points_flagged_percentage_sans_na,
          `% of Total Dates Flagged` = dates_flagged_percentage_sans_na)
 
-kable(sd_flag_data, format = "markdown", align = "c")
+kable(sd_flag_data, format = "html", align = "c") %>%
+  kable_styling(position='center') %>%
+  scroll_box(width='800px',height='500px')
 ```
 
-# Examples
+---
+
+# Examples:
+
+---
+
+```{r, include=FALSE, eval=FALSE}
+# pull in data and separate flags
+summary_data <- readRDS('data/summary_stats/all_data_summary_stats_list.RDS')
+
+sonde_flag_data <- map(summary_data, ~add_flag(.x, sonde_employed == 1, "sonde not employed"))
+site_visit_flag_data <- map(summary_data, ~add_flag(.x, as.character(last_site_visit) == as.character(DT_round), "site visit"))
+
+sv_flag <- function(df) {
+  for (i in 1:3) {
+    df <- df %>%
+      add_flag(lag(str_detect(flag, "site visit"), n = i), "sv window") %>%
+      add_flag(lead(str_detect(flag, "site visit"), n = i), "sv window")
+  }
+  return(df)
+}
+
+sv_window_flag_data <- map(summary_data, ~add_flag(.x, as.character(last_site_visit) == as.character(DT_round), "site visit") %>% 
+                             sv_flag)
+
+# plots to explore
+sonde_flag_plots <- stack_flag_plots("archery", "Temperature", "sonde not employed", sonde_flag_data)
+site_visit_plots <- stack_flag_plots("archery", "Temperature", "site visit", site_visit_flag_data)
+sv_window_plots <- stack_flag_plots("archery", "Temperature", "sv window", sv_window_flag_data)
+```
+
+## sonde not employed
+```{r, include=FALSE, eval=FALSE}
+# explore
+# sonde_flag_plots
+# good example
+example_plot_good <- tail(sonde_flag_plots, n = 1)[[1]]
+ggsave(filename = 'data/QAQC_images/flag_examples/sonde_flag_good_example.png',
+       plot = example_plot_good,
+       height = 8, width = 10)
+```
+
+### Good
+![Example of sonde not employed flag working properly](../../../data/QAQC_images/flag_examples/sonde_flag_good_example.png)
+- The log was started when the sonde was out of the water, and in the field notes we wrote down when it went into the water.
+
+---
+
+## site visit
+```{r, include=FALSE, eval=FALSE}
+# explore
+# site_visit_plots
+# good example
+example_plot_good <- site_visit_plots[[18]]
+ggsave(filename = 'data/QAQC_images/flag_examples/site_visit_good_example.png',
+       plot = example_plot_good,
+       height = 8, width = 10)
+```
+
+### Good
+![Example of site visit flag working properly](../../../data/QAQC_images/flag_examples/site_visit_good_example.png)
+- We can see the data acting strange in relation to the information that we have in our field notes.
+
+---
+
+## sv window
+```{r, include=FALSE, eval=FALSE}
+# explore
+# sv_window_plots
+# good example
+example_plot_good <- sv_window_plots[[18]]
+ggsave(filename = 'data/QAQC_images/flag_examples/sv_window_good_example.png',
+       plot = example_plot_good,
+       height = 8, width = 10)
+```
+
+### Good
+![Example of sv window flag working properly](../../../data/QAQC_images/flag_examples/sv_window_good_example.png)
+- We can see the data acting strange in relation to the information that we have in our field notes.
+- The data points surrounding the site visit were also flagged.
