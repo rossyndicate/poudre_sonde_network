@@ -1,0 +1,119 @@
+
+```{r}
+raw_example_search <- stack_flag_plots("river bluffs", "DO", NULL, all_data_flagged)
+```
+
+```{r ggplot code for flagged data, fig.height=7, fig.width=12}
+flag_start_date <- ymd_hms("2023-04-13 00:00:00")
+flag_end_date <- ymd_hms("2023-04-17 00:00:00")
+
+flag_plot_data <- all_data_flagged$`river bluffs-DO` %>% 
+  filter(DT_round >= flag_start_date & DT_round <= flag_end_date)
+
+y_min <- flag_plot_data$m_mean01[1]
+y_max <- flag_plot_data$m_mean99[1]
+
+flag_plot <- ggplot(data = flag_plot_data) +
+  geom_point(aes(x=DT_round, y = mean, color = flag)) +
+  # exceeding sd visualized
+  geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+  geom_ribbon(aes(ymin = rollavg - m_sd_0199, ymax = rollavg + m_sd_0199, x = DT_round), alpha = 0.1, color = NA) +
+  geom_ribbon(aes(ymin = rollavg - (m_sd_0199*2), ymax = rollavg + (m_sd_0199*2), x = DT_round), alpha = 0.1, color = NA) +
+  geom_ribbon(aes(ymin = rollavg - (m_sd_0199*3), ymax = rollavg + (m_sd_0199*3), x = DT_round), alpha = 0.1, color = NA) +
+  # exceeding range limits visualized
+  # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
+  geom_hline(yintercept = y_min, color = "red") +
+  geom_hline(yintercept = y_max, color = "red") +
+  theme_bw() +
+  theme(legend.position = 'bottom') +
+  ggtitle(paste("River Bluffs\n", "Dissolved Oxygen\n", "4/13/2023-04/17/2023")) +
+  labs(x = "Datetime",
+       y = "Mean")
+
+ggsave(filename = 'data/QAQC_images/presentation_images/flag_plot.png',
+       plot = flag_plot,
+       height = 8, width = 12)
+```
+
+```{r ggplot code for raw data, fig.height=7, fig.width=12}
+# ggplot code for raw data:
+start_date <- ymd_hms("2023-04-11 00:00:00")
+end_date <- ymd_hms("2023-04-19 00:00:00")
+
+raw_plot_data <- all_data_summary_stats_list$`river bluffs-DO` %>% 
+  filter(DT_round >= start_date & DT_round <= end_date)
+
+raw_plot <- ggplot(data = raw_plot_data) +
+  geom_point(aes(x=DT_round, y = mean, color = "grey")) +
+  # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
+  geom_hline(yintercept = y_min, color = "red") +
+  geom_hline(yintercept = y_max, color = "red") +
+  theme_bw() +
+  theme(legend.position = 'bottom') +
+  ggtitle(paste("River Bluffs\n", "Dissolved Oxygen\n", "4/11/2023-04/18/2023")) +
+  labs(x = "Datetime",
+       y = "Mean")
+
+ggsave(filename = 'data/QAQC_images/presentation_images/raw_plot.png',
+       plot = raw_plot,
+       height = 8, width = 12)
+```
+
+```{r ggplot code for flagged data removed, fig.height=7, fig.width=12}
+start_date <- ymd_hms("2023-04-11 00:00:00")
+end_date <- ymd_hms("2023-04-19 00:00:00")
+
+flag_rm_plot_data <- all_data_flagged$`river bluffs-DO` %>% 
+  filter(DT_round >= start_date & DT_round <= end_date) %>% 
+  filter(is.na(flag)) %>% 
+  pad(by = "DT_round", interval = "15 min")
+
+flag_rm_plot <- ggplot(data = flag_rm_plot_data) +
+  geom_point(aes(x=DT_round, y = mean, color = flag)) +
+  # exceeding sd visualized
+  geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
+  geom_ribbon(aes(ymin = rollavg - m_sd_0199, ymax = rollavg + m_sd_0199, x = DT_round), alpha = 0.1, color = NA) +
+  geom_ribbon(aes(ymin = rollavg - (m_sd_0199*2), ymax = rollavg + (m_sd_0199*2), x = DT_round), alpha = 0.1, color = NA) +
+  geom_ribbon(aes(ymin = rollavg - (m_sd_0199*3), ymax = rollavg + (m_sd_0199*3), x = DT_round), alpha = 0.1, color = NA) +
+  # exceeding range limits visualized
+  # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
+  geom_hline(yintercept = y_min, color = "red") +
+  geom_hline(yintercept = y_max, color = "red") +
+  theme_bw() +
+  theme(legend.position = 'bottom') +
+  ggtitle(paste("River Bluffs\n", "Dissolved Oxygen\n", "4/11/2023-04/18/2023")) +
+  labs(x = "Datetime",
+       y = "Mean")
+
+ggsave(filename = 'data/QAQC_images/presentation_images/flag_rm_plot.png',
+       plot = flag_rm_plot,
+       height = 8, width = 12)
+```
+
+```{r ggplot code for aggregated data, fig.height=7, fig.width=12}
+start_date <- ymd_hms("2023-04-11 00:00:00")
+end_date <- ymd_hms("2023-04-19 00:00:00")
+
+aggregated_plot_data <- flag_rm_plot_data %>% 
+  filter(DT_round >= start_date & DT_round <= end_date) %>% 
+  filter(is.na(flag)) %>% 
+  group_by(DT_round = floor_date(DT_round, unit = "hour")) %>% 
+  summarize(hour_mean = mean(mean)) %>% 
+  ungroup()
+
+aggregated_plot <- ggplot(data = aggregated_plot_data) +
+  geom_point(aes(x=DT_round, y = hour_mean)) +
+  # exceeding sd visualized
+  # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
+  geom_hline(yintercept = y_min, color = "red") +
+  geom_hline(yintercept = y_max, color = "red") +
+  theme_bw() +
+  theme(legend.position = 'bottom') +
+  ggtitle(paste("River Bluffs\n", "Dissolved Oxygen\n", "4/11/2023-04/18/2023")) +
+  labs(x = "Datetime",
+       y = "Mean")
+
+ggsave(filename = 'data/QAQC_images/presentation_images/aggregated_data.png',
+       plot = aggregated_plot,
+       height = 8, width = 12)
+```
