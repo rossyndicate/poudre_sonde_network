@@ -4,6 +4,27 @@ raw_example_search <- stack_flag_plots("river bluffs", "DO", NULL, all_data_flag
 ```
 
 ```{r ggplot code for flagged data, fig.height=7, fig.width=12}
+# Need to make specific flags specific colors:
+flag_color_df <- data_frame(flag = c("sonde not employed","site visit","sv window",
+                              "sensor specification range","outside of seasonal range","slope violation",
+                              "outside sd range","repeated value","missing data",
+                              NA),
+                            flag_color = c("red","blue","green",
+                              "yellow","purple","orange",
+                              "teal","pink","brown",
+                              "grey"))
+
+point_aes_lookup <- data_frame(unique_flags = unique(flag_plot_data$flag)) %>% 
+  filter(!is.na(unique_flags)) %>% 
+  mutate(n_flags = str_count(unique_flags, ";\n")+1,
+         point_size = n_flags*2) %>% 
+  rowwise() %>% 
+  mutate(final_flag = tail(str_split(unique_flags, ";\n")[[1]], 1)) %>%
+  left_join(flag_color_df, by = c("final_flag" = "flag")) %>% 
+  arrange(n_flags)
+
+geom_point_layers # <-
+
 flag_start_date <- ymd_hms("2023-04-13 00:00:00")
 flag_end_date <- ymd_hms("2023-04-17 00:00:00")
 

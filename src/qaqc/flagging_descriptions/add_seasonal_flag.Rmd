@@ -103,6 +103,7 @@ add_flag((mean <= rollavg - (3 * t_sd_1090) | mean >= rollavg + (3 * t_sd_1090))
 
 # Analysis:
 ```{r, echo=FALSE}
+# table
 sd_flag_data <- read_csv("data/flag_report.csv") %>% 
   filter(flag %in% c("slope violation", "outside sd range") | str_detect(flag, "seasonal range"),
          !(parameter %in% c("Baro", "Battery Level", "External Voltage")),
@@ -119,14 +120,15 @@ kable(sd_flag_data, format = "html", align = "c") %>%
   scroll_box(width='800px',height='500px')
 ```
 
+```{r}
+#pie chart
+```
+
 ---
 
 # Examples:
 
 ---
-
-2. `"slope violation"`
-3. `"outside sd range"`
 
 ```{r, include=FALSE, eval=FALSE}
 # pull in
@@ -155,8 +157,8 @@ slope_violation_data <- map(summary_data, ~add_flag(.x, (slope_ahead >= t_slope_
 sd_data <- map(summary_data, ~add_flag(.x, (mean <= rollavg - (3 * t_sd_0199) | mean >= rollavg + (3 * t_sd_0199)), "outside sd range"))
 # explore
 seasonal_range_plots <- stack_flag_plots("archery", "Temperature", "outside of seasonal range", seasonal_range_data)
-slope_violation_plots <- stack_flag_plots("timberline", "Temperature", "slope violation", slope_violation_data)
-sd_plots <- stack_flag_plots("timberline", "Temperature", "outside sd range", sd_data)
+slope_violation_plots <- stack_flag_plots("archery", "Chl-a Fluorescence", "slope violation", slope_violation_data)
+# sd_plots <- stack_flag_plots("timberline", "Temperature", "outside sd range", sd_data)
 ```
 
 ## outside of seasonal range
@@ -187,34 +189,28 @@ ggsave(filename = 'data/QAQC_images/flag_examples/range_bad_example.png',
 
 ## slope violation
 ```{r, include=FALSE, eval=FALSE}
-# pull in
-summary_data <- readRDS('data/summary_stats/all_data_summary_stats_list.RDS')
-summary_data_flagged <- map(summary_data, add_seasonal_flag)
 # explore
-slope_violation_plots1 <- stack_flag_plots("timberline", "Turbidity", "slope violation", summary_data_flagged)
-slope_violation_plots1
-slope_violation_plots2 <- stack_flag_plots("timberline", "Temperature", "slope violation", summary_data_flagged)
-slope_violation_plots2
+# slope_violation_plots
 # good example
-example_plot_good <- slope_violation_plots1[[14]]
-ggsave(filename = 'data/QAQC_images/flag_examples/range_good_example.png',
+example_plot_good <- slope_violation_plots[[11]]
+ggsave(filename = 'data/QAQC_images/flag_examples/slope_violation_good_example.png',
        plot = example_plot_good,
        height = 8, width = 10)
 # bad examples
-example_plot_bad <- slope_violation_plots2[[9]]
-ggsave(filename = 'data/QAQC_images/flag_examples/range_bad_example.png',
+example_plot_bad <- slope_violation_plots[[1]]
+ggsave(filename = 'data/QAQC_images/flag_examples/slope_violation_bad_example.png',
        plot = example_plot_bad,
        height = 8, width = 10)
 ```
 
 ### Good
-![Example of slope violation flag working properly](../../../data/QAQC_images/flag_examples/range_good_example.png)
+![Example of slope violation flag working properly](../../../data/QAQC_images/flag_examples/slope_violation_good_example.png)
 
 - This point is flagged for a slope violation.
 - This point would not have been capture by the sd or range limit flag. 
 
 ### Bad
-![Example of slope violation flag working properly](../../../data/QAQC_images/flag_examples/range_bad_example.png)
+![Example of slope violation flag working properly](../../../data/QAQC_images/flag_examples/slope_violation_bad_example.png)
 
 ---
 

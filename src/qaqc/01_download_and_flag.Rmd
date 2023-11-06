@@ -103,7 +103,7 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
     add_seasonal_flag() %>%
     add_na_flag() %>%
     add_repeat_flag() %>% 
-    add_large_anomaly_flag() %>%
+    # add_large_anomaly_flag() %>%
     mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
     relocate(mean_public, .after = "mean")
 })
