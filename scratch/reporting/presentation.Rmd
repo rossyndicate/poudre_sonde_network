@@ -1,50 +1,94 @@
+---
+title: "Untitled"
+author: "Katie Willi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
 
 ```{r}
-raw_example_search <- stack_flag_plots("river bluffs", "DO", NULL, all_data_flagged)
+source("src/package_loader.R")
+lapply(c("tidyverse"), package_loader)
+
+
+all_data_flagged <- readRDS("data/flagged/all_data_flagged.RDS")
+
+# flagger <- function(data){
+#   
+#   data %>%
+#     mutate(missing = ifelse(grepl("missing data", flag), "white", NA),
+#            not_employed = ifelse(grepl("sonde not employed", flag), "black", NA),
+#            site_visit = ifelse(grepl("site visit|sv window", flag), "#56B4E9", NA),
+#            slope_violation = ifelse(grepl("slope violation", flag), "#009E73", NA),
+#            repeated_value = ifelse(grepl("repeated value", flag), "#F0E442", NA),
+#            outside_seasonal_range = ifelse(grepl("outside of seasonal range", flag), "#0072B2", NA),
+#            outside_sd_range = ifelse(grepl("outside sd range", flag), "#D55E00", NA),
+#            outside_sensor_spec = ifelse(grepl("outside of sensor specification range", flag), "#CC79A7", NA))
+#   
+# }
+
+color_code <- tibble(flag = c("missing data", "sonde not employed", "site visit", "sv window", "slope violation", 
+                              "repeated value", "outside of seasonal range", "outside sd range", "outside of sensor specification range"),
+                     color = c("white", "black", "#56B4E9", "#56B4E9", "#D55E00",
+                               "#F0E442", "#0072B2", "#009E73", "#CC79A7"), # "#E69F00"),
+                     size = c(1, 1, 2, 2, 3,
+                              3.5, 4, 5, 5.5))
+
+
+color_joiner <-function(data, flag_type) {
+  
+  data %>%
+    filter(grepl(flag_type, flag)) %>%
+    mutate(flag = flag_type) %>%
+    left_join(color_code, by = "flag")
+  
+}  
+
+
+#raw_example_search <- stack_flag_plots("river bluffs", "DO", NULL, all_data_flagged) 
 ```
 
 ```{r ggplot code for flagged data, fig.height=7, fig.width=12}
-# Need to make specific flags specific colors:
-flag_color_df <- data_frame(flag = c("sonde not employed","site visit","sv window",
-                              "sensor specification range","outside of seasonal range","slope violation",
-                              "outside sd range","repeated value","missing data",
-                              NA),
-                            flag_color = c("red","blue","green",
-                              "yellow","purple","orange",
-                              "teal","pink","brown",
-                              "grey"))
+#flag_start_date <- ymd_hms("2023-04-13 00:00:00")
+#flag_end_date <- ymd_hms("2023-04-17 00:00:00")
 
-point_aes_lookup <- data_frame(unique_flags = unique(flag_plot_data$flag)) %>% 
-  filter(!is.na(unique_flags)) %>% 
-  mutate(n_flags = str_count(unique_flags, ";\n")+1,
-         point_size = n_flags*2) %>% 
-  rowwise() %>% 
-  mutate(final_flag = tail(str_split(unique_flags, ";\n")[[1]], 1)) %>%
-  left_join(flag_color_df, by = c("final_flag" = "flag")) %>% 
-  arrange(n_flags)
+flag_start_date <- ymd_hms("2023-04-11 00:00:00")
+flag_end_date <- ymd_hms("2023-04-30 00:00:00")
 
-geom_point_layers # <-
-
-flag_start_date <- ymd_hms("2023-04-13 00:00:00")
-flag_end_date <- ymd_hms("2023-04-17 00:00:00")
 
 flag_plot_data <- all_data_flagged$`river bluffs-DO` %>% 
   filter(DT_round >= flag_start_date & DT_round <= flag_end_date)
 
+
+missing <- color_joiner(data = flag_plot_data, flag_type = "missing data")
+slope_violation <- color_joiner(data = flag_plot_data, flag_type = "slope violation")
+repeated_value <- color_joiner(data = flag_plot_data, flag_type = "repeated value")
+seasonal_range <- color_joiner(data = flag_plot_data, flag_type = "outside of seasonal range")
+site_visit <- color_joiner(data = flag_plot_data, flag_type = "site visit|sv window")
+sonde_not_employed <- color_joiner(data = flag_plot_data, flag_type = "sonde not employed")
+
+
+
 y_min <- flag_plot_data$m_mean01[1]
 y_max <- flag_plot_data$m_mean99[1]
 
-flag_plot <- ggplot(data = flag_plot_data) +
-  geom_point(aes(x=DT_round, y = mean, color = flag)) +
-  # exceeding sd visualized
-  geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
-  geom_ribbon(aes(ymin = rollavg - m_sd_0199, ymax = rollavg + m_sd_0199, x = DT_round), alpha = 0.1, color = NA) +
-  geom_ribbon(aes(ymin = rollavg - (m_sd_0199*2), ymax = rollavg + (m_sd_0199*2), x = DT_round), alpha = 0.1, color = NA) +
-  geom_ribbon(aes(ymin = rollavg - (m_sd_0199*3), ymax = rollavg + (m_sd_0199*3), x = DT_round), alpha = 0.1, color = NA) +
+#flag_plot <- 
+ggplot() +
+  geom_point(data = flag_plot_data, aes(x = DT_round, y = mean), color = "grey", size = 2, show.legend = TRUE) +
+  geom_point(data = seasonal_range,  aes(x = DT_round, y = mean), pch=21, color = "white", fill = unique(seasonal_range$color), size = 8) +
+  geom_point(data = repeated_value,  aes(x = DT_round, y = mean),  pch=21, color = "white", fill = unique(repeated_value$color), size = 6) +
+  geom_point(data = slope_violation,  aes(x = DT_round, y = mean),  pch=21, color = "white", fill = unique(slope_violation$color), size = 4) +
+  geom_point(data = site_visit,  aes(x = DT_round, y = mean),  pch=21, color = "white", fill = unique(site_visit$color), size = 4) +
+  geom_point(data = sonde_not_employed,  aes(x = DT_round, y = mean),  pch=21, color = "white", fill = unique(sonde_not_employed$color), size = 4) +
+   # exceeding sd visualized
+ # geom_line(data = flag_plot_data, aes(x = DT_round, y = rollavg), color = "darkgrey", show.legend = TRUE) +
+  geom_ribbon(data = flag_plot_data, aes(ymin = rollavg - m_sd_0199, ymax = rollavg + m_sd_0199, x = DT_round), alpha = 0.1, color = NA) +
+  geom_ribbon(data = flag_plot_data, aes(ymin = rollavg - (m_sd_0199*2), ymax = rollavg + (m_sd_0199*2), x = DT_round), alpha = 0.1, color = NA) +
+  geom_ribbon(data = flag_plot_data, aes(ymin = rollavg - (m_sd_0199*3), ymax = rollavg + (m_sd_0199*3), x = DT_round), alpha = 0.1, color = NA) +
   # exceeding range limits visualized
   # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
-  geom_hline(yintercept = y_min, color = "red") +
-  geom_hline(yintercept = y_max, color = "red") +
+  geom_hline(data = flag_plot_data, yintercept = y_min, color = "grey") +
+  geom_hline(data = flag_plot_data, yintercept = y_max, color = "grey") +
   theme_bw() +
   theme(legend.position = 'bottom') +
   ggtitle(paste("River Bluffs\n", "Dissolved Oxygen\n", "4/13/2023-04/17/2023")) +
@@ -64,7 +108,8 @@ end_date <- ymd_hms("2023-04-19 00:00:00")
 raw_plot_data <- all_data_summary_stats_list$`river bluffs-DO` %>% 
   filter(DT_round >= start_date & DT_round <= end_date)
 
-raw_plot <- ggplot(data = raw_plot_data) +
+raw_plot <-
+  ggplot(data = raw_plot_data) +
   geom_point(aes(x=DT_round, y = mean, color = "grey")) +
   # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
   geom_hline(yintercept = y_min, color = "red") +
@@ -89,7 +134,8 @@ flag_rm_plot_data <- all_data_flagged$`river bluffs-DO` %>%
   filter(is.na(flag)) %>% 
   pad(by = "DT_round", interval = "15 min")
 
-flag_rm_plot <- ggplot(data = flag_rm_plot_data) +
+#flag_rm_plot <- 
+  ggplot(data = flag_rm_plot_data) +
   geom_point(aes(x=DT_round, y = mean, color = flag)) +
   # exceeding sd visualized
   geom_line(aes(x = DT_round, y = rollavg, color = "mean"), show.legend = TRUE) +
@@ -111,6 +157,7 @@ ggsave(filename = 'data/QAQC_images/presentation_images/flag_rm_plot.png',
        height = 8, width = 12)
 ```
 
+
 ```{r ggplot code for aggregated data, fig.height=7, fig.width=12}
 start_date <- ymd_hms("2023-04-11 00:00:00")
 end_date <- ymd_hms("2023-04-19 00:00:00")
@@ -122,8 +169,10 @@ aggregated_plot_data <- flag_rm_plot_data %>%
   summarize(hour_mean = mean(mean)) %>% 
   ungroup()
 
-aggregated_plot <- ggplot(data = aggregated_plot_data) +
+#aggregated_plot <- 
+  ggplot(data = aggregated_plot_data) +
   geom_point(aes(x=DT_round, y = hour_mean)) +
+  geom_line(aes(x=DT_round, y = hour_mean))+
   # exceeding sd visualized
   # geom_vline(data = (plot_data %>% filter(is.na(mean))), aes(xintercept = DT_round, color = flag)) +
   geom_hline(yintercept = y_min, color = "red") +

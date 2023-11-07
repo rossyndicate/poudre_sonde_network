@@ -17,6 +17,7 @@ generate_summary_statistics <- function(site_param_df) {
     as_tibble() %>%
     pivot_longer(cols = names(.), values_to = "month", names_to = "season") %>% drop_na()
 
+
   summary_stats_df <- site_param_df %>%
     # ... so that we can get the proper leading/lagging values across our entire timeseries:
     mutate(
@@ -32,6 +33,9 @@ generate_summary_statistics <- function(site_param_df) {
       # Determine the slope of a point in relation to the point ahead and behind.
       slope_ahead = abs(front1 - mean)/15,
       slope_behind = abs(mean - back1)/15,
+      rollslope = roll_mean(slope_behind, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      # Add the standard deviation for points centered in a rolling slope of 7 points.
+      # rollsdslope = roll_sd(slope_behind, n = 7, align = 'center', na.rm = F, fill = NA_real_),
       #KRW Comment: add monthly sd. add monthly avg. add 10th and 90th quantiles.
       # add some summary info for future us
       month = month(DT_round),
