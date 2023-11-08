@@ -42,7 +42,7 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
    write_csv(x = sampling_notes, file = paste0("data/sampling_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))
  }else{
    #grab desired date
-   date_oi_clean <- as.Date(date_oi)
+   date_oi_clean <- as.Date(date_oi, tz = "America/Denver")
    # filter sampling notes df by desired date
    samples_of_day <- filter(sampling_notes,date == date_oi_clean )%>%
      #match date to RMRS style
