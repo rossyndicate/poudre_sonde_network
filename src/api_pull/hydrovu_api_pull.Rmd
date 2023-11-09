@@ -9,8 +9,6 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE, evaluate = FALSE)
 ```
 
-
-
 # Purpose
 
 This R-markdown accesses the HydroVu server via the API to download data within this scripted workflow. See the README.md file for directions to set up the credentials.yml file sourced in this script.
@@ -58,11 +56,13 @@ dump_dir <- "data/api/"
 # Code for making the start time the day of the last saved API pull:
 start <- sort(list.files(dump_dir, pattern = "*.csv") %>%
                 str_sub(start = -14, end = -5), decreasing = TRUE) %>%
-  sort() %>%
   .[1]
-#... or, manual selection of start time
-# start <- Sys.time() - lubridate::days(2000)  #Sys.time() - lubridate::days(7)
 end <- Sys.time()
+
+#... or, manual selection of start/end time
+ start <- as.POSIXct("2018-01-01 01:00:00 MDT")
+ end <- as.POSIXct("2023-07-30 01:00:00 MDT")
+
 sites <- c("Rist", 
            "Tamasag", # Rist was moved to Tamasag beginning of 2023
            "Legacy",
@@ -71,8 +71,9 @@ sites <- c("Rist",
            "Prospect", # no data in 2020
            "ELC",
            "Boxelder", # ELC was moved to Boxelder late summer 2022
-           "Archery", 
-           "River Bluffs")
+           "Archery",
+           "River Bluffs"
+           )
 
 api_puller <- function(site, 
                        dump_dir = 'data/api/', 

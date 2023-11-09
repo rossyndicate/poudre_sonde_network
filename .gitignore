@@ -3,25 +3,17 @@
 .RData
 .Ruserdata
 .DS_Store
-data/
-<<<<<<< HEAD
-docs/
-backup_data/
-backup_docs/
-misc_playtime/
-=======
 data
+docs
+data/
+docs/
 # remove the annoying Mac .DS_Store
 .DS_Store
-**/.DS_Store
->>>>>>> 635beafeed0d8a6c88095b91ab660786fe657954
+**.DS_Store
 # files/folders to untrack for API pull
 src/api_pull/credentials.yml
 */apienv/
 */requirements.txt
-data
-.DS_Store
-images/
-.DS_Store data
+# untracking field note api
 src/mWater_collate/mWater_API.yml
 scratch/reporting/PWQN_overview.html
