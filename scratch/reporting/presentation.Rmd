@@ -55,6 +55,7 @@ color_joiner <-function(data, flag_type) {
 flag_start_date <- ymd_hms("2023-04-11 00:00:00")
 flag_end_date <- ymd_hms("2023-04-30 00:00:00")
 
+
 flag_plot_data <- all_data_flagged$`river bluffs-DO` %>% 
   filter(DT_round >= flag_start_date & DT_round <= flag_end_date)
 
