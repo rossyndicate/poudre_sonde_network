@@ -24,3 +24,4 @@ data
 images/
 .DS_Store data
 src/mWater_collate/mWater_API.yml
+scratch/reporting/PWQN_overview.html
