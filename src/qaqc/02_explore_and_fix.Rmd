@@ -21,12 +21,12 @@ sapply(list.files("src/qaqc/explore_and_fix_fxns/plotting_functions", pattern = 
 #### Add verification column
 ```{r}
 all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
-all_data_flagged <- map(all_data_flagged, add_verification_column)
+verify_all_data_flagged <- map(all_data_flagged, add_verification_column)
 ```
 
 #### Generate flag report
 ```{r}
-flag_report <- map(all_data_flagged, generate_flag_report) %>%
+flag_report <- map(verify_all_data_flagged, generate_flag_report) %>%
   bind_rows()
 
 saveRDS(flag_report, 'data/flag_report.RDS')
@@ -37,9 +37,9 @@ write_csv(flag_report, 'data/flag_report.csv')
 ```{r}
 # Current vis:
 plotly_plot <- plotly::ggplotly(ggplot() +
-  geom_point(data = filter(all_data_flagged[["archery-Temperature"]], is.na(flag)), 
+  geom_point(data = filter(verify_all_data_flagged[["archery-Temperature"]], is.na(flag)), 
              aes(x=DT_round, y = mean)) +
-  geom_point(data = filter(all_data_flagged[["archery-Temperature"]], !is.na(flag)), 
+  geom_point(data = filter(verify_all_data_flagged[["archery-Temperature"]], !is.na(flag)), 
              aes(x=DT_round, y = mean, color = flag)) +
   theme_bw() +
   theme(legend.position = 'bottom') +
@@ -48,17 +48,17 @@ plotly_plot <- plotly::ggplotly(ggplot() +
 
 Visualizing daily plots
 ```{r, fig.width=12, fig.height=7}
-# generate_daily_flag_plots("archery", "Temperature", "missing data", df_list = all_data_flagged)
+# generate_daily_flag_plots("archery", "Temperature", "missing data", df_list = verify_all_data_flagged)
 ```
 
 Visualizing weekly plots
 ```{r, fig.width=12, fig.height=7}
-# generate_weekly_flag_plots("archery", "Temperature", "slope violation", df_list = all_data_flagged)
+# generate_weekly_flag_plots("archery", "Temperature", "slope violation", df_list = verify_all_data_flagged)
 ```
 
 Stack the weekly and daily plots
 ```{r, fig.width=12, fig.height=12}
-# stack_flag_plots("archery", "Temperature", "missing data", all_data_flagged)
+# stack_flag_plots("archery", "Temperature", "missing data", verify_all_data_flagged)
 ```
 
 Histograms of all parameter/site combos
@@ -66,7 +66,7 @@ Histograms of all parameter/site combos
 # making histograms for temperatures
 ## pulling all the temperature dfs from the all_data list
 
-# temperature_hist_list <- all_data_flagged[grep("Temperature", names(all_data_summary_list), ignore.case = TRUE)]
+# temperature_hist_list <- verify_all_data_flagged[grep("Temperature", names(all_data_summary_list), ignore.case = TRUE)]
 
 ## use imap to use the index in the list for the plot titles
 ## (not loving imap, if there is a better way to do this please change this)
@@ -79,12 +79,12 @@ Histograms of all parameter/site combos
 ```
 
 ```{r}
-# imap(all_data_flagged, ~generate_seasonal_histogram(.x, .y))
+# imap(verify_all_data_flagged, ~generate_seasonal_histogram(.x, .y))
 
 # output_dir <- "/Users/juandlt_csu/Library/CloudStorage/OneDrive-Colostate/poudre_sonde_network/data/histogram_images"
 # 
 # # Use imap to iterate over the list and generate/save plots
-# imap(all_data_flagged, ~{
+# imap(verify_all_data_flagged, ~{
 #   df_name <- .y  # Get the name of the data frame
 #   plot <- generate_seasonal_histogram(.x, .y)  # Generate the plot
 # 
@@ -99,7 +99,7 @@ Histograms of all parameter/site combos
 # Is the seasonal threshold flag doing anything useful?
 
 ```{r}
-all_data <- all_data_flagged %>% bind_rows() %>%
+all_data <- verify_all_data_flagged %>% bind_rows() %>%
   filter(parameter %in% c("Actual Conductivity", "Chl-a Fluorescence", "DO", "External Voltage", 
      "FDOM Fluorescence", "ORP", "pH", "Specific Conductivity", "Temperature", "Turbidity"))
 

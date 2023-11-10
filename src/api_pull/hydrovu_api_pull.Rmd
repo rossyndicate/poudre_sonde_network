@@ -52,6 +52,9 @@ YYYY-MM-DD HH:MM:SS MDT
 ```{r}
 # where the api data gets saved:
 dump_dir <- "data/api/"
+# into incoming folder
+# after it has been used this data will go into the outgoing folder
+# after it has been used from the outgoing folder it will be appended to the historical data
 
 # Code for making the start time the day of the last saved API pull:
 start <- sort(list.files(dump_dir, pattern = "*.csv") %>%
@@ -76,7 +79,7 @@ sites <- c("Rist",
            )
 
 api_puller <- function(site, 
-                       dump_dir = 'data/api/', 
+                       dump_dir = 'data/api/incoming_api_data/', 
                        start,
                        end){
   
@@ -105,6 +108,7 @@ api_puller <- function(site,
   utc_start_date <- format(as.POSIXct(format(start, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
   
   utc_end_date <- format(as.POSIXct(format(end, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
+  
   timezone = "UTC"
   
   # Map over the location ids 
@@ -148,3 +152,63 @@ sites %>% walk(~api_puller(site = .,
                            end = end))
 ```
 
+```{r}
+# append to historical data function
+# this will take the data from the incoming_data folder and append it to the historical_data folder
+
+```
+
+```{r}
+# the site arg will remain the same
+
+# we will have to change the start and end dates for each pull depending on the last date that is in the all_data_flagged RDS file
+
+all_data_flagged_bound <- read_feather('data/flagged/all_data_flagged.feather')
+all_data_flagged_dfs <- readRDS('data/flagged/all_data_flagged.RDS')
+
+# create a function to extract the last value of DT_round
+get_last_DT_round <- function(df) {
+  tail(df$DT_round, n = 1)
+}
+
+# apply the function to each data frame in all_data_flagged_dfs
+last_DT_round <- lapply(all_data_flagged_dfs, get_last_DT_round)
+
+# convert the resulting list to a data frame
+last_DT_round_df <- data.frame(site = names(all_data_flagged_dfs),
+                               last_DT_round = unlist(last_DT_round)) %>%
+                               # pull the site name from the index
+                               mutate(site = sub("-.*", "", site),
+                               # convert the Unix timestamp to a POSIXct object
+                               last_DT_round = as.POSIXct(last_DT_round_df$last_DT_round, origin = "1970-01-01")) %>%
+                               # summarize and find the earliest date for each site
+                              group_by(site) %>%
+                              summarize(last_DT_round = min(last_DT_round))
+
+# view the resulting data frame
+last_DT_round_df %>% View()
+
+# last_DT_round_df will take the place of the start and end dates in the api_puller function
+
+
+sites %>% walk(~api_puller(site = .,
+                           start = start,
+                           end = end))
+```
+
+```{r, eval = FALSE}
+walk_df <- last_DT_round_df
+
+# this is what we will do to update all of the sites at once, before we start appending every 3 hours
+# walk_df %>%
+  walk2(~api_puller(site = .$site,
+    start = .$last_DT_round,
+    end = Sys.time()))
+
+# then it will go into the flagging pipeline
+  # the flagged data is the final product right now
+
+# after the big one is done, this is how we will update it every 3 hours:
+## GitHub Actions will run this script every 3 hours, so we will only need to update the start and end dates
+all_data_flagged_dfs
+```

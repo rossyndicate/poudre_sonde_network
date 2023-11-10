@@ -45,9 +45,12 @@ all_data <- munge_api_data()
 ### Temperature at Archery
 
 I think we will want to develop pipelines specific for each site and parameter for processing speed (targets?).
+Up until this point all the data from the API is in one huge csv. After this point the data gets split up into site-parameter combinations.
+This means that the data that will be incoming will be one large data packet. This should change in the api pull step.
 
 #### Format data
 ```{r}
+# format and summarize data
 # Determine each site and parameter in all_data 
 sites <- unique(all_data$site)
 params <- c("Actual Conductivity", "Battery Level", "Baro", "Chl-a Fluorescence", 
@@ -71,8 +74,24 @@ all_data_summary_list <- map2(combinations$sites,
 all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
+#### Append historical flagged data to incoming data
+```{r}
+# Read in a 6 hour subset of the historical flagged data for each site-parameter combination
+# The incoming data will be in 3 hour increments, but the anomaly window flag needs 6 hours of data, so we will need to append to 6 hours of historical data to the incoming data
+
+# Read in the incoming data and the historical flagged data
+  # DANGER: this is a cyclical process
+incoming_data <- all_data_summary_list
+all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
+
+appended_data_list <- map2() 
+```
+
+### Add summary stats and flag new data
+The new data that is being flagged 
 #### Add summary statistics to the formatted data
 ```{r}
+# will need to make sure that the summary stats are not being calculated for the top of the data that has already been flagged
 all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
 ```
 
@@ -83,18 +102,21 @@ threshold_lookup <- map(all_data_summary_stats_list, make_threshold_table) %>%
   bind_rows()
 
 # this does not need to be a yaml solution
+# add this to the threshold look up table and then save the threshold look up table 
 sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
 
 saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
 ```
 
-#### Add flagging functions
-
+#### Add flags to all dataframes in all_data_summary_stats_list
 Add flagging functions for each df in all_data_summary_list
 
 Pass the dfs in all_data_summary_stats_list through the flagging functions:
 
 ```{r}
+# make sure that data that has already been flagged is not flagged again, except for the large anomaly flag
+# ifelse(historical_data == FALSE, {add_flag}, {do nothing})
+
 all_data_flagged <- map(all_data_summary_stats_list, function(data) {
   data %>%
     add_field_flag() %>%
@@ -104,11 +126,20 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
     add_repeat_flag() %>% 
     # add_large_anomaly_flag() %>%
     mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
-    relocate(mean_public, .after = "mean")
+    mutate(historical_data = TRUE)
 })
 
 saveRDS(all_data_flagged, 'data/flagged/all_data_flagged.RDS')
 write_feather(all_data_flagged %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
+
+# update the historical data
+# antijoin
+# bind_rows
 ```
 
 All data has now gone through all flagging steps and is ready for immediate public viewing.
+
+#### Remove the data from data/api/incoming_api_data and append it to the historical API data
+```{r}
+# remove the data from the incoming_api_data folder
+```
