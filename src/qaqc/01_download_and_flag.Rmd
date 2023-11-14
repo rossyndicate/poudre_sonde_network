@@ -9,7 +9,7 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE) 
+knitr::opts_chunk$set(echo = TRUE, warnings = 'hide', error = FALSE, message = 'hide')
 ```
 
 Load necessary packages:
@@ -25,12 +25,12 @@ walk(list.files('src/qaqc/download_and_flag_fxns', pattern = "*.R", full.names =
 
 Load field notes and define the start time as the 15 minute preceding the field time
 ```{r}
-field_notes <- clean_field_notes()
+field_notes <- clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
 ```
 
 Merge the data sets from all API pulls:
 ```{r}
-all_data <- munge_api_data()
+all_data <- munge_api_data(api_path = "data/api/historical_api_data/")
 ```
 
 ### Export collated raw file
@@ -50,8 +50,8 @@ I think we will want to develop pipelines specific for each site and parameter f
 ```{r}
 # Determine each site and parameter in all_data 
 sites <- unique(all_data$site)
-params <- c("Actual Conductivity", "Battery Level", "Baro", "Chl-a Fluorescence", 
-            "Depth", "DO", "External Voltage", "FDOM Fluorescence", "ORP", 
+params <- c("Battery Level", "Baro", "Chl-a Fluorescence", 
+            "Depth", "DO", "External Voltage", "ORP", 
             "pH", "Specific Conductivity", "Temperature", "Turbidity")
  
 # Constructing a df to iterate over each site-parameter combination
@@ -102,13 +102,15 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
     add_seasonal_flag() %>%
     add_na_flag() %>%
     add_repeat_flag() %>% 
-    # add_large_anomaly_flag() %>%
+    kw_add_large_anomaly_flag() %>%
     mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
     relocate(mean_public, .after = "mean")
 })
 
-saveRDS(all_data_flagged, 'data/flagged/all_data_flagged.RDS')
-write_feather(all_data_flagged %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
+final_flag <- map(all_data_flagged, site_comp_test)
+
+saveRDS(final_flag, 'data/flagged/all_data_flagged.RDS')
+write_feather(final_flag %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
 ```
 
 All data has now gone through all flagging steps and is ready for immediate public viewing.
