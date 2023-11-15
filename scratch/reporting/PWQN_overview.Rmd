@@ -1,0 +1,358 @@
+---
+title: "ROSS Sonde Network Overview Doc"
+author: "Sam Struthers"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+library(sf)
+library(dplyr)
+library(tidyr)
+library(mapview)
+library(leaflet)
+library(RColorBrewer)
+library(here)
+library(kableExtra)
+library(stringr)
+
+```
+
+This document outlines all the sites established and maintained by the ROSSyndicate at CSU. Information is subject to change, contact Sam Struthers or Katie Willi for additional details.
+
+# Overview of Poudre WQ Projects
+
+Currently we have three ongoing projects in the Cache la Poudre River Watershed looking at various water quality impacts.
+
+## Poudre Water Quality Network (PWQN)
+
+![](images/legacy_20230516_upstream_promo-01.jpg){width="406"}
+
+The PWQN is a collection of river monitoring sites strategically located throughout and directly upstream of the City of Fort Collins. This monitoring partnership with the City of Fort Collins was spurred by the 2018 fish kill throughout the city, whose source was never determined. With a network of sensors deployed, we can better track changes in water quality like those experienced in 2018 and understand how the river is influenced by its myriad urban and agricultural inputs. The PWQN currently exists as nine sites along the Cache la Poudre River from the canyon mouth to Windsor, as well as two tributaries to the Poudre River.
+
+## Reservoir Study
+
+![](images/juan_ptrr_handheld_probe.jpg){width="399"}
+
+The 2020 Cameron Peak wildfire (CPF) was the largest wildfire in Colorado history at over 200,000 acres. The CPF burned a large proportion of the Cache La Poudre watershed, in particular various high elevation reservoirs. These reservoirs provide valuable drinking and agriculutural water to users in the City of Fort Collins, Greeley, Thornton and Northern Water. In collaboration with the Rocky Mountain Research Station (USFS), we are sampling various reservoir, tributary, and mainstem sites of the Cache La Poudre watershed. This field campaign allows us to analyze trends in water quality focusing on nutrients and other key constituents mobilized post-fire. The goal of this project is to understand how these nutrients affect algal growth in reservoirs and how those changes are felt downstream. Using this field data, we are working to create a system that will predict algal blooms before they occur using a combination of in-stream sensors, remote sensing, and field sampling.
+
+## CU Collaboration
+
+![](images/PXL_20230901_195306806.jpg){width="260"}
+
+This collaboration is hoping to assess the usefulness of water quality sensors on being able to quantify the impact of watershed restoration as a means to reduce water treatment burdens. They have installed a few sites on their own but primarily have piggybacked on our existing network and have tasked us with maintaining these sites.
+
+# Map of All Sites
+
+```{r functions_read_in_data, include=FALSE}
+# Create a path to the dataset using here()
+dataset_path <- here("data/context_data", "sonde_location_metadata.csv")
+
+
+sonde_sites <-readr::read_csv(dataset_path)%>%
+  separate(lat_long, into = c("sonde_lat", "sonde_long"), sep = ",")%>%
+  separate(parking_lat_long, into = c("parking_lat", "parking_long"), sep = ",")%>%
+  mutate(parking_long = str_replace(parking_long, " ", ""),
+    sonde_gm_link  = paste0("https://www.google.com/maps/place/", sonde_lat, ",", sonde_long, sep=""), 
+         parking_gm_link  = paste0("https://www.google.com/maps/place/", parking_lat, ",", parking_long)
+         )%>%
+  sf::st_as_sf(coords = c("sonde_long","sonde_lat"), crs = 4326)
+
+
+
+sonde_sites$Site <- factor(sonde_sites$Site , levels = c("JOEI", "CBRI", "CHD", "PFAL", "SFM", "PBD", "Tamasag", "Legacy", "Lincoln","Timberline","Prospect","Boxelder", "Archery","River Bluffs", "BoxCreek", "SpringCreek"  )) 
+
+
+get_site_map <- function(site_selected){
+  sonde_site <- filter(sonde_sites, Site == site_selected)
+  sonde_parking <- sonde_site%>% st_drop_geometry()%>%
+    mutate(longitude = as.numeric(parking_long), 
+           latitude = as.numeric(parking_lat))%>%
+                    st_as_sf(coords = c("parking_long","parking_lat"), crs = 4326)
+    
+
+  site_map <- mapview(sonde_site,
+                      col.regions = "blue",
+                      legend = TRUE,
+                      layer.name = "Sonde Location",
+                      map.types = c("Esri.WorldImagery","CartoDB.Positron" ))+
+              mapview(sonde_parking, col.regions = "red", legend = TRUE, layer.name = "Site Parking",map.types = c("Esri.WorldImagery","CartoDB.Positron" ))
+
+
+  
+  site_map@map %>% setView(sonde_parking$longitude, sonde_parking$latitude, zoom = 16)
+
+
+}
+
+
+# Define a function to generate the table
+generate_site_table <- function(site_selected) {
+  sonde_site <- filter(sonde_sites, Site == site_selected) %>%
+    st_drop_geometry()
+
+  sonde_site_table<- t(sonde_site[, c("Site", "Common_name", "Site Description", "Access notes",
+                            "Parking","parking_gm_link", "Sonde Housing Notes",
+                            "Camera Notes", "Area Contact/Permit", "Relevant Gauge")])%>%
+    kbl() %>%
+    kable_styling(bootstrap_options = c("striped"),full_width = FALSE)%>%
+   
+    column_spec(2, width = "1in", width_max = "5in")
+
+  return(sonde_site_table)
+}
+
+
+
+```
+
+```{r pwqn_map, echo=FALSE}
+# Assuming your sf object is named sf_data
+map <-mapview(
+  filter(sonde_sites, Project == "Reservoir Study"),
+  zcol = "Site",
+  col.regions = brewer.pal(6, "Set2"),
+  legend = TRUE, 
+  layer.name = "Reservior Study Sites"
+)+ 
+  mapview(
+  filter(sonde_sites, Project == "PWQN"),
+  zcol = "Site",
+  col.regions = brewer.pal(8, "YlOrRd"),
+  legend = TRUE, 
+  layer.name = "PWQN Sites"
+)+mapview(
+  filter(sonde_sites, Project == "CU"),
+  zcol = "Site",
+  col.regions = c("green1", "green4"),
+  legend = TRUE, 
+  layer.name = "CU Study Sites"
+)
+  
+map
+
+```
+
+# Technician SOP/Important notes
+
+Use this link to access our standard operations procedures doc: [Link](https://colostate-my.sharepoint.com/:w:/g/personal/mrvr_colostate_edu/EUvCdkvXF9xEhwyWT-GhOQUBaYr2Iq)
+
+In Situ Technical support number: 970-498-1500
+
+mWater survey for field notes: [Link](https://formlink.mwater.co/#/6840b0611e8f4b2ca0a4d538a3f32775/4a1552a987a542aea22e3cb3c324501d?branding=mwater)
+
+# Site Specfic Info
+
+This section is broken down by project: Reservoir Study, PWQN and CU/Virridy Collaboration
+
+## Reservoir Study
+
+This is also typically known as the Upper Poudre Project or Canyon Work
+
+### JOEI: Joe Wright Inflow
+
+![](images/JOEI_20230817_wide_install.jpg){width="577"}
+
+This is our highest elevation site and captures the water flowing into Joe Wright Reservoir from Cameron Pass and the Michigan Ditch.
+
+```{r JOEI, echo=FALSE}
+
+get_site_map("JOEI")
+
+generate_site_table("JOEI")
+
+
+```
+
+### CBRI: Chambers Inflow
+
+![](images/CBRI_20230817_nice_install.jpg)
+
+This site captures the water flowing into Chambers Lake from Joe Wright Reservoir and North Joe Wright Creek. This is our second highest elevation site
+
+```{r CBRI, echo=FALSE}
+# Generate the map and table for "CBRI"
+get_site_map("CBRI")
+generate_site_table("CBRI")
+
+```
+
+### CHD: Chambers outflow
+
+![](images/CHD_20230726_new_install2.jpg){width="326"}
+
+![](images/CHD_20230726_new_install.jpg){width="291"}
+
+This site captures the impact of Chambers Lake on Joe Wright Creek. This site typically has extensive benthic algae growth. Chambers Lake was burned extensively during the 2020 Cameron Peak Fire.
+
+```{r CHD, echo=FALSE}
+# Generate the map and table for "CHD"
+get_site_map("CHD")
+generate_site_table("CHD")
+```
+
+### PFAL: Poudre Falls
+
+![](images/PFAL_20230823_install_from_top.jpg){width="280"}
+
+This site measures the combined impacts from the Cache La Poudre River with the addition of Joe Wright Creek. We hope to understand how Joe Wright Creek Reservoirs propegate algae into the mainstem of the Poudre.
+
+```{r PFAL, echo=FALSE}
+# Generate the map and table for "PFAL"
+get_site_map("PFAL")
+generate_site_table("PFAL")
+```
+
+### SFM: South Fork of the CLP
+
+![](images/SFM_20230818_frombridge.jpg){width="430"}
+
+This site measures fire impacts (many burned tributaries upstream), reservoir impacts (Comanche and Hourglass) and act as an upstream control for restoration efforts occurring downstream.
+
+```{r SFM, echo=FALSE}
+# Generate the map and table for "SFM"
+get_site_map("SFM")
+generate_site_table("SFM")
+```
+
+### PBD: Canyon Mouth
+
+![](images/PBD_20230620_up.jpg){width="532"}
+
+This site is located downstream of the reservoirs Seaman and Halligan but above the intake of the City of Greeley.
+
+```{r PBD, echo=FALSE}
+# Generate the map and table for "PBD"
+get_site_map("PBD")
+generate_site_table("PBD")
+```
+
+## PWQN Sites
+
+### Tamasag
+
+![](images/tamasag_20230317_install.jpg){width="485"}
+
+This site is upstream of nearly all ditch impacts (other than the Bellevue Diversion) but downstream of Horsetooth Imput. PBD and this site bracket Horsetooth's inflow.
+
+```{r Tamasag, echo=FALSE}
+# Generate the map and table for "Tamasag"
+get_site_map("Tamasag")
+generate_site_table("Tamasag")
+```
+
+### Legacy
+
+![](images/legacy_20230824_newtube.jpg){width="378"}
+
+This site is upstream of Old Town and most City of Fort Collins impacts. This site is downstream of the Larimer-Weld Canal and many other ditches that pull water to agricultural uses.
+
+```{r Legacy, echo=FALSE}
+# Generate the map and table for "Legacy"
+get_site_map("Legacy")
+generate_site_table("Legacy")
+```
+
+### Lincoln
+
+![](images/lincoln_20230713_frombridge.jpg){width="487"}
+
+This site is upstream of Dry Creek on the CLP, it is also upstream of the Lincoln St Outflow. This site also measures the impact of storm drainage in Old Town. It also measures the impact of the White Water Park.
+
+```{r Lincoln, echo=FALSE}
+# Generate the map and table for "Lincoln"
+get_site_map("Lincoln")
+generate_site_table("Lincoln")
+```
+
+### Timberline
+
+![](images/timberline_20231006_new_setup_camo.jpg)
+
+This site is upstream of Spring Creek on the CLP, it also measures the effects of Dry Creek, an agricultural return flows tributary.
+
+```{r Timberline, echo=FALSE}
+# Generate the map and table for "Timberline"
+get_site_map("Timberline")
+generate_site_table("Timberline")
+```
+
+### Prospect
+
+![](images/prospect_20230401_new_tube-01.jpg){width="244"}
+
+This site measures the impact of Spring Creek on the CLP.
+
+```{r Prospect, echo=FALSE}
+# Generate the map and table for "Prospect"
+get_site_map("Prospect")
+generate_site_table("Prospect")
+```
+
+### Boxelder
+
+![](images/boxelder_20231102_install_bottom_downstream.jpg){width="366"}
+
+![](images/boxelder_20231102_install_bottom.jpg){width="320"}
+
+This site is upstream of Boxelder Creek and Sanitation on the CLP, it also measures the effects of a recent floodplain restoration project at the ELC.
+
+```{r Boxelder, echo=FALSE}
+# Generate the map and table for "Boxelder"
+get_site_map("Boxelder")
+generate_site_table("Boxelder")
+```
+
+### Archery
+
+![](images/archery_20231003_promo.jpg)
+
+This site measures the impact of Boxelder Creek and Sanitation on the CLP.
+
+```{r Archery, echo=FALSE}
+# Generate the map and table for "Archery"
+get_site_map("Archery")
+generate_site_table("Archery")
+```
+
+### River Bluffs
+
+![](images/riverbluffs_20230401_finalinstall.jpg){width="287"}![](images/riverbluffs_20230608_Camera2.jpg){width="285"}
+
+This site measures the impact of Fossil Creek Reservoir on the CLP and is the most downstream site in the network.
+
+```{r River Bluffs, echo=FALSE}
+# Generate the map and table for "River Bluffs"
+get_site_map("River Bluffs")
+generate_site_table("River Bluffs")
+```
+
+## CU/Virridy Collaboration
+
+This collaboration is hoping to assess the usefulness of water quality sensors on being able to quantify the impact of watershed restoration as a means to reduce water treatment burdens.
+
+### Boxelder Creek
+
+![](images/boxcreek_20230831_install_wide.jpg){width="256"}
+
+![](images/boxcreek_20231006_bottom_add2.jpg){width="243"}
+
+This site measures the impact of agriculture on a tributary to the CLP. This site is typically known as BoxCreek to distinguish from Boxelder (Poudre, PWQN Site)
+
+```{r BoxCreek, echo=FALSE}
+# Generate the map and table for "BoxCreek"
+get_site_map("BoxCreek")
+generate_site_table("BoxCreek")
+```
+
+### Spring Creek
+
+This site measures the effectiveness of urban storm drainage on a tributary to the CLP.
+
+```{r SpringCreek, echo=FALSE}
+# Generate the map and table for "SpringCreek"
+get_site_map("SpringCreek")
+generate_site_table("SpringCreek")
+```
