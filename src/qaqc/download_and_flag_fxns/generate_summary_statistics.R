@@ -50,8 +50,9 @@ generate_summary_statistics <- function(site_param_df) {
       # Seasonal 1st/99th percentile means and slope
       m_mean01 = quantile(mean, 0.01, na.rm = TRUE),
       m_mean99 = quantile(mean, 0.99, na.rm = TRUE),
-      m_slope_behind_01 = quantile(slope_behind, 0.01, na.rm = TRUE),
-      m_slope_behind_99 = quantile(slope_behind, 0.99, na.rm = TRUE)) %>%
+      # slope behind should be a subset (up(positivity) and down (negativity))
+      m_slope_behind_01 = quantile(slope_behind, 0.01, na.rm = TRUE), # this should be the subset of the negative values
+      m_slope_behind_99 = quantile(slope_behind, 0.99, na.rm = TRUE)) %>% # this should be the subset of the positive values
     ungroup() %>%
     # Using ONLY data within the seasonal 1-99th percentile, get the standard deviation. Done to reduce
     # noise from the major outliers of the dataset...
