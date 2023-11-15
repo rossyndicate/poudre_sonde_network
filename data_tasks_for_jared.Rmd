@@ -10,7 +10,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
-library(plotly)
+
 
 
 try(plyr::ldply(list.files(path="src/",
@@ -319,33 +319,46 @@ ggplot( some_turb_reduced, aes(x = DT, y = Turbidity_NTU, color = trigger_reduce
 
 ```
 
-# Budget update 9/25/23
+# Budget update 10/2/23
 
 ```{r}
-
-
-budget_202309 <- read_csv("data/sharing/5303303_Budget_20230925.csv")%>%
-  mutate(date = as_date(DATE, format = "%m/%d/%y"), 
-         year = year(date))%>%
-  filter(year == 2023)
-
-allotments <- budget_202309%>%
-  dplyr::rename(person = `VENDOR PERSON`)%>%
-  filter(person == "ALLOTMENT")
-
-cost_by_user <- budget_202309%>%
-  dplyr::rename(person = `VENDOR PERSON`)%>%
-  filter(person != "ALLOTMENT")%>%
-  group_by(person)%>%
-  summarise(cost =sum(EXPENSE))%>%
-  mutate(category = case_when(
+# Find all budget files
+budget_files <- list.files(path = "data/sharing/budget/", pattern = ".csv", full.names = TRUE)
+#read in all budget files
+all_budget <- map(budget_files, read_csv_arrow)%>%
+  bind_rows()%>%
+  #remove duplicate rows and fix date
+  distinct()%>%
+  mutate(DATE = as_date(DATE, format = "%m/%d/%y"), 
+         year = year(DATE))%>%
+  #rename columns
+  rename(person = VENDOR.PERSON, 
+         purchase = NOTES, 
+         cost = EXPENSE)%>%
+  filter(year == 2023)%>%
+  #Fixing a few names that should be the same
+  mutate(person = case_when(person == "LICHTENSTAJN" ~ "LICHTENSZTAJN",
+                            person == "THE HOME DEPOT" ~ "HOME DEPOT", 
+                            person == "BATTERIES PLUS BULBS" ~ "BATTERIES AND BULBS", 
+                            person == "LAPORTE DO IT" ~ "LAPORTE HARDWARE", 
+                            TRUE ~ person), 
+    category = case_when(
     person %in% c("MILLER", "WILLIAMS", "LICHTENSZTAJN") ~ "Technician",
     person == "STRUTHERS" ~ "Struthers",
     person == "IN SITU" ~ "In Situ",
     TRUE ~ "supplies"
   ))
 
+  
+
+result <- all_budget %>%
+  group_by(person, category) %>%
+  summarise(cost_user = sum(cost))
+
+
 cost_categories <- cost_by_user%>%
   group_by(category)%>%
   summarise(total =sum(cost))
+
+write_csv(all_budget, file = "data/sharing/budget/5303303_1614766_all_concise.csv")
 ```

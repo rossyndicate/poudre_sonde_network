@@ -87,8 +87,7 @@ These are the notes that will be added to the QAQC workflow notes Most of the co
 
 sensor_notes <- all_notes_cleaned%>%
   filter(grepl("Sensor",visit_type, ignore.case = TRUE))%>%
-  select(-c( start_dt, chla_volume_ml, vol_filtered_blank_dup, sample_collected,do_mgl,
-            cond_ms_cm, temp_c, upstream_pic, downstream_pic, clarity, filter_pic, other_pic, other_pic_descriptor))%>%
+  select(-c( start_dt, chla_volume_ml, vol_filtered_blank_dup, sample_collected,do_mgl,cond_ms_cm, temp_c, upstream_pic, downstream_pic, clarity, filter_pic, other_pic, other_pic_descriptor))%>%
   # determining sonde employed status based on sensor_change 
   mutate(sonde_employed = case_when(is.na(sensor_change)  ~ 1,
                                     sensor_change == "Pulled" ~ 0,
@@ -98,7 +97,7 @@ sensor_notes <- all_notes_cleaned%>%
          field_season = year(DT_round),
          last_site_visit = DT_round
   )%>%
-  arrange(desc(start_dt))
+  arrange(desc(DT_round))
          
 #write to CSV
 write_csv(sensor_notes, "data/mWater_sensor_field_notes.csv")
@@ -130,7 +129,7 @@ Goal:
 source("src/mWater_collate/sampling_spreadsheet_creator.R")
 # To get the RMRS style data for a specfic date of sampling, 
 # Input the date of interest in sampling_spreadsheet_creator
-sampling_spreadsheet_creator(date_oi = "2023-11-02")
+sampling_spreadsheet_creator(date_oi = "2023-11-07")
 
 # To get all the water sampling data and save to CSV in sampling notes
 # This also returns the df sampling_notes in case you want to review in R
