@@ -28,19 +28,19 @@ kw_add_large_anomaly_flag <- function(df) {
   #                 site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
   #                 sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
 
-  flag_string <- "6hr anomaly|anomaly window|missing data|sonde not employed|missing data"
+  flag_string <- "sonde not employed|missing data|site visit|sv window"
 
   # Define a function to check if a given 6-hour window has >= 50% fails
   check_6_hour_window_fail <- function(x) {
-    sum(x) / length(x) >= 0.5
+    sum(x) / length(x) >= 0.33
   }
 
-  df <- df %>%
+  df_test <- df %>%
     mutate(flag_binary = ifelse((is.na(flag) | grepl(flag_string, flag)), 0, 1)) %>%
     #arrange(timestamp) %>%
     mutate(over_50_percent_fail_window = zoo::rollapply(flag_binary, width = 24, FUN = check_6_hour_window_fail, fill = NA, align = "right")) %>%
-    add_flag(over_50_percent_fail_window == TRUE, "anomaly window")
+    add_flag(over_50_percent_fail_window == TRUE, "suspect data")
 
-return(df)
+return(df_test)
 
 }

@@ -75,6 +75,7 @@ add_malfunction_flag <- function(df){
     add_flag((year == "2022" & DT_round >= "2022-10-26 11:30:00" & DT_round <= "2022-11-04 10:00:00" & site == "prospect" & parameter == "Turbidity"), "sensor malfunction") %>%
     ## 2023
     add_flag((year == "2023" & DT_round >= "2023-09-26 12:00:00" & DT_round <= "2023-09-27 10:00:00" & site == "prospect" & parameter == "DO"), "sensor malfunction") %>%
+    add_flag((year == "2023" & DT_round >= "2023-10-04 00:00:00" & DT_round <= "2023-10-10 13:45:00" & site == "prospect" & parameter == "Turbidity"), "sensor malfunction") %>%
 
     # BOXELDER
     # Wiper issue, maybe?

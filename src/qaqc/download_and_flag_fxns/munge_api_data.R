@@ -4,11 +4,13 @@
 # @examples
 # munge_api_data(api_path = "data/api/")
 
-munge_api_data <- function(api_path = "data/api/") {
+munge_api_data <- function(api_path = "data/api/historical_api_data/") {
+                # function(api_path = "data/api/incoming_api_data/") {
   api_data <- list.files(path = api_path, full.names = TRUE, pattern = "*.csv") %>%
     map_dfr(~data.table::fread(.) %>% select(-id)) %>%
     # remove overlapping API-pull data
     distinct() %>%
+    select(-name) %>%
     # remove VuLink data
     filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
     # remove Virridy data (for now)
@@ -26,5 +28,10 @@ munge_api_data <- function(api_path = "data/api/") {
                          ifelse(site == "elc", "boxelder", site))) %>%
     # Lastly, we swapped Boxelder's sonde out for Rist's late in 2022:
     mutate(site = ifelse(site == "tamasag" & DT > "2022-09-20" & DT < "2023-01-01", "boxelder", site))
+
+  # append the incoming data to the historical data
+
   return(api_data)
 }
+
+# this will have to pull from the incoming_data folder
