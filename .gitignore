@@ -17,5 +17,7 @@ src/api_pull/credentials.yml
 # untracking field note api
 src/mWater_collate/mWater_API.yml
 *.png
+# reporting
+scratch/reporting/PWQN_overview.html
 # vs code
 .vscode/
