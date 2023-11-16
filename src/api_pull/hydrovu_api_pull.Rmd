@@ -175,12 +175,12 @@ get_last_DT_round <- function(df) {
 last_DT_round <- lapply(all_data_flagged_dfs, get_last_DT_round)
 
 # convert the resulting list to a data frame
-last_DT_round_df <- data.frame(site = names(all_data_flagged_dfs),
+last_DT_round_df <- tibble(site = names(all_data_flagged_dfs),
                                last_DT_round = unlist(last_DT_round)) %>%
                                # pull the site name from the index
                                mutate(site = sub("-.*", "", site),
                                # convert the Unix timestamp to a POSIXct object
-                               last_DT_round = as.POSIXct(last_DT_round_df$last_DT_round, origin = "1970-01-01")) %>%
+                               last_DT_round = as.POSIXct(.$last_DT_round, origin = "1970-01-01")) %>%
                                # summarize and find the earliest date for each site
                               group_by(site) %>%
                               summarize(last_DT_round = min(last_DT_round))

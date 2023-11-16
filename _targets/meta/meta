@@ -1,0 +1,12 @@
+name|type|data|command|depend|seed|path|time|size|bytes|format|repository|iteration|parent|children|seconds|warnings|error
+.Random.seed|object|ef9be9643e45dbf5|||||||||||||||
+api_puller|function|9ceb43696fcd83a7|||||||||||||||
+flagged_data_dfs|stem|5b82b0b4bd52c359|ccdc6d0388e75921|54725347de7635bc|-198773707||t19677.8908143114s|b05b3bc68252b0d8|105591841|rds|local|vector|||5.517||
+flagged_data_dfs_file|stem|5b82b0b4bd52c359|f34837fe8ac449aa|ef46db3751d8e999|-1071194643|data/flagged/all_data_flagged.RDS|t19672.7143055556s|b05b3bc68252b0d8|105591841|file|local|vector|||0.654||
+get_start_dates_df|function|69142ac8c398b6e4|||||||||||||||
+hv_creds|stem|57f54ff564d1723c|71a83a1ad447b0fd|ef46db3751d8e999|266083851||t19677.8905490382s|37c5114db086cc97|136|rds|local|vector|||0.001||
+hv_data_id|function|ee07d036783ec4a0|||||||||||||||
+hv_locations_all|function|9dbed0191b2b33bb|||||||||||||||
+hv_token|stem|a8be02601908de04|268e267fa1b9be68|17a8047e307ddeb7|268012145||t19677.8908151113s|ac5678394de34e6f|277|rds|local|vector|||0.019||
+incoming_data_dfs|stem||d6cc65df068f1c13|9c8e22c666f4d235|362499324||t19677.8908154114s||0|rds|local|vector|||0.011||.y must be a vector, not a formula object.
+start_dates_df|stem|39d9226e6450fecc|d509ab0e3cc06eec|dbc40bc281863478|81022493||t19677.890815249s|0592d33550c0bb62|308|rds|local|vector|||0.01||
