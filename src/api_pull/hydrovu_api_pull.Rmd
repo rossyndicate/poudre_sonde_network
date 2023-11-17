@@ -42,7 +42,7 @@ client_id = as.character(creds["client"])
 client_secret = as.character(creds["secret"])
 
 # get a token for location lists and data access
-token <- hv_auth(client_id, client_secret)
+hv_token <- hv_auth(client_id, client_secret)
 ```
 
 Download the raw data on HydroVu based on time frame and location. Start/end times must EXACTLY match this format:
@@ -191,9 +191,9 @@ last_DT_round_df %>% View()
 # last_DT_round_df will take the place of the start and end dates in the api_puller function
 
 
-sites %>% walk(~api_puller(site = .,
-                           start = start,
-                           end = end))
+# sites %>% walk(~api_puller(site = .,
+#                            start = start,
+#                            end = end))
 ```
 
 ```{r, eval = FALSE}

@@ -38,10 +38,11 @@ list(
   # Pull in the API data -----------------------------------------------
 
   # accessing the API data
-  tar_target(
+  tar_file_read(
     hv_creds,
     # to do (j): make sure that credentials are in a separate folder from scripts?
-    read_yaml("src/api_pull/credentials.yml")
+    "src/api_pull/credentials.yml",
+    read = read_yaml(!!.x)
   ),
 
   # get a token for location lists and data access
@@ -67,12 +68,15 @@ list(
   ),
 
   # get the data for each site
-  # this is fully not working right now
   tar_target(
     incoming_data_csvs,
-    walk2(start_dates_df,
-    ~api_puller(site = .$site,
-      start = .$last_DT_round))
+    {
+      walk2(
+        start_dates_df$site, 
+        as.character(start_dates_df$last_DT_round), 
+        ~api_puller(site = .x, start_dt = .y, end_dt = Sys.time(), api_token = hv_token, dump_dir = "scratch/scratch_data/")
+      ) 
+    }
   )
 
   # append to historical data
@@ -81,3 +85,4 @@ list(
   # QAQC the data -----------------------------------------------------
 
 )
+
