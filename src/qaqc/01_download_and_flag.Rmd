@@ -25,7 +25,8 @@ walk(list.files('src/qaqc/download_and_flag_fxns', pattern = "*.R", full.names =
 
 Load field notes and define the start time as the 15 minute preceding the field time
 ```{r}
-field_notes <- clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
+raw_field_notes <- read_excel("data/sensor_field_notes.xlsx")
+field_notes <- clean_field_notes(raw_field_notes)
 ```
 
 Merge the data sets from all API pulls:
@@ -64,7 +65,8 @@ combinations <- crossing(sites, params)
 all_data_summary_list <- map2(combinations$sites, 
                          combinations$params, 
                          summarize_site_param,
-                         api_data = all_data) %>% 
+                         api_data = all_data,
+                         field_notes = field_notes) %>% 
   # set the names for the dfs in the list
   set_names(paste0(combinations$sites, "-", combinations$params)) %>% 
   # remove NULL values from the list
@@ -84,7 +86,7 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
 incoming_data <- all_data_summary_list
 all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
 
-appended_data_list <- map2() 
+# appended_data_list <- map2() 
 ```
 
 ### Add summary stats and flag new data
@@ -100,6 +102,9 @@ all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_stati
 ```{r}
 threshold_lookup <- map(all_data_summary_stats_list, make_threshold_table) %>%
   bind_rows()
+
+# save the threshold lookup table as a RDS 
+saveRDS(threshold_lookup, 'data/summary_stats/threshold_lookup.RDS')
 
 # this does not need to be a yaml solution
 # add this to the threshold look up table and then save the threshold look up table 

@@ -7,7 +7,7 @@
 # summarize_site_param(site_arg = "archery", parameter_arg = "Actual Conductivity", api_data = api_data)
 # summarize_site_param(site_arg = "boxelder", parameter_arg = "Temperature", api_data = api_data)
 
-summarize_site_param <- function(site_arg, parameter_arg, api_data) {
+summarize_site_param <- function(site_arg, parameter_arg, api_data, field_notes) {
 
   # filter deployment records for the full join
   site_field_notes <- field_notes %>%

@@ -10,11 +10,11 @@ munge_api_data <- function(api_path = "data/api/historical_api_data/") {
     map_dfr(~data.table::fread(.) %>% select(-id)) %>%
     # remove overlapping API-pull data
     distinct() %>%
-    select(-name) %>%
     # remove VuLink data
-    filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
+    filter(!grepl("vulink", name, ignore.case = TRUE)) %>% # these will throw us errors if there is none?
     # remove Virridy data (for now)
     filter(!grepl("virridy", name, ignore.case = TRUE)) %>%
+    select(-name) %>%
     # Convert DT to MST:
     mutate(DT = as_datetime(timestamp, tz = "UTC")) %>%
     mutate(DT = with_tz(DT, tzone = "MST"),

@@ -10,6 +10,6 @@ get_start_dates_df <- function(incoming_flagged_data_dfs) {
                         ) %>%
                       # summarize and find the earliest date for each site
                       group_by(site) %>%
-                      summarize(last_DT_round = min(last_DT_round))
+                      summarize(last_DT_round = as.character(min(last_DT_round)))
     return(start_dates_df)
 }

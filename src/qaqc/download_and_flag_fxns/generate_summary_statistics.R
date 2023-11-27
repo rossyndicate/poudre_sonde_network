@@ -7,15 +7,15 @@
 
 generate_summary_statistics <- function(site_param_df) {
 
-  # create seasons table
-  winter_baseflow <- c(12,1,2,3,4)
-  snowmelt <- c(5,6,NA,NA,NA)
-  monsoon <- c(7,8,9,NA,NA)
-  fall_baseflow <- c(10,11,NA,NA,NA)
-
-  seasons <- cbind(winter_baseflow, snowmelt, monsoon, fall_baseflow) %>%
-    as_tibble() %>%
-    pivot_longer(cols = names(.), values_to = "month", names_to = "season") %>% drop_na()
+  # # create seasons table
+  # winter_baseflow <- c(12,1,2,3,4)
+  # snowmelt <- c(5,6,NA,NA,NA)
+  # monsoon <- c(7,8,9,NA,NA)
+  # fall_baseflow <- c(10,11,NA,NA,NA)
+  #
+  # seasons <- cbind(winter_baseflow, snowmelt, monsoon, fall_baseflow) %>%
+  #   as_tibble() %>%
+  #   pivot_longer(cols = names(.), values_to = "month", names_to = "season") %>% drop_na()
 
 
   summary_stats_df <- site_param_df %>%
@@ -40,8 +40,15 @@ generate_summary_statistics <- function(site_param_df) {
       # add some summary info for future us
       month = month(DT_round),
       year = year(DT_round),
-      y_m = paste(year, '-', month)) %>%
-    left_join(seasons, by = "month")
+      y_m = paste(year, '-', month),
+      season = case_when(month %in% c(12,1,2,3,4) ~ "winter_baseflow",
+                         month %in% c(5,6) ~ "snowmelt",
+                         month %in% c(7,8,9) ~ "monsoon",
+                         month %in% c(10,11) ~ "fall_baseflow",
+                         TRUE ~ NA)
+      )
+
+
 
   return(summary_stats_df)
 
