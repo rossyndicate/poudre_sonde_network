@@ -22,7 +22,6 @@ tar_option_set(
 
 # Run the R scripts in the R/ folder with your custom functions:
 tar_source(files = c(
-  # to do (j): make sure that the functions pulled in are in correct {targets} format
   # api pull functions
   "src/api_pull/hv_getdata_id.R",
   "src/api_pull/hv_locations_all.R",
@@ -33,7 +32,6 @@ tar_source(files = c(
   # "src/qaqc/explore_and_fix_fxns.R"
 ))
 
-# to do (j): add in argument names (`name = ...`) for each target
 list(
   # Pull in the API data -----------------------------------------------
 
@@ -68,18 +66,18 @@ list(
   ),
 
   # get the data for each site
-  # tar_target(
-  #   incoming_data_csvs,
-  #   {
-  #     walk2(
-  #       .x = start_dates_df$site, 
-  #       .y = start_dates_df$last_DT_round,
-  #       ~api_puller(site = .x, start_dt = .y, end_dt = Sys.time(), api_token = hv_token, dump_dir = "scratch/scratch_data/")
-  #     ) 
-  #   }
-  # ),
+  tar_target(
+    incoming_data_csvs,
+    {
+      walk2(
+        .x = start_dates_df$site, 
+        .y = start_dates_df$last_DT_round,
+        ~api_puller(site = .x, start_dt = .y, end_dt = Sys.time(), api_token = hv_token, dump_dir = "data/api/test_data/")
+      ) 
+    }
+  ),
 
-  # append to historical data
+  # append to historical data ------------------------------------------
   # to do (j): append to historical data
 
   # QAQC the data -----------------------------------------------------
@@ -101,8 +99,8 @@ list(
     # to do (j): try to convert this into a tar_file_read() function
   tar_target(
     all_api_data,
-    munge_api_data(api_path = "scratch/scratch_data/") # to do (j): make sure that this is the correct path
-  ),
+    munge_api_data(api_path = "data/api/test_data/") # to do (j): make sure that this is the correct path 
+  ), # I think this was failing because there was no data? this will need to get resolved on the append
 
   # format data
 

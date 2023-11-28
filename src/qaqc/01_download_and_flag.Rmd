@@ -85,8 +85,6 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
   # DANGER: this is a cyclical process
 incoming_data <- all_data_summary_list
 all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
-
-# appended_data_list <- map2() 
 ```
 
 ### Add summary stats and flag new data
