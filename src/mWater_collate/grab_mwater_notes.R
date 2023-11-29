@@ -96,13 +96,14 @@ sensor_notes <- all_notes_cleaned%>%
         sensor_deployed = as.character(sn_deployed),
          #Sensor swapped notes
          sensor_swapped_notes = case_when(is.na(sensor_change)  ~ NA,
-                                    sensor_change == "Pulled" ~ paste0("SN Removed: ", sensor_pulled),
-                                    sensor_change == "Swapped" ~ paste0("SN Removed: ", sensor_pulled, "SN Deployed: ", sensor_deployed),
+                                    sensor_change == "Pulled" &!is.na(sensor_pulled) ~ paste0("SN Removed: ", sensor_pulled),
+                                    sensor_change == "Swapped" ~ paste0("SN Removed: ", sensor_pulled, " SN Deployed: ", sensor_deployed),
                                     sensor_change == "Deployed" ~ sensor_deployed),
          #Date/field season columns to match QAQC workflow
          DT_join = as.character(DT_round),
          field_season = year(DT_round),
-         last_site_visit = DT_round
+         last_site_visit = DT_round,
+        date = as.character(date)
   )%>%
   arrange(desc(DT_round))%>%
   rename(start_DT = start_dt_mst, start_time_mst = time_start)%>%
