@@ -28,11 +28,9 @@ Load field notes and define the start time as the 15 minute preceding the field 
 ```{r}
 field_notes <- clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
 
-source("src/mWater_collate/grab_mwater_notes.R")
-#merge old notes (field notes) and new mwater notes (sensor_notes )
-all_field_notes <- rbind(sensor_notes, field_notes)%>%
-  #order columns in easily readable ordering
-  select(site, crew, DT_round,sonde_employed,  sensors_cleaned, wiper_working, rdo_cap_condition, rdo_cap_replaced , ph_junction_replaced , cals_performed, cal_report_collected , sensor_malfunction,sensor_pulled,sensor_deployed, sensor_swapped_notes,  visit_type,start_time_mst,DT_join,  start_DT, end_dt,date,  visit_comments,photos_downloaded, field_season, last_site_visit)
+source("src/mWater_collate/grab_sensor_notes.R")
+#merge new mwater notes (sensor_notes) and old notes (field notes)  
+all_field_notes <- rbind(sensor_notes, field_notes)
 ```
 
 Merge the data sets from all API pulls:
