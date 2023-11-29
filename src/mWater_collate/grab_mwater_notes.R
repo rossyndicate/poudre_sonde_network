@@ -85,17 +85,28 @@ all_notes_cleaned <- all_notes%>%
 
 sensor_notes <- all_notes_cleaned%>%
   filter(grepl("Sensor",visit_type, ignore.case = TRUE) & !grepl("Sensor malfunction",visit_type, ignore.case = TRUE))%>%
-  select(-c( start_dt, chla_volume_ml, vol_filtered_blank_dup, sample_collected,do_mgl,cond_ms_cm, temp_c, upstream_pic, downstream_pic, clarity, filter_pic, other_pic, other_pic_descriptor))%>%
+  select(-c( start_dt, chla_volume_ml, vol_filtered_blank_dup, sample_collected,do_mgl,cond_ms_cm, temp_c, upstream_pic,
+             downstream_pic, clarity, filter_pic, other_pic, other_pic_descriptor, which_sensor_malfunction, malfunction_end_dt,
+             log1_type, log2_type, log1_mmdd, log2_mmdd, log_downloaded))%>%
   # determining sonde employed status based on sensor_change
   mutate(sonde_employed = case_when(is.na(sensor_change)  ~ 1,
                                     sensor_change == "Pulled" ~ 0,
                                     sensor_change %in% c("Swapped", "Deployed") ~ 1),
+        sensor_pulled = as.character(sn_removed),
+        sensor_deployed = as.character(sn_deployed),
+         #Sensor swapped notes
+         sensor_swapped_notes = case_when(is.na(sensor_change)  ~ NA,
+                                    sensor_change == "Pulled" ~ paste0("SN Removed: ", sensor_pulled),
+                                    sensor_change == "Swapped" ~ paste0("SN Removed: ", sensor_pulled, "SN Deployed: ", sensor_deployed),
+                                    sensor_change == "Deployed" ~ sensor_deployed),
          #Date/field season columns to match QAQC workflow
          DT_join = as.character(DT_round),
          field_season = year(DT_round),
          last_site_visit = DT_round
   )%>%
-  arrange(desc(DT_round))
+  arrange(desc(DT_round))%>%
+  rename(start_DT = start_dt_mst, start_time_mst = time_start)%>%
+  select(-c(sn_removed, sn_deployed, sensor_change))
 
 #write to CSV
 write_csv(sensor_notes, "data/mWater_sensor_field_notes.csv")
