@@ -54,6 +54,7 @@ all_notes_cleaned <- all_notes%>%
     #start and end dt comes in as UTC -> to MST
         start_dt_mst = with_tz(ymd_hms(start_dt), tz = "MST"),
         end_dt = with_tz(ymd_hms(end_dt), tz = "MST"),
+        malfunction_end_dt = with_tz(ymd_hms(malfunction_end_dt), tz = "MST"),
          date = as.Date(start_dt_mst, tz = "MST"),
          time_start = format(start_dt_mst, "%H:%M"),
         
@@ -62,13 +63,25 @@ all_notes_cleaned <- all_notes%>%
     #correct names if it is in our upper sites (acronyms)
     site = ifelse(site %in% upper_sites$site_code, toupper(site), site),
          site_other = NULL,
-         #this part does not work yet
-         # (cant get rid of (please specify))
+    #When I changed the mWater survey, I accidentally introduced ??? in the place of Sensor Calibration option, Replacing that here 
+         visit_type = case_when(str_detect(visit_type, "\\?\\?\\?") ~ str_replace(string = visit_type,
+                                                                              pattern =  "\\?\\?\\?",
+                                                                              replacement = "Sensor Calibration or Check"), 
+                                TRUE~ visit_type), 
+    # Merging visit_type  and visit type other
          visit_type = case_when(str_detect(visit_type, "Other") ~ str_replace(string = visit_type,
                                                                               pattern =  "Other \\(please specify\\)",
-                                                                              replacement = visit_type_other), 
+                                                                              replacement = visit_type_other),
                             TRUE ~ visit_type),
     visit_type_other = NULL, 
+    # Merge sensor malfunction + sensor malfunction other
+    other_which_sensor_malfunction = as.character(other_which_sensor_malfunction),
+    which_sensor_malfunction = case_when(str_detect(which_sensor_malfunction, "Other") ~ str_replace(string = which_sensor_malfunction,
+                                                                              pattern =  "Other \\(please specify\\)",
+                                                                              replacement = other_which_sensor_malfunction),
+                            TRUE ~ which_sensor_malfunction),
+    other_which_sensor_malfunction = NULL, 
+    
          #If other is chosen, make photos downloaded equal to response
          photos_downloaded = ifelse(photos_downloaded == "Other (please specify)", photos_downloaded_other, photos_downloaded),
          photos_downloaded_other = NULL, 
@@ -83,10 +96,10 @@ all_notes_cleaned <- all_notes%>%
 These are the notes that will be added to the QAQC workflow notes Most of the code in this chunk is to get the df to match the one in the QAQC workflow It can be saved as a CSV or pulled directly into QAQC workflow
 
 ```{r}
-#grab only notes where technician is interacting with sensor
+#grab only notes where technician is interacting with sensor on site (excludes sensor malfunction notes)
 
 sensor_notes <- all_notes_cleaned%>%
-  filter(grepl("Sensor",visit_type, ignore.case = TRUE))%>%
+  filter(grepl("Sensor",visit_type, ignore.case = TRUE) & !grepl("Sensor malfunction",visit_type, ignore.case = TRUE))%>%
   select(-c( start_dt, chla_volume_ml, vol_filtered_blank_dup, sample_collected,do_mgl,cond_ms_cm, temp_c, upstream_pic, downstream_pic, clarity, filter_pic, other_pic, other_pic_descriptor))%>%
   # determining sonde employed status based on sensor_change 
   mutate(sonde_employed = case_when(is.na(sensor_change)  ~ 1,
@@ -98,9 +111,18 @@ sensor_notes <- all_notes_cleaned%>%
          last_site_visit = DT_round
   )%>%
   arrange(desc(DT_round))
-         
+
 #write to CSV
 write_csv(sensor_notes, "data/mWater_sensor_field_notes.csv")
+
+
+# Grab notes about sensor malfunction
+malfunction_records <- all_notes_cleaned%>%
+  filter(grepl("Sensor malfunction",visit_type, ignore.case = TRUE))%>%
+  select(start_dt_mst, site, crew, which_sensor_malfunction,malfunction_end_dt, notes = visit_comments )
+#write to csv
+
+write_csv(malfunction_records, "data/mWater_malfunciton_records.csv")
 
 ```
 
@@ -129,11 +151,11 @@ Goal:
 source("src/mWater_collate/sampling_spreadsheet_creator.R")
 # To get the RMRS style data for a specfic date of sampling, 
 # Input the date of interest in sampling_spreadsheet_creator
-sampling_spreadsheet_creator(date_oi = "2023-11-07")
+#sampling_spreadsheet_creator(date_oi = "2023-11-17")
 
 # To get all the water sampling data and save to CSV in sampling notes
 # This also returns the df sampling_notes in case you want to review in R
-sampling_spreadsheet_creator(all_dates = TRUE)
+#sampling_spreadsheet_creator(all_dates = TRUE)
 ```
 
 ## Photos
@@ -151,8 +173,15 @@ source("src/mWater_collate/download_pictures.R")
   
 #RUN TO DOWNLOAD NEW PICTURES
 # It takes about 2-5 minutes to download ~25-50 photos
+# Sometimes the request to mWater time out, just re run the function below if that happens
 
 download_pictures()
         
 
 ```
+
+# Remove extra objects not needed in QAQC pipeline
+```{r}
+rm(all_notes, sampling_sites, upper_sites, all_notes_cleaned)
+```
+
