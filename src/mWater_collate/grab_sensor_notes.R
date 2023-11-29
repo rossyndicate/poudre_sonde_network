@@ -30,7 +30,11 @@ sensor_notes <- all_notes_cleaned%>%
          date = as.character(date)
   )%>%
   arrange(desc(DT_round))%>%
-  select(-sensor_change)
+  select(-sensor_change)%>%
+  #order columns in easily readable ordering
+  select(site, crew, DT_round,sonde_employed,  sensors_cleaned, wiper_working, rdo_cap_condition, rdo_cap_replaced , ph_junction_replaced ,
+         cals_performed, cal_report_collected , sensor_malfunction,sensor_pulled,sensor_deployed, sensor_swapped_notes,
+         visit_type,start_time_mst,DT_join,  start_DT, end_dt,date,  visit_comments,photos_downloaded, field_season, last_site_visit)
 
 # back up to CSV
 write_csv(sensor_notes, "data/mWater_sensor_field_notes.csv")
