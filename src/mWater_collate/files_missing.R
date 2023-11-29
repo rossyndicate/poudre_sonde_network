@@ -5,10 +5,10 @@ files_missing <- function(){
   #grab sensor notes that have logs or cal reports that should be  downloaded
   sensor_files <- sensor_notes%>%
     filter(cal_report_collected|log_downloaded)%>%
-    select(site, crew, start_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
+    select(site, crew, start_dt_mst, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
     mutate(# Create basis for calibration report name
       # this will be used to check for calibration report in data files and then b
-      cal_report_name = case_when(cal_report_collected == TRUE ~ paste0(tolower(site), "_", format(start_dt, "%Y%m%d")),
+      cal_report_name = case_when(cal_report_collected == TRUE ~ paste0(tolower(site), "_", format(start_dt_mst, "%Y%m%d")),
                                   cal_report_collected == NA ~ NA),
       log1_mmdd = case_when(nchar(as.character(log1_mmdd)) == 3 ~ paste0("0",log1_mmdd),
                             TRUE ~ as.character(log1_mmdd)),
@@ -25,11 +25,11 @@ files_missing <- function(){
                                   is.na(log2_mmdd) & is.na(log2_type) ~ FALSE,
                                   is.na(log2_mmdd) | is.na(log2_type) ~ TRUE,
                                   TRUE ~ FALSE),
-      log1_name = case_when(!(is.na(log1_mmdd) | is.na(log1_type)) ~ paste0(site,"_",year(start_dt),log1_mmdd,
-                                                                            "_", format(start_dt, "%Y%m%d"), "_", log1_type),
+      log1_name = case_when(!(is.na(log1_mmdd) | is.na(log1_type)) ~ paste0(site,"_",year(start_dt_mst),log1_mmdd,
+                                                                            "_", format(start_dt_mst, "%Y%m%d"), "_", log1_type),
                             (is.na(log1_mmdd) | is.na(log1_type))  ~ NA),
-      log2_name = case_when(!(is.na(log2_mmdd) | is.na(log2_type)) ~ paste0(site,"_",year(start_dt),log2_mmdd,
-                                                                            "_", format(start_dt, "%Y%m%d"), "_", log2_type),
+      log2_name = case_when(!(is.na(log2_mmdd) | is.na(log2_type)) ~ paste0(site,"_",year(start_dt_mst),log2_mmdd,
+                                                                            "_", format(start_dt_mst, "%Y%m%d"), "_", log2_type),
                             (is.na(log2_mmdd) | is.na(log2_type))  ~ NA),
       log_missing = case_when(
         log1_name %nin% logs_simple | log2_name %nin% logs_simple ~ TRUE,
