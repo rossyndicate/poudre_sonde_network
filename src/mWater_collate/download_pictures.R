@@ -1,6 +1,16 @@
+## Photos
+
+# Goals:
+# Download all user created photos ( upstream, downstream, clarity, filter and other pictures)
+# Label according to site, date, description in the format site_YYYYMMDD_descriptor.jpg
+# Only download photos which have not yet been downloaded
+
+
 
 
 download_pictures <- function(){
+  #source to grab all notes cleaned
+  source("src/mWater_collate/clean_mwater_notes.R")
   # Find all the downloaded pictures
   all_file_names <- list.files(path = "data/field_pics/", recursive = TRUE)
   #grab notes
@@ -103,5 +113,10 @@ path <- "data/field_pics/"
       download.file(other_photos$other_pic[i], destfile = paste0(path,other_photos$other_filename[i]))
     }}
 
-cat("\nAll Available Pictures Downloaded")
+cat("\nAll Available Pictures Downloaded\n")
 }
+
+download_pictures()
+#RUN TO DOWNLOAD NEW PICTURES
+# It takes about 2-5 minutes to download ~25-50 photos
+# Sometimes the request to mWater time out, just re run the function below if that happens

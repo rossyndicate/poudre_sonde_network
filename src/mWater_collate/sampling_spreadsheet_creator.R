@@ -1,14 +1,39 @@
+## Water Sampling Data:
+
+# Goal:
+#Save data in the correct format for RMRS spreadsheet
+#Save all water sampling probe values in a spreadsheet
+# To get the RMRS style data for a specfic date of sampling,
+# Input the date of interest in sampling_spreadsheet_creator
+#sampling_spreadsheet_creator(date_oi = "2023-11-17")
+
+# To get all the water sampling data and save to CSV in sampling notes
+# This also returns the df sampling_notes in case you want to review in R
+#sampling_spreadsheet_creator(all_dates = TRUE)
+
+
 sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FALSE ){
+
+  #source clean mwater script for all notes cleaned
+
+  source("src/mWater_collate/clean_mwater_notes.R")
 
   #pull in site meta data
   site_meta <- read_csv("data/water_sampling_sites.csv")%>%
     select(site = site_code, Site_Name, site_label_rmrs)
+  # sort for sites in upper network (ie. acronyms rather than street names)
+  upper_sites <- sampling_sites%>%
+    filter(watershed != "CLP  Mainstem-Fort Collins")%>%
+    #this is to help match with user input
+    mutate(site_code = tolower(site_code))
 
   # create df of all water samples and save DT, handheld probe and chla volume data
   sampling_notes <- all_notes_cleaned%>%
     filter(grepl("Sampling",visit_type))%>%
-    mutate(all_pics_taken = case_when(!is.na(downstream_pic)&!is.na(upstream_pic)&!is.na(clarity)&!is.na(filter_pic) ~ TRUE, TRUE ~ FALSE))%>%
-    select(site,crew, DT_round, date, time = time_start, sample_collected, chla_volume_ml, vol_filtered_blank_dup, do_mgl, cond_ms_cm, temp_c, visit_comments, all_pics_taken)
+    mutate(all_pics_taken = case_when(!is.na(downstream_pic)&!is.na(upstream_pic)&!is.na(clarity)&!is.na(filter_pic) ~ TRUE, TRUE ~ FALSE),
+           #correct names if it is in our upper sites (acronyms)
+           site = ifelse(site %in% upper_sites$site_code, toupper(site), site))%>%
+    select(site,crew, DT_round, date, time = start_time_mst, sample_collected, chla_volume_ml, vol_filtered_blank_dup, do_mgl, cond_ms_cm, temp_c, visit_comments, all_pics_taken)
 
   # Distinguish BLANK and DUPLICATE values
   blanks_dups <- sampling_notes %>%

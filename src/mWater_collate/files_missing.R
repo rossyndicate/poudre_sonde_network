@@ -1,4 +1,19 @@
+## Determining uploads
+
+#This function looks at the user inputs for calibration report collect and logs collected.
+#Based on these inputs, it looks at all the uploaded logs or calibration reports
+#and will print out what logs are missing and who to contact to get those files uploaded.
+
+
+
+
 files_missing <- function(){
+
+  #source clean mwater script for all notes cleaned
+
+  source("src/mWater_collate/clean_mwater_notes.R")
+
+  #grab cal reports from folder
   cal_reports_simple <- str_extract(list.files(path = "data/calibration_reports/"), ".*_\\d{8}" )
   logs_simple <- str_extract(list.files(path = "data/sensor_data/2023", recursive = TRUE), "\\w+_\\d{8}_(vulink|troll)")
 
