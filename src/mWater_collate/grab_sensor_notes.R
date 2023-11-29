@@ -10,9 +10,6 @@ source("src/mWater_collate/clean_mwater_notes.R")
 
 sensor_notes <- all_notes_cleaned%>%
   filter(grepl("Sensor",visit_type, ignore.case = TRUE) & !grepl("Sensor malfunction",visit_type, ignore.case = TRUE))%>%
-  select(-c( start_dt, chla_volume_ml, vol_filtered_blank_dup, sample_collected,do_mgl,cond_ms_cm, temp_c, upstream_pic,
-             downstream_pic, clarity, filter_pic, other_pic, other_pic_descriptor, which_sensor_malfunction, malfunction_end_dt,
-             log1_type, log2_type, log1_mmdd, log2_mmdd, log_downloaded, sn_removed, sn_deployed))%>%
   # determining sonde employed status based on sensor_change
   mutate(sonde_employed = case_when(is.na(sensor_change)  ~ 1,
                                     sensor_change == "Pulled" ~ 0,
@@ -30,7 +27,6 @@ sensor_notes <- all_notes_cleaned%>%
          date = as.character(date)
   )%>%
   arrange(desc(DT_round))%>%
-  select(-sensor_change)%>%
   #order columns in easily readable ordering
   select(site, crew, DT_round,sonde_employed,  sensors_cleaned, wiper_working, rdo_cap_condition, rdo_cap_replaced , ph_junction_replaced ,
          cals_performed, cal_report_collected , sensor_malfunction,sensor_pulled,sensor_deployed, sensor_swapped_notes,
