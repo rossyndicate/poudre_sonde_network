@@ -3,7 +3,8 @@ files_missing <- function(){
   logs_simple <- str_extract(list.files(path = "data/sensor_data/2023", recursive = TRUE), "\\w+_\\d{8}_(vulink|troll)")
 
   #grab sensor notes that have logs or cal reports that should be  downloaded
-  sensor_files <- sensor_notes%>%
+  sensor_files <- all_notes_cleaned%>%
+    filter(grepl("Sensor",visit_type, ignore.case = TRUE))%>%
     filter(cal_report_collected|log_downloaded)%>%
     select(site, crew, start_dt_mst, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
     mutate(# Create basis for calibration report name
