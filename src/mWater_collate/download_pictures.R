@@ -103,5 +103,5 @@ path <- "data/field_pics/"
       download.file(other_photos$other_pic[i], destfile = paste0(path,other_photos$other_filename[i]))
     }}
 
-cat("All Available Pictures Downloaded")
+cat("\nAll Available Pictures Downloaded")
 }
