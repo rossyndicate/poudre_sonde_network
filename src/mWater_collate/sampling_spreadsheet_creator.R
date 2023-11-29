@@ -19,10 +19,10 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
   source("src/mWater_collate/clean_mwater_notes.R")
 
   #pull in site meta data
-  site_meta <- read_csv("data/water_sampling_sites.csv")%>%
+  site_meta <- read_csv("data/water_sampling_sites.csv",show_col_types = FALSE)%>%
     select(site = site_code, Site_Name, site_label_rmrs)
   # sort for sites in upper network (ie. acronyms rather than street names)
-  upper_sites <- sampling_sites%>%
+  upper_sites <- read_csv("data/water_sampling_sites.csv",show_col_types = FALSE)%>%
     filter(watershed != "CLP  Mainstem-Fort Collins")%>%
     #this is to help match with user input
     mutate(site_code = tolower(site_code))
