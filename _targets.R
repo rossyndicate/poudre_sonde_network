@@ -52,9 +52,9 @@ list(
 
   # get the start times for each site
 
-  ## read in the previously flagged data
+  ## read in the historically flagged data
   tar_file_read(
-    flagged_data_dfs,
+    flagged_data_dfs, # this data is from the RMD files. eventually it will be from this pipeline.
     "data/flagged/all_data_flagged.RDS",
     read = readRDS(!!.x)
   ),
@@ -66,19 +66,18 @@ list(
   ),
 
   # get the data for each site
-  tar_target(
-    incoming_data_csvs,
-    {
-      walk2(
-        .x = start_dates_df$site, 
-        .y = start_dates_df$last_DT_round,
-        ~api_puller(site = .x, start_dt = .y, end_dt = Sys.time(), api_token = hv_token, dump_dir = "data/api/test_data/")
-      ) 
-    }
-  ),
+  # tar_target(
+  #   incoming_data_csvs_upload,
+  #   {
+  #     end_dt = Sys.time()
+  #     walk2(
+  #       .x = start_dates_df$site,
+  #       .y = start_dates_df$start_DT_round,
+  #       ~api_puller(site = .x, start_dt = .y, end_dt = end_dt, api_token = hv_token, dump_dir = "data/api/test_data/")
+  #     )
+  #   }
+  # ),
 
-  # append to historical data ------------------------------------------
-  # to do (j): append to historical data
 
   # QAQC the data -----------------------------------------------------
 
@@ -98,9 +97,9 @@ list(
   # load incoming API data
     # to do (j): try to convert this into a tar_file_read() function
   tar_target(
-    all_api_data,
-    munge_api_data(api_path = "data/api/test_data/") # to do (j): make sure that this is the correct path 
-  ), # I think this was failing because there was no data? this will need to get resolved on the append
+    incoming_data_collated_csvs,
+    munge_api_data(api_path = "data/api/test_data/") # to do (j): make sure that this is the correct path
+  ),
 
   # format data
 
@@ -108,9 +107,9 @@ list(
   tar_target(
     site_param_combos,
     {
-      sites <- unique(all_api_data$site)
-      params <- c("Battery Level", "Baro", "Chl-a Fluorescence", 
-        "Depth", "DO", "External Voltage", "ORP", 
+      sites <- unique(incoming_data_collated_csvs$site)
+      params <- c("Battery Level", "Baro", "Chl-a Fluorescence",
+        "Depth", "DO", "External Voltage", "ORP",
         "pH", "Specific Conductivity", "Temperature", "Turbidity")
       site_param_combos <- crossing(sites, params)
     }
@@ -118,17 +117,30 @@ list(
 
   ## summarize the data for each site parameter combination
   tar_target(
-    all_data_summary_list,
+    all_data_summary_list, # to do (j): name this something else
     {
       field_notes
       all_data_summary_list <- map2(.x = site_param_combos$sites,
                                     .y = site_param_combos$params,
-                                    ~summarize_site_param(site_arg = .x, 
-                                                          parameter_arg = .y, 
-                                                          api_data = all_api_data,
-                                                          field_notes = field_notes)) %>%
-        set_names(paste0(site_param_combos$sites, "_", site_param_combos$params)) %>%
+                                    ~summarize_site_param(site_arg = .x,
+                                                          parameter_arg = .y,
+                                                          api_data = incoming_data_collated_csvs,
+                                                          field_notes = field_notes)) %>% # to do (j): why do I need to call field_notes here? I don't think we should need to do that...
+        set_names(paste0(site_param_combos$sites, "-", site_param_combos$params)) %>%
         keep(~ !is.null(.))
+    }
+  ),
+
+  # append to historical data
+
+  ## get the last 3 hours of the historically flagged data and append it to the incoming data
+  tar_target(
+    combined_data, # API data chunk to process (to do (j): rename this)
+    {
+      combined_data <- combine_hist_inc_data(
+        incoming_data_list = all_data_summary_list,
+        historical_data_list = flagged_data_dfs
+      )
     }
   ),
 
@@ -136,7 +148,7 @@ list(
   tar_target(
     all_data_summary_stats_list,
     {
-      all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
+      all_data_summary_stats_list <- map(combined_data, generate_summary_statistics)
     }
   ),
 
@@ -158,7 +170,7 @@ list(
     all_data_flagged,
     {
       # set sensor spec ranges as global variable
-      sensor_spec_ranges <<- sensor_spec_ranges 
+      sensor_spec_ranges <<- sensor_spec_ranges # to do (j): again, why do we need to call these objects here?
       # set threshold lookup as global variable
       threshold_lookup <<- threshold_lookup
 
@@ -169,16 +181,39 @@ list(
           add_spec_flag() %>%
           add_seasonal_flag() %>%
           add_na_flag() %>%
-          add_repeat_flag() %>% 
-          kw_add_large_anomaly_flag() %>%
+          add_repeat_flag() %>%
+          add_suspect_flag() %>%
           mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
-          mutate(historical_data = TRUE)
+          mutate(historical_flagged_data_1 = TRUE)
       })
       # network check
-      final_flag <- map(all_data_flagged, site_comp_test)
+      final_flag <- map(all_data_flagged, site_comp_test) # to do (j): I want to rename site_comp_test to network_check.
 
       all_data_flagged <- final_flag
     }
+  ),
+
+  # update the historically flagged data
+  tar_target(
+    update_historical_flag_data,
+    {
+      update_historical_flag_data <- update_historical_flag_list(
+        new_flagged_data = all_data_flagged,
+        historical_flagged_data = flagged_data_dfs
+      )
+    }
+  ),
+
+  # save the updated flagged data
+  tar_target(
+    write_flagged_data_RDS,
+    saveRDS(update_historical_flag_data, "data/flagged/test_all_data_flagged.RDS")
   )
+
+  # connect to FC system
+
+  # update FC system
+
+  # remove data from incoming data folder and append it to the historical API data
 )
 

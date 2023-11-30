@@ -126,15 +126,19 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
     add_spec_flag() %>%
     add_seasonal_flag() %>%
     add_na_flag() %>%
-    add_repeat_flag() %>% 
-    kw_add_large_anomaly_flag() %>%
+    add_repeat_flag() %>%
+    add_suspect_flag() %>%
     mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
-    mutate(historical_data = TRUE)
+    mutate(historical_flagged_data_1 = TRUE) %>% 
+    relocate(historical_data, .after = "t_sd_0199")
+    mutate(historical_flagged_data_2 = TRUE) %>% 
+    relocate(historical_flagged_data_2, .after = "historical_flagged_data_1")
 })
 
 final_flag <- map(all_data_flagged, site_comp_test)
 
 saveRDS(final_flag, 'data/flagged/all_data_flagged.RDS')
+
 write_feather(final_flag %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
 ```
 

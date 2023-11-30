@@ -22,20 +22,21 @@ generate_summary_statistics <- function(site_param_df) {
     # ... so that we can get the proper leading/lagging values across our entire timeseries:
     mutate(
       # Add the next value and previous value for mean.
-      front1 = lead(mean, n = 1),
-      back1 = lag(mean, n = 1),
+      front1 = ifelse(is.na(front1), lead(mean, n = 1), front1),
+      back1 = ifelse(is.na(back1), lag(mean, n = 1), back1),
       # Add the median for a point centered in a rolling median of 7 points.
-      rollmed = roll_median(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      rollmed = ifelse(is.na(rollmed), roll_median(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollmed), # to go (j): check_na() function for when we append data
       # Add the mean for a point centered in a rolling mean of 7 points.
-      rollavg = roll_mean(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      rollavg = ifelse(is.na(rollavg), roll_mean(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollavg),
       # Add the standard deviation for a point centered in a rolling mean of 7 points.
-      rollsd = roll_sd(mean, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      rollsd = ifelse(is.na(rollsd), roll_sd(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollsd),
       # Determine the slope of a point in relation to the point ahead and behind.
+      # katie working on these (j)
       slope_ahead = abs(front1 - mean)/15,
       slope_behind = (mean - back1)/15,
-      rollslope = roll_mean(slope_behind, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      rollslope = ifelse(is.na(rollslope), roll_mean(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollslope),
       # Add the standard deviation for points centered in a rolling slope of 7 points.
-      # rollsdslope = roll_sd(slope_behind, n = 7, align = 'center', na.rm = F, fill = NA_real_),
+      # rollsdslope = roll_sd(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_),
       #KRW Comment: add monthly sd. add monthly avg. add 10th and 90th quantiles.
       # add some summary info for future us
       month = month(DT_round),
@@ -47,9 +48,7 @@ generate_summary_statistics <- function(site_param_df) {
                          month %in% c(10,11) ~ "fall_baseflow",
                          TRUE ~ NA)
       )
-
-
-
+      
   return(summary_stats_df)
 
 }

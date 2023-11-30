@@ -22,11 +22,12 @@ add_seasonal_flag <- function(df) {
           t_slope_behind_01 = coalesce(t_slope_behind_01.x, t_slope_behind_01.y),
           t_slope_behind_99 = coalesce(t_slope_behind_99.x, t_slope_behind_99.y),
           t_sd_0199 = coalesce(t_sd_0199.x, t_sd_0199.y)) %>%
-    select(!c(t_mean01.x, t_mean01.y, 
-              t_mean99.x, t_mean99.y, 
+    select(!c(t_mean01.x, t_mean01.y,
+              t_mean99.x, t_mean99.y,
               t_slope_behind_01.x, t_slope_behind_01.y,
-              t_slope_behind_99.x, t_slope_behind_99.y, 
+              t_slope_behind_99.x, t_slope_behind_99.y,
               t_sd_0199.x, t_sd_0199.y)) %>%
+    relocate(c(historical_data, over_50_percent_fail_window, cleaner_flag), .after = "t_sd_0199") %>% # to do (j): i don't love this solution
     # ... flag obs that are outside the seasonal 1st - 99th percentile range:
     add_flag((mean < t_mean01 | mean > t_mean99), "outside of seasonal range") %>%
     # flag obs whose slope is outside the 1st - 99th percentile range

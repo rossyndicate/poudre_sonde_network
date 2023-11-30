@@ -19,7 +19,7 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data, field_notes)
       # summarize the data
       filter(site == site_arg & parameter == parameter_arg) %>%
       distinct() %>%
-      group_by(DT_round) %>% 
+      group_by(DT_round) %>%
       summarize(mean = as.numeric(mean(value, na.rm = T)),
                 diff = abs(min(value, na.rm = T) - max(value, na.rm = T)),
                 n_obs = n()) %>%
@@ -38,7 +38,7 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data, field_notes)
       # Use fill() to determine when sonde was in the field, and when the last site visit was.
       fill(c(sonde_employed, last_site_visit, sensor_malfunction)) %>%
       # format the data by adding all the columns that are missing from the flagged data
-      mutate(
+      mutate( # to do (j): reorganize the order of the columns
         mean_public = NA,
         front1 = NA,
         back1 = NA,
@@ -61,9 +61,12 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data, field_notes)
         t_slope_behind_01 = NA,
         t_slope_behind_99 = NA,
         t_sd_0199 = NA,
+        historical_flagged_data_1 = FALSE,
+        historical_flagged_data_2 = NA,
+        over_50_percent_fail_window = NA,
+        cleaner_flag = NA # to do (j): rename
         # verification = NA
         # add column that signifies that this is new incoming data
-        historical_data = FALSE
       ) %>%
       relocate(mean_public, .after = "mean")
   },
