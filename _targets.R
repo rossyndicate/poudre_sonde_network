@@ -78,6 +78,19 @@ list(
   #   }
   # ),
 
+  # get the test data for each site
+  tar_target(
+    incoming_data_csvs_upload,
+    {
+      start_dt = "2023-11-30 07:00:00"
+      end_dt = "2023-11-30 10:00:00"
+      walk(
+        .x = start_dates_df$site,
+        ~api_puller(site = .x, start_dt = start_dt, end_dt = end_dt, api_token = hv_token, dump_dir = "data/api/test_data/")
+      )
+    }
+  ),
+
 
   # QAQC the data -----------------------------------------------------
 
