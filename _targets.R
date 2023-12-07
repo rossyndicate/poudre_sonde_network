@@ -196,6 +196,7 @@ list(
           add_na_flag() %>%
           add_repeat_flag() %>%
           add_suspect_flag() %>%
+          # we should also be incorporating the add_malfuntion_flag() here no?
           mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
           mutate(historical_flagged_data_1 = TRUE)
       })

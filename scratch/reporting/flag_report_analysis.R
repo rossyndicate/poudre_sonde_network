@@ -29,6 +29,11 @@ generate_flag_report <- function(df) {
     summarise(n_total = n_distinct(DT_round)) %>%
     pull(n_total)
 
+  # summarize total data points with no flags
+  tot_no_flag <- df %>%
+    summarise(n_total_no_flag = n(is.na(flag))) %>%
+    pull(n_total_no_flag)
+
   # summarize total data points sans missing data
   total_observations_1 <- df %>%
     # filter out when flag has only missing data or only sonde not employed and missing data
@@ -36,10 +41,22 @@ generate_flag_report <- function(df) {
     summarise(n_total = n_distinct(DT_round)) %>%
     pull(n_total)
 
+  # summarize total data points with no flags sans missing data
+  tot_no_flag_sans_na <- df %>%
+    filter(!str_detect(flag, sans_na_flags)) %>%
+    summarise(n_total_no_flag_sans_na = n(is.na(flag))) %>%
+    pull(n_tota_no_flag_san_na)
+
   # summarize total days
   total_observations_dates <- df %>%
     group_by(date = format(DT_round, "%m-%d-%Y")) %>%
-    summarize(n_total = nrow(date)) %>%
+    summarise(n_total = nrow(date)) %>%
+    nrow()
+
+  # summarize total days with no flags
+  tot_day_no_flag <- df %>%
+    group_by(date = format(DT_round, "%m-%d-%Y")) %>%
+    filter(is.na(flag)) %>%
     nrow()
 
   # summarize total days sans missing data
@@ -106,12 +123,57 @@ generate_flag_report <- function(df) {
       dates_flagged_percentage_sans_na = format(round(percent_flagged_dates_1 * 100, 2), nsmall=2),
       dates_flagged_sans_na = flagged_observations_dates_1,
       total_dates_sans_na = total_observations_dates_1
+    ) %>%
+      mutate(
+        data_points_flagged_percentage = as.double(data_points_flagged_percentage),
+        data_points_flagged_percentage_sans_na = as.double(data_points_flagged_percentage_sans_na),
+        dates_flagged_percentage = as.double(dates_flagged_percentage),
+        dates_flagged_percentage_sans_na = as.double(dates_flagged_percentage_sans_na)
       )
 
     row_list[[i]] <- calculated_values
   }
 
-  #calculated_df <- bind_cols(row_list)
-  return(bind_rows(row_list))
+  # bound_rows_df <- bind_rows(row_list) ----
+  #
+  # no_flag_row <- tibble(
+  #   # metadata
+  #   site = site,
+  #   parameter = parameter,
+  #   flag = "no flag",
+  #   # data points
+  #   data_points_flagged_percentage = (100.00 - max((bound_rows_df$data_points_flagged_percentage))),
+  #   data_points_flagged = (max(bound_rows_df$total_data_points) - max(bound_rows_df$data_points_flagged)),
+  #   total_data_points = max(bound_rows_df$total_data_points),
+  #   data_points_flagged_percentage_sans_na = (100.00 - max(bound_rows_df$data_points_flagged_percentage_sans_na)),
+  #   data_points_flagged_sans_na = (max(bound_rows_df$total_data_points_sans_na) - max(bound_rows_df$data_points_flagged_sans_na)),
+  #   total_data_points_sans_na = max(bound_rows_df$total_data_points_sans_na),
+  #   # dates
+  #   dates_flagged_percentage = (100.00 - max(bound_rows_df$dates_flagged_percentage)),
+  #   dates_flagged = (max(bound_rows_df$total_dates) - max(bound_rows_df$dates_flagged)),
+  #   total_dates = max(bound_rows_df$total_dates),
+  #   dates_flagged_percentage_sans_na = (100.00 - max(bound_rows_df$dates_flagged_percentage_sans_na)),
+  #   dates_flagged_sans_na = (max(bound_rows_df$total_dates_sans_na) - max(bound_rows_df$dates_flagged_sans_na)),
+  #   total_dates_sans_na = max(bound_rows_df$total_dates_sans_na)
+  # )
+  #
+  # final_df <- bind_rows(no_flag_row, bound_rows_df)
+
+  return(final_df) # ----
 
 }
+
+# making the df
+new1 <- flagged_data_dfs[!grepl("Battery Level", names(flagged_data_dfs), ignore.case = TRUE)]
+new2 <- new1[!grepl("External Voltage", names(new1), ignore.case = TRUE)]
+new_flag_report <-  map(new2 ,generate_flag_report) %>%
+  bind_rows()
+
+# using the df to make bar charts
+
+df <- new_flag_report %>%
+  filter(flag == "no flag")
+
+# Create a stacked bar chart
+ggplot(df, aes(x = data_points_flagged_percentage)) +
+  geom_histogram()
