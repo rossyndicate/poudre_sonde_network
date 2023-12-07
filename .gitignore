@@ -23,3 +23,5 @@ src/mWater_collate/mWater_API.yml
 scratch/reporting/PWQN_overview.html
 # vs code
 .vscode/
+
+**/images/

@@ -1,14 +1,42 @@
+## Determining uploads
+
+#This function looks at the user inputs for calibration report collect and logs collected.
+#Based on these inputs, it looks at all the uploaded logs or calibration reports
+#and will print out what logs are missing and who to contact to get those files uploaded.
+
+
+
+
 files_missing <- function(){
+
+  #source clean mwater script for all notes cleaned
+
+  source("src/mWater_collate/clean_mwater_notes.R")
+
+  #grab context metadata
+  site_meta <- read_csv("data/water_sampling_sites.csv",show_col_types = FALSE)%>%
+    select(site = site_code, Site_Name, site_label_rmrs)
+  # sort for sites in upper network (ie. acronyms rather than street names)
+  upper_sites <- read_csv("data/water_sampling_sites.csv",show_col_types = FALSE)%>%
+    filter(watershed != "CLP  Mainstem-Fort Collins")%>%
+    #this is to help match with user input
+    mutate(site_code = tolower(site_code))
+
+  #grab cal reports from folder
   cal_reports_simple <- str_extract(list.files(path = "data/calibration_reports/"), ".*_\\d{8}" )
   logs_simple <- str_extract(list.files(path = "data/sensor_data/2023", recursive = TRUE), "\\w+_\\d{8}_(vulink|troll)")
 
   #grab sensor notes that have logs or cal reports that should be  downloaded
-  sensor_files <- sensor_notes%>%
+  sensor_files <- all_notes_cleaned%>%
+    filter(grepl("Sensor",visit_type, ignore.case = TRUE))%>%
     filter(cal_report_collected|log_downloaded)%>%
-    select(site, crew, start_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
-    mutate(# Create basis for calibration report name
+    select(site, crew, start_DT, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
+    mutate(
+      #correct names if it is in our upper sites (acronyms)
+      site = ifelse(site %in% upper_sites$site_code, toupper(site), site),
+      # Create basis for calibration report name
       # this will be used to check for calibration report in data files and then b
-      cal_report_name = case_when(cal_report_collected == TRUE ~ paste0(tolower(site), "_", format(start_dt, "%Y%m%d")),
+      cal_report_name = case_when(cal_report_collected == TRUE ~ paste0(tolower(site), "_", format(start_DT, "%Y%m%d")),
                                   cal_report_collected == NA ~ NA),
       log1_mmdd = case_when(nchar(as.character(log1_mmdd)) == 3 ~ paste0("0",log1_mmdd),
                             TRUE ~ as.character(log1_mmdd)),
@@ -25,11 +53,11 @@ files_missing <- function(){
                                   is.na(log2_mmdd) & is.na(log2_type) ~ FALSE,
                                   is.na(log2_mmdd) | is.na(log2_type) ~ TRUE,
                                   TRUE ~ FALSE),
-      log1_name = case_when(!(is.na(log1_mmdd) | is.na(log1_type)) ~ paste0(site,"_",year(start_dt),log1_mmdd,
-                                                                            "_", format(start_dt, "%Y%m%d"), "_", log1_type),
+      log1_name = case_when(!(is.na(log1_mmdd) | is.na(log1_type)) ~ paste0(site,"_",year(start_DT),log1_mmdd,
+                                                                            "_", format(start_DT, "%Y%m%d"), "_", log1_type),
                             (is.na(log1_mmdd) | is.na(log1_type))  ~ NA),
-      log2_name = case_when(!(is.na(log2_mmdd) | is.na(log2_type)) ~ paste0(site,"_",year(start_dt),log2_mmdd,
-                                                                            "_", format(start_dt, "%Y%m%d"), "_", log2_type),
+      log2_name = case_when(!(is.na(log2_mmdd) | is.na(log2_type)) ~ paste0(site,"_",year(start_DT),log2_mmdd,
+                                                                            "_", format(start_DT, "%Y%m%d"), "_", log2_type),
                             (is.na(log2_mmdd) | is.na(log2_type))  ~ NA),
       log_missing = case_when(
         log1_name %nin% logs_simple | log2_name %nin% logs_simple ~ TRUE,
