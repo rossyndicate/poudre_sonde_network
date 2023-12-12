@@ -3,12 +3,12 @@
 # Then follow the manual to check and run the pipeline:
 #   https://books.ropensci.org/targets/walkthrough.html#inspect-the-pipeline
 
-# Load packages required to define the pipeline:
+# Load packages required to define the pipeline: ----
 library(targets)
 library(tarchetypes)
 devtools::install_github("steeleb/HydroVuR")
 
-# Set target options:
+# Set target options: ----
 tar_option_set(
   # need to make sure that we are using all of th
   packages = c("data.table", "tidyverse", "rvest",
@@ -20,7 +20,7 @@ tar_option_set(
     # should this be parquet?
 )
 
-# Run the R scripts in the R/ folder with your custom functions:
+# Run the R scripts in the R/ folder with your custom functions: ----
 tar_source(files = c(
   # api pull functions
   "src/api_pull/hv_getdata_id.R",
@@ -35,7 +35,7 @@ tar_source(files = c(
 list(
   # Pull in the API data -----------------------------------------------
 
-  # accessing the API data
+  # accessing the API data ----
   tar_file_read(
     hv_creds,
     # to do (j): make sure that credentials are in a separate folder from scripts?
@@ -43,14 +43,14 @@ list(
     read = read_yaml(!!.x)
   ),
 
-  # get a token for location lists and data access
+  # get a token for location lists and data access ----
   tar_target(
     hv_token,
     hv_auth(client_id = as.character(hv_creds["client"]),
             client_secret = as.character(hv_creds["secret"]))
   ),
 
-  # get the start times for each site
+  # get the start times for each site ----
 
   ## read in the historically flagged data
   tar_file_read(
@@ -65,28 +65,15 @@ list(
     get_start_dates_df(flagged_data_dfs)
   ),
 
-  # get the data for each site
-  # tar_target(
-  #   incoming_data_csvs_upload,
-  #   {
-  #     end_dt = Sys.time()
-  #     walk2(
-  #       .x = start_dates_df$site,
-  #       .y = start_dates_df$start_DT_round,
-  #       ~api_puller(site = .x, start_dt = .y, end_dt = end_dt, api_token = hv_token, dump_dir = "data/api/test_data/")
-  #     )
-  #   }
-  # ),
-
-  # get the test data for each site
+  # get the data for each site ----
   tar_target(
-    incoming_data_csvs_upload,
+    incoming_data_csvs_upload, # this is going to have to append to the historical data
     {
-      start_dt = "2023-11-30 07:00:00"
-      end_dt = "2023-11-30 10:00:00"
-      walk(
+      end_dt = Sys.time()
+      walk2(
         .x = start_dates_df$site,
-        ~api_puller(site = .x, start_dt = start_dt, end_dt = end_dt, api_token = hv_token, dump_dir = "data/api/test_data/")
+        .y = start_dates_df$start_DT_round,
+        ~api_puller(site = .x, start_dt = .y, end_dt = end_dt, api_token = hv_token, dump_dir = "data/api/incoming_api_data/")
       )
     }
   ),
@@ -94,27 +81,27 @@ list(
 
   # QAQC the data -----------------------------------------------------
 
-  # load field notes
+  # load field notes ----
   tar_file_read(
     raw_field_notes,
     "data/sensor_field_notes.xlsx",
     read = read_excel(!!.x)
   ),
 
-  # clean field notes
+  # clean field notes ----
   tar_target(
     field_notes,
     clean_field_notes(raw_field_notes)
   ),
 
-  # load incoming API data
+  # load incoming API data ----
     # to do (j): try to convert this into a tar_file_read() function
   tar_target(
     incoming_data_collated_csvs,
     munge_api_data(api_path = "data/api/test_data/") # to do (j): make sure that this is the correct path
   ),
 
-  # format data
+  # format data  ----
 
   ## generate a site parameter combination list
   tar_target(
@@ -144,7 +131,7 @@ list(
     }
   ),
 
-  # append to historical data
+  # append to chunk of historical flagged data  ----
 
   ## get the last 3 hours of the historically flagged data and append it to the incoming data
   tar_target(
@@ -157,7 +144,7 @@ list(
     }
   ),
 
-  # generate summary statistics for each site parameter combination
+  # generate summary statistics for each site parameter combination ----
   tar_target(
     all_data_summary_stats_list,
     {
@@ -165,7 +152,7 @@ list(
     }
   ),
 
-  # read in look up table for thresholds
+  # read in look up table for thresholds ----
   tar_file_read(
     threshold_lookup,
     "data/summary_stats/threshold_lookup.RDS",
@@ -178,7 +165,7 @@ list(
     read = read_yaml(!!.x)
   ),
 
-  # flag data
+  # flag data ----
   tar_target(
     all_data_flagged,
     {
@@ -207,7 +194,7 @@ list(
     }
   ),
 
-  # update the historically flagged data
+  # update the historically flagged data ----
   tar_target(
     update_historical_flag_data,
     {
@@ -218,16 +205,23 @@ list(
     }
   ),
 
-  # save the updated flagged data
+  # save the updated flagged data ----
   tar_target(
     write_flagged_data_RDS,
     saveRDS(update_historical_flag_data, "data/flagged/test_all_data_flagged.RDS")
-  )
+  ),
 
   # connect to FC system
 
   # update FC system
 
-  # remove data from incoming data folder and append it to the historical API data
+  #  append incoming data to the historical API data and remove data from incoming data folder ----
+  # tar_target(
+  #   append_inc_hist_api_data,
+  #   append_historical_api_data(
+  #     hist_dir = "data/api/historical_api_data/",
+  #     inc_dir = "data/api/incoming_api_data/"
+  #   )
+  # )
 )
 

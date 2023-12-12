@@ -76,17 +76,6 @@ all_data_summary_list <- map2(combinations$sites,
 all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
-#### Append historical flagged data to incoming data
-```{r}
-# Read in a 6 hour subset of the historical flagged data for each site-parameter combination
-# The incoming data will be in 3 hour increments, but the anomaly window flag needs 6 hours of data, so we will need to append to 6 hours of historical data to the incoming data
-
-# Read in the incoming data and the historical flagged data
-  # DANGER: this is a cyclical process
-incoming_data <- all_data_summary_list
-all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
-```
-
 ### Add summary stats and flag new data
 The new data that is being flagged 
 #### Add summary statistics to the formatted data
@@ -102,13 +91,13 @@ threshold_lookup <- map(all_data_summary_stats_list, make_threshold_table) %>%
   bind_rows()
 
 # save the threshold lookup table as a RDS 
-saveRDS(threshold_lookup, 'data/summary_stats/threshold_lookup.RDS')
+# saveRDS(threshold_lookup, 'data/summary_stats/threshold_lookup.RDS')
 
 # this does not need to be a yaml solution
 # add this to the threshold look up table and then save the threshold look up table 
 sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
 
-saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
+# saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
 ```
 
 #### Add flags to all dataframes in all_data_summary_stats_list
