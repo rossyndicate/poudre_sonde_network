@@ -1,0 +1,72 @@
+---
+title: "mWater_pull_collate"
+author: "Sam Struthers"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+
+## Determining uploads
+
+This function looks at the user inputs for calibration report collect and logs collected. Based on these inputs, it looks at all the uploaded logs or calibration reports and will print out what logs are missing and who to contact to get those files uploaded.
+
+```{r}
+
+source("src/mWater_collate/files_missing.R")
+
+files_missing()
+
+```
+
+## Water Sampling Data:
+
+Goal:
+
+-   Save data in the correct format for RMRS spreadsheet
+
+-   Save all water sampling probe values in a spreadsheet
+
+```{r}
+#source function
+source("src/mWater_collate/sampling_spreadsheet_creator.R")
+# To get the RMRS style data for a specfic date of sampling, 
+# Input the date of interest in sampling_spreadsheet_creator
+sampling_spreadsheet_creator(date_oi = "2023-12-05")
+
+# To get all the water sampling data and save to CSV in sampling notes
+# This also returns the df sampling_notes in case you want to review in R
+#sampling_spreadsheet_creator(all_dates = TRUE)
+```
+
+## Photos
+
+Goal:
+
+-   Download all user created photos ( upstream, downstream, clarity, filter and other pictures)
+
+-   Label according to site, date, description in the format site_YYYYMMDD_descriptor.jpg
+
+-   Only download photos which have not yet been downloaded
+
+```{r}
+source("src/mWater_collate/download_pictures.R")
+  
+#RUN TO DOWNLOAD NEW PICTURES
+# It takes about 2-5 minutes to download ~25-50 photos
+# Sometimes the request to mWater time out, just re run the function below if that happens
+
+download_pictures()
+        
+
+```
+
+# Remove extra objects not needed in QAQC pipeline
+```{r}
+rm(all_notes, sampling_sites, upper_sites, all_notes_cleaned)
+```
+
