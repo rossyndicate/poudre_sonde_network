@@ -7,7 +7,7 @@
 # add_large_anomaly_flags(df = all_data_flagged$`archery-Actual Conductivity`)
 # add_large_anomaly_flags(df = all_data_flagged$`boxelder-Temperature`)
 
-kw_add_large_anomaly_flag <- function(df) {
+add_suspect_flag <- function(df) {
 
   # cases that should result in 0 in flag_binary column:
   # only "24hr anomaly"
@@ -31,15 +31,15 @@ kw_add_large_anomaly_flag <- function(df) {
   flag_string <- "sonde not employed|missing data|site visit|sv window"
 
   # Define a function to check if a given 6-hour window has >= 50% fails
-  check_6_hour_window_fail <- function(x) {
-    sum(x) / length(x) >= 0.33
+  check_3_hour_window_fail <- function(x) {
+    sum(x) / length(x) >= 0.4
   }
 
   df_test <- df %>%
     mutate(flag_binary = ifelse((is.na(flag) | grepl(flag_string, flag)), 0, 1)) %>%
     #arrange(timestamp) %>%
-    mutate(over_50_percent_fail_window = zoo::rollapply(flag_binary, width = 24, FUN = check_6_hour_window_fail, fill = NA, align = "right")) %>%
-    add_flag(over_50_percent_fail_window == TRUE, "suspect data")
+    mutate(over_50_percent_fail_window = zoo::rollapply(flag_binary, width = 12, FUN = check_3_hour_window_fail, fill = NA, align = "right")) %>%
+    add_flag(over_50_percent_fail_window == TRUE, "suspect data") # is this flagging the correct data?
 
 return(df_test)
 

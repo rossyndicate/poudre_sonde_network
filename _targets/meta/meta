@@ -1,0 +1,58 @@
+name|type|data|command|depend|seed|path|time|size|bytes|format|repository|iteration|parent|children|seconds|warnings|error
+.Random.seed|object|d5171b3928b1b58e|||||||||||||||
+%nin%|function|c5de772db35799a7|||||||||||||||
+add_field_flag|function|83ffb8bbcc259678|||||||||||||||
+add_flag|function|7422715f3fe3b4dd|||||||||||||||
+add_large_anomaly_flag|function|90b8c272cdb32f2c|||||||||||||||
+add_malfunction_flag|function|21338a9e61744e20|||||||||||||||
+add_na_flag|function|6bdc0765f4a3d2a5|||||||||||||||
+add_repeat_flag|function|dc056048ecf8c3f3|||||||||||||||
+add_seasonal_flag|function|09f60d08fe728343|||||||||||||||
+add_spec_flag|function|796f35ae69e191d3|||||||||||||||
+add_suspect_flag|function|9279e5b0182ba01b|||||||||||||||
+all_api_data|stem|00520b85b7186a01|c67bb54d6480df1d|46f52353b4288e52|2017164359||t19689.8858511402s|32d5b3b22cdae1a8|20085944|rds|local|vector|||5.151||
+all_data_flagged|stem|3ca66dc102e3bd58|dc7dc5f8120e6429|174af7645d365e0d|-1314676746||t19703.8411359701s|29f3447803d214d7|76226|rds|local|vector|||1.889||
+all_data_summary_list|stem|d3ab794ef11fa2b6|2800e97b0926f2d6|d1b48128585a1106|986059383||t19703.8411096755s|bf95b7725e24abc7|9963|rds|local|vector|||2.585|1m22mThere were 2 warnings in summarize.The first warning was1m22m36mℹ39m In argument diff  absminvalue, na.rm  T  maxvalue, na.rm  T.Caused by warning in min33m39m no nonmissing arguments to min returning Inf1m22m36mℹ39m Run dplyrlast_dplyr_warnings to see the 1 remaining warning.. 1m22mThere were 2 warnings in summarize.The first warning was1m22m36mℹ39m In argument diff  absminvalue, na.rm  T  maxvalue, na.rm  T.Caused by warning in min33m39m no nonmissing arguments to min returning Inf1m22m36mℹ39m Run dplyrlast_dplyr_warnings to see the 1 remaining warning.. 1m22mThere were 2 warnings in summarize.The first warning was1m22m36mℹ39m In argument diff  absminvalue, na.rm  T  maxvalue, na.rm  T.Caused by warning in min33m39m no nonmissing arguments to min returning Inf1m22m36mℹ39m Run dplyrlast_dplyr_warnings to see the 1 remaining warning.. 1m22mThere were 2 warnings in summarize.The first warning was1m22m36mℹ39m In argument diff  absminvalue, na.rm  T  maxvalue, na.rm  T.Caused by warning in min33m39m no nonmissing arguments to min returning Inf1m22m36mℹ39m Run dplyrlast_dplyr_warnings to see the 1 remaining warning.. 1m22mThere were 2 warnings in summarize.The first warning was1m22m36mℹ39m In argument diff  absminvalue, na.rm  T  maxvalue, na.rm  T.Caused by warning in min33m39m no nonmissing arguments to min returning Inf1m22m36mℹ39m Run dplyrlast_dplyr_warnings to see the 1 remaining warning.. 1m22mThere were 2 warnings in summarize.The first warning was1m22m36mℹ39m In argument diff  absminvalue, na.rm  T  maxvalue, na.rm  T.Caused by warning in min33m39m no nonmissing arguments to min returning Inf1m22m36mℹ39m Run dplyrlast_dplyr_warnings to see the|
+all_data_summary_stats_list|stem|f545440fecdf6533|b111c28f40ce4ef2|fdabb94ed146896f|-318140117||t19703.8411139695s|f0576f2f6e85229f|75378|rds|local|vector|||0.125||
+all_notes_cleaned|object|a2fdf5b8cb465a62|||||||||||||||
+api_pull_list|stem|b29f8a97a2b51d23|24006a66f8210274|d897045e3cff582d|-840722863||t19678.9628725718s|3a7fca6992f9370d|2455|rds|local|vector|||0.033|1m22mcross was deprecated in purrr 1.0.0.36mℹ39m Please use tidyrexpand_grid instead.36mℹ39m See httpsgithub.comtidyversepurrrissues768.|
+api_puller|function|a63c5c0626ddcc8d|||||||||||||||
+append_historical_flagged_data|function|0d1833cdd4595de6|||||||||||||||
+clean_field_notes|function|14ff5a82367fb010|||||||||||||||
+combine_hist_inc_data|function|5f3741149c1b9576|||||||||||||||
+combined_data|stem|753b4259fce0afd1|ad334666d5df38d8|86ed565b130d2c0b|-2087540798||t19703.8411123827s|f0bb183dd5379f08|51787|rds|local|vector|||0.223||
+field_notes|stem|af936b24fc5b4636|08090931e8bb85c4|1fe8742fdd5188ce|2023760627||t19703.8410796753s|6aa917c9a05cbce7|42630|rds|local|vector|||0||
+flagged_data_dfs|stem|9689b57ff2f5ccb3|ccdc6d0388e75921|b642eee7c6ba279e|-198773707||t19703.8410779511s|ffd8a62ae1c11005|105760233|rds|local|vector|||6.361||
+flagged_data_dfs_file|stem|9689b57ff2f5ccb3|f34837fe8ac449aa|ef46db3751d8e999|-1071194643|data/flagged/all_data_flagged.RDS|t19691.7698842593s|ffd8a62ae1c11005|105760233|file|local|vector|||0.394||
+generate_summary_statistics|function|0db30cd4b2078492|||||||||||||||
+get_start_dates_df|function|43d85680b8eb2681|||||||||||||||
+grab_mWater_sensor_notes|function|8535e3ee24d058d8|||||||||||||||
+hv_creds|stem|5ef09e136650c5d4|d7236257a70a9b1f|fe3405b74c5da353|266083851||t19703.8410785443s|3703cb9bd2946119|140|rds|local|vector|||0||
+hv_creds_file|stem|3943d4289a4c61a1|dfb44f8b15d5835c|ef46db3751d8e999|-1810016504|src/api_pull/credentials.yml|t19528.6127885574s|83a6703191e16cd7|455|file|local|vector|||0||
+hv_data_id|function|ee07d036783ec4a0|||||||||||||||
+hv_locations_all|function|f72571e1b06b250d|||||||||||||||
+hv_token|stem|059b668fd0effe34|268e267fa1b9be68|d19cbbef15d7e0e2|268012145||t19703.8410790915s|cb2068761c31cd19|278|rds|local|vector|||0.008||
+incoming_data_collated_csvs|stem|526cc5b8a51c611b|c67bb54d6480df1d|46f52353b4288e52|-1436724047||t19703.8407897502s|e1a91a3d0391642b|11588|rds|local|vector|||0.264||
+incoming_data_csvs|stem|0512ae32462262bc|f161ac32f776b1e2|d09e3fc86eeb9554|1255066382||t19689.8810172193s|63e5c65d6d1ce375|134|rds|local|vector|||3656.84||
+incoming_data_csvs_ab32d911|branch||6a31d92726790c7b|c2829ed4f3a9873e|1879218812||t19678.8947293788s||0|rds|local|vector|incoming_data_csvs||0.021||no applicable method for mutate applied to an object of class tryerror
+incoming_data_dfs|stem||d6cc65df068f1c13|9c8e22c666f4d235|362499324||t19677.8908154114s||0|rds|local|vector|||0.011||.y must be a vector, not a formula object.
+kw_add_large_anomaly_flag|function|9279e5b0182ba01b|||||||||||||||
+make_threshold_table|function|5c9c645d6cd2bcc4|||||||||||||||
+munge_api_data|function|a338c4213d8df8ec|||||||||||||||
+mWater_field_notes|stem|94b3f2b210b88419|01c3f2d3939135f0|f92cb58743e7779d|1350546592||t19703.8407908482s|7aa11a16b31dc092|6153|rds|local|vector|||0.018||
+old_field_notes|stem|046970ac43088a28|60c1fc5049fe7936|f9d3aded5e4be155|509035517||t19703.8410795809s|4f7f8ae909c76f8b|37978|rds|local|vector|||0.036|1m22mThere was 1 warning in mutate.1m22m36mℹ39m In argument start_DT  ymd_hmpastedate, start_time_mst, tzone  MST.Caused by warning33m39m  3 failed to parse.|
+raw_field_notes|stem|1b135cee5ba72bf2|ecf43794cb9d0550|7a5435e5fbd75fcf|693345146||t19703.8410788169s|8054a31a6c458518|32892|rds|local|vector|||0.014||
+raw_field_notes_file|stem|50c8d576a3ece270|49ca06413bd466bd|ef46db3751d8e999|618681987|data/sensor_field_notes.xlsx|t19691.8166319444s|09043e6ec1b0b237|108945|file|local|vector|||0.379||
+sensor_spec_ranges|stem|5280f396b941eba2|20ee5eaa8e1429bd|02261bc9f24c302d|1963165114||t19703.840790911s|4f7108de728dd56a|319|rds|local|vector|||0||
+sensor_spec_ranges_file|stem|ca73eaa9e5c22054|2be546313c719dc5|ef46db3751d8e999|-1524585847|src/qaqc/sensor_spec_thresholds.yml|t19648.9285822655s|2fb5ca7362dc8083|471|file|local|vector|||0.519||
+site_comp_test|function|00e1cd43050f2198|||||||||||||||
+site_names|stem|0512ae32462262bc|03e25a6bc58a9464|d97751669a2d7a49|1165599908||t19678.8947290505s|63e5c65d6d1ce375|134|rds|local|vector||site_names_326ab409*site_names_75c2a356*site_names_8edddf91*site_names_8dd6e458*site_names_4077a1ad*site_names_29877a71*site_names_94a578da*site_names_19b37dad|0||
+site_param_combos|stem|4c71c2b48c7b6022|d4386f9a9fc9aef6|4361108b8a874634|64586867||t19703.8407908867s|2da402a946d20212|354|rds|local|vector|||0.001||
+start_dates_df|stem|0a37de38a63cc2d5|d509ab0e3cc06eec|4b12c28a025e721b|81022493||t19703.8410789696s|973381529c66c0df|296|rds|local|vector|||0.008||
+start_dt|stem|ae810c3f0ca09ea3|90abeb698951ecd5|d97751669a2d7a49|1306890481||t19678.8947290926s|b0efa4f1e05eee68|121|rds|local|vector||start_dt_ea352000*start_dt_3b7c2c41*start_dt_31547a08*start_dt_478e9f27*start_dt_9046290f*start_dt_9046290f_1*start_dt_9046290f_2*start_dt_488afaca|0||
+summarize_site_param|function|7454f0c3b0347e77|||||||||||||||
+threshold_lookup|stem|50f197f9a7bf4380|0bec0b93142c03bf|4f898c68bf41fc28|-1827511851||t19703.8410788562s|30c493582fe9321d|10471|rds|local|vector|||0||
+threshold_lookup_file|stem|50f197f9a7bf4380|02a8cecb8cf64877|ef46db3751d8e999|-1645243522|data/summary_stats/threshold_lookup.RDS|t19691.7689814815s|30c493582fe9321d|10471|file|local|vector|||0.367||
+update_historical_flag_data|stem|365fdd54b86a2bce|a4685fb5a6314e96|e19cabe1108d472b|1006907749||t19703.8413623819s|ae238be7afc76fe5|103990334|rds|local|vector|||1.277||
+update_historical_flag_list|function|56ae7240dd55a39e|||||||||||||||
+write_flagged_data_RDS|stem|581355bf828aba97|1b88f74d65c68275|6a14bd293bbc9d81|-1024258251||t19703.8415781524s|a1c456b03adbfbf8|44|rds|local|vector|||18.584||
