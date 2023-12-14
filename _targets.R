@@ -28,7 +28,9 @@ tar_source(files = c(
   "src/api_pull/get_start_dates_df.R",
   "src/api_pull/api_puller.R",
   # qaqc functions
-  "src/qaqc/download_and_flag_fxns/"
+  "src/qaqc/download_and_flag_fxns/",
+  "src/mWater_collate/clean_mwater_notes.R",
+  "src/mWater_collate/grab_sensor_notes.R"
   # "src/qaqc/explore_and_fix_fxns.R"
 ))
 
@@ -81,17 +83,30 @@ list(
 
   # QAQC the data -----------------------------------------------------
 
-  # load field notes ----
+  # load xlsx field notes ----
   tar_file_read(
     raw_field_notes,
     "data/sensor_field_notes.xlsx",
     read = read_excel(!!.x)
   ),
 
-  # clean field notes ----
+  # clean xlsx field notes ----
+  tar_target(
+    old_field_notes,
+    clean_field_notes(raw_field_notes)
+  ),
+
+
+  #Grab mWater field notes
+  tar_target(
+    mWater_field_notes,
+    grab_mWater_sensor_notes()
+  ),
+
+  #bind .xlsx and mWater notes save to field notes for downstream use
   tar_target(
     field_notes,
-    clean_field_notes(raw_field_notes)
+    rbind(old_field_notes, mWater_field_notes)
   ),
 
   # load incoming API data ----

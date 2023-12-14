@@ -24,12 +24,17 @@ walk(list.files('src/qaqc/download_and_flag_fxns', pattern = "*.R", full.names =
 # Import and collate data
 
 Load field notes and define the start time as the 15 minute preceding the field time
+
 ```{r}
-raw_field_notes <- read_excel("data/sensor_field_notes.xlsx")
-field_notes <- clean_field_notes(raw_field_notes)
+field_notes <- clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
+
+source("src/mWater_collate/grab_sensor_notes.R")
+#merge new mwater notes (sensor_notes) and old notes (field notes)  
+all_field_notes <- rbind(sensor_notes, field_notes)
 ```
 
 Merge the data sets from all API pulls:
+
 ```{r}
 all_data <- munge_api_data(api_path = "data/api/historical_api_data/")
 ```
@@ -45,11 +50,14 @@ all_data <- munge_api_data(api_path = "data/api/historical_api_data/")
 
 ### Temperature at Archery
 
-I think we will want to develop pipelines specific for each site and parameter for processing speed (targets?).
-Up until this point all the data from the API is in one huge csv. After this point the data gets split up into site-parameter combinations.
-This means that the data that will be incoming will be one large data packet. This should change in the api pull step.
+I think we will want to develop pipelines specific for each site and parameter for
+processing speed (targets?). Up until this point all the data from the API is in one huge
+csv. After this point the data gets split up into site-parameter combinations. This means
+that the data that will be incoming will be one large data packet. This should change in
+the api pull step.
 
 #### Format data
+
 ```{r}
 # format and summarize data
 # Determine each site and parameter in all_data 
@@ -77,14 +85,15 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
 ```
 
 ### Add summary stats and flag new data
-The new data that is being flagged 
-#### Add summary statistics to the formatted data
+
+The new data that is being flagged \#### Add summary statistics to the formatted data
+
 ```{r}
 # will need to make sure that the summary stats are not being calculated for the top of the data that has already been flagged
 all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_statistics)
 ```
 
-## Create a lookup table for site-parameter thresholds to use in flagging strange data. These thresholds are based on data from the 2022 and 2023 field season. In future seasons, this data will be fixed (i.e., unchanging). 
+## Create a lookup table for site-parameter thresholds to use in flagging strange data. These thresholds are based on data from the 2022 and 2023 field season. In future seasons, this data will be fixed (i.e., unchanging).
 
 ```{r}
 threshold_lookup <- map(all_data_summary_stats_list, make_threshold_table) %>%
@@ -101,6 +110,7 @@ sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
 ```
 
 #### Add flags to all dataframes in all_data_summary_stats_list
+
 Add flagging functions for each df in all_data_summary_list
 
 Pass the dfs in all_data_summary_stats_list through the flagging functions:
@@ -131,9 +141,11 @@ saveRDS(final_flag, 'data/flagged/all_data_flagged.RDS')
 write_feather(final_flag %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
 ```
 
-All data has now gone through all flagging steps and is ready for immediate public viewing.
+All data has now gone through all flagging steps and is ready for immediate public
+viewing.
 
 #### Remove the data from data/api/incoming_api_data and append it to the historical API data
+
 ```{r}
 # remove the data from the incoming_api_data folder
 ```
