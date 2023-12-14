@@ -19,6 +19,8 @@ make_threshold_table <- function(df){
   good_data_stats <- df %>%
     # REMOVE DATA WE KNOW TO BE ERRONEOUS:
     add_malfunction_flag() %>%
+    # we should also add the outside of sensor specification flag here?
+    add_spec_flag() %>%
     filter(is.na(flag)) %>%
     group_by(season) %>%
     mutate(f01 = quantile(mean, 0.01, na.rm = TRUE),
