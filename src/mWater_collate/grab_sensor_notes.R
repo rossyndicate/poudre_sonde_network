@@ -1,4 +1,3 @@
-
 grab_mWater_sensor_notes <- function(){
 
   #source clean mwater script for all notes cleaned
@@ -42,6 +41,4 @@ grab_mWater_sensor_notes <- function(){
   return(mWater_field_notes)
 
 }
-
-
 

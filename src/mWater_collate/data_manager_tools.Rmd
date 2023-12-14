@@ -36,7 +36,11 @@ Goal:
 source("src/mWater_collate/sampling_spreadsheet_creator.R")
 # To get the RMRS style data for a specfic date of sampling, 
 # Input the date of interest in sampling_spreadsheet_creator
+
 sampling_spreadsheet_creator(date_oi = "2023-12-05")
+
+#sampling_spreadsheet_creator(date_oi = "2023-11-17")
+
 
 # To get all the water sampling data and save to CSV in sampling notes
 # This also returns the df sampling_notes in case you want to review in R
