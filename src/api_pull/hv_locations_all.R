@@ -17,7 +17,7 @@ hv_locations_all <- function(client,
   req <- httr2::request(url)
 
   try({
-  resp <-  req %>% httr2::req_oauth_client_credentials(token) %>% httr2::req_perform()
+  resp <-  req %>% httr2::req_oauth_client_credentials(client) %>% httr2::req_perform()
   locs <- list(resp %>% httr2::resp_body_json())
   h <- resp %>% httr2::resp_headers()
 
