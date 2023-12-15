@@ -224,7 +224,7 @@ list(
   tar_target(
     write_flagged_data_RDS,
     saveRDS(update_historical_flag_data, "data/flagged/test_all_data_flagged.RDS")
-  ),
+  )
 
   # connect to FC system
 
