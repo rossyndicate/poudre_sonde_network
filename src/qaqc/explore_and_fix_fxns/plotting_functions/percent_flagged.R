@@ -4,25 +4,25 @@ generate_flag_report <- function(df) {
   site <- unique(na.omit(df$site))
   parameter <- unique(na.omit(df$parameter))
 
-  list_of_flags <- c("sonde not employed",
-                     "site visit",
-                     "sv window",
-                     "sensor specification range",
-                     "seasonal range",
-                     "slope violation",
-                     "outside sd range",
-                     "repeated value",
-                     "missing data",
-                     "24hr anomaly",
-                     "anomaly window")
-# check these
+  list_of_flags <- c("sonde not employed", # add_field_flag()
+                     "site visit", # add_field_flag()
+                     "sv window", # add_field_flag()
+                     "sensor malfunction", # add_malfunction_flag()
+                     "outside of sensor specification range", # add_spec_flag()
+                     "outside of seasonal range", # add_seasonal_flag()
+                     "slope violation", # add_seasonal_flag()
+                     "outside sd range", # add_seasonal_flag()
+                     "repeated value", # add_repeat_flag()
+                     "missing data", # add_na_flag()
+                     "suspect data") # add_suspect_flag()
+
+  # check these
   sans_na_flags <- "^(missing data|
                       sonde not employed;\\nmissing data|
-                      missing data;\nanomaly window|
-                      sonde not employed;\nmissing data;\nanomaly window|
-                      missing data;\n24hr anomaly;\nanomaly window|
-                      site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
-                      sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
+                      missing data;\\nsuspect data|
+                      sonde not employed;\\nmissing data;\\nsuspect data|
+                      site visit;\\nmissing data;\\nsuspect data|
+                      sv window;\\nmissing data;\\nsuspect data)$"
 
   # summarize total data points
   total_observations <- df %>%

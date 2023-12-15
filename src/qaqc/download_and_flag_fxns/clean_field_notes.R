@@ -5,9 +5,9 @@
 # @examples
 # clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
 
-clean_field_notes <- function(field_note_path = "data/sensor_field_notes.xlsx"){
+clean_field_notes <- function(raw_field_notes){
 
-  field_notes <- read_excel(field_note_path) %>%
+  field_notes <- raw_field_notes %>%
     mutate(start_DT = ymd_hm(paste(date, start_time_mst, tzone = "MST"))) %>%
     mutate(#start_DT = with_tz(start_DT, tzone = "MST"),
       DT_round = floor_date(start_DT, "15 minutes"),

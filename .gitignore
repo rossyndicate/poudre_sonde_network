@@ -1,6 +1,8 @@
 .Rproj.user
 .Rhistory
 .RData
+.RDatatmp
+.RDatatmp1
 .Ruserdata
 .DS_Store
 data
@@ -21,4 +23,9 @@ src/mWater_collate/mWater_API.yml
 scratch/reporting/PWQN_overview.html
 # vs code
 .vscode/
+
+# targets
+_targets/
+
 **/images/
+

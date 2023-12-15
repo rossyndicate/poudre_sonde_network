@@ -11,7 +11,7 @@ munge_api_data <- function(api_path = "data/api/historical_api_data/") {
     # remove overlapping API-pull data
     distinct() %>%
     # remove VuLink data
-    filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
+    filter(!grepl("vulink", name, ignore.case = TRUE)) %>% # these will throw us errors if there is none?
     # remove Virridy data (for now)
     filter(!grepl("virridy", name, ignore.case = TRUE)) %>%
     select(-name) %>%

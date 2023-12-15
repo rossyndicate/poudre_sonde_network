@@ -13,7 +13,7 @@ add_spec_flag <- function(df){
   df <- df %>%
     # adding sensor range flags
     add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max),
-             paste0("outside of sensor specification range")) %>%
+             "outside of sensor specification range") %>%
 
     return(df)
 

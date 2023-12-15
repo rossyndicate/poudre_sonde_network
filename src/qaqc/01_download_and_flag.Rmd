@@ -73,7 +73,8 @@ combinations <- crossing(sites, params)
 all_data_summary_list <- map2(combinations$sites, 
                          combinations$params, 
                          summarize_site_param,
-                         api_data = all_data) %>% 
+                         api_data = all_data,
+                         field_notes = field_notes) %>% 
   # set the names for the dfs in the list
   set_names(paste0(combinations$sites, "-", combinations$params)) %>% 
   # remove NULL values from the list
@@ -81,20 +82,6 @@ all_data_summary_list <- map2(combinations$sites,
 
 # Bind rows for each df in list
 all_data_summary_df <- bind_rows(all_data_summary_list)
-```
-
-#### Append historical flagged data to incoming data
-
-```{r}
-# Read in a 6 hour subset of the historical flagged data for each site-parameter combination
-# The incoming data will be in 3 hour increments, but the anomaly window flag needs 6 hours of data, so we will need to append to 6 hours of historical data to the incoming data
-
-# Read in the incoming data and the historical flagged data
-  # DANGER: this is a cyclical process
-incoming_data <- all_data_summary_list
-all_data_flagged <- readRDS('data/flagged/all_data_flagged.RDS')
-
-appended_data_list <- map2() 
 ```
 
 ### Add summary stats and flag new data
@@ -112,11 +99,14 @@ all_data_summary_stats_list <- map(all_data_summary_list, generate_summary_stati
 threshold_lookup <- map(all_data_summary_stats_list, make_threshold_table) %>%
   bind_rows()
 
+# save the threshold lookup table as a RDS 
+# saveRDS(threshold_lookup, 'data/summary_stats/threshold_lookup.RDS')
+
 # this does not need to be a yaml solution
 # add this to the threshold look up table and then save the threshold look up table 
 sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
 
-saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
+# saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
 ```
 
 #### Add flags to all dataframes in all_data_summary_stats_list
@@ -135,15 +125,19 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
     add_spec_flag() %>%
     add_seasonal_flag() %>%
     add_na_flag() %>%
-    add_repeat_flag() %>% 
-    kw_add_large_anomaly_flag() %>%
+    add_repeat_flag() %>%
+    add_suspect_flag() %>%
     mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
-    mutate(historical_data = TRUE)
+    mutate(historical_flagged_data_1 = TRUE) %>% 
+    relocate(historical_data, .after = "t_sd_0199")
+    mutate(historical_flagged_data_2 = TRUE) %>% 
+    relocate(historical_flagged_data_2, .after = "historical_flagged_data_1")
 })
 
 final_flag <- map(all_data_flagged, site_comp_test)
 
 saveRDS(final_flag, 'data/flagged/all_data_flagged.RDS')
+
 write_feather(final_flag %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
 ```
 
