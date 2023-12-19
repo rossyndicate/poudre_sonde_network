@@ -1,3 +1,54 @@
+
+katie_flag_report <- function(df) {
+
+  # Removing observations where data wasn't actually being collected
+  sub <-df %>% filter(!grepl("sonde not employed|site visit|sv window|missing data", flag, ignore.case = TRUE)) %>%
+    filter(year == 2022)
+
+  y1 = tibble("total" = nrow(sub),
+         "spec" = filter(sub, grepl("sensor specification range", flag)) %>% nrow(),
+         "repeated" = filter(sub, grepl("repeated value", flag)) %>% nrow(),
+         "slope_violation" = filter(sub, grepl("slope", flag)) %>% nrow(),
+         "sensor_malfunction" = filter(sub, grepl("sensor malfunction", flag)) %>% nrow(),
+         "outside_range" = filter(sub, grepl("outside of seasonal range", flag)) %>% nrow(),
+         "outside_sd" = filter(sub, grepl("outside sd range", flag)) %>% nrow(),
+         "suspect" = filter(sub, grepl("suspect data", flag)) %>% nrow()) %>%
+    pivot_longer(cols = -total) %>%
+    mutate(percentage = (value/total)*100) %>%
+    mutate(site = unique(na.omit(df$site)),
+           parameter = unique(na.omit(df$parameter)),
+           year = "2022")
+
+  sub <-df %>% filter(!grepl("sonde not employed|site visit|sv window|missing data", flag, ignore.case = TRUE)) %>%
+    filter(year == 2023)
+
+  y2 = tibble("total" = nrow(sub),
+              "spec" = filter(sub, grepl("sensor specification range", flag)) %>% nrow(),
+              "repeated" = filter(sub, grepl("repeated value", flag)) %>% nrow(),
+              "slope_violation" = filter(sub, grepl("slope", flag)) %>% nrow(),
+              "sensor_malfunction" = filter(sub, grepl("sensor malfunction", flag)) %>% nrow(),
+              "outside_range" = filter(sub, grepl("outside of seasonal range", flag)) %>% nrow(),
+              "outside_sd" = filter(sub, grepl("outside sd range", flag)) %>% nrow(),
+              "suspect" = filter(sub, grepl("suspect data", flag)) %>% nrow()) %>%
+    pivot_longer(cols = -total) %>%
+    mutate(percentage = (value/total)*100) %>%
+    mutate(site = unique(na.omit(df$site)),
+           parameter = unique(na.omit(df$parameter)),
+           year = "2023")
+
+  full <- bind_rows(y1, y2)
+
+  return(full)
+
+}
+
+stats <- final_flag %>% map(~katie_flag_report(.)) %>%
+  bind_rows()
+
+grouped <- stats %>%
+  group_by(parameter, year) %>%
+  summarize(mean = mean(percentage, na.rm = TRUE))
+
 generate_flag_report2 <- function(df) {
 
   # Extract the site and parameter from the df_name ----
