@@ -36,6 +36,8 @@ calc_sum_stats <- function(site, parameter){
 } 
 
 sites <- c("tamasag","legacy", "timberline", "prospect", "archery", "river bluffs")  
+site_names <- tibble(site = c("tamasag", "legacy", "lincoln", "timberline", "prospect" ,"boxelder",  "archery", "river bluffs"), 
+                        site_upper = c("Tamasag", "Legacy", "Lincoln", "Timberline", "Prospect" ,"Boxelder",  "Archery", "River Bluffs"))
 params <- c("Temperature", "Specific Conductivity", "pH", "ORP", "DO", "Depth")
 
 # Create all combinations of sites and params
@@ -69,7 +71,7 @@ color_joiner <-function(data, flag_type) {
   
 }  
 
-bg_colors <- c("#01377D", "#009DD1", "#97E7F5", "#7ED348", "#26B170")
+bg_colors <- c( "#01377D", "#009DD1", "#97E7F5", "#7ED348", "#26B170", "#000000")
 or_colors <-c("#F5E15A", "#F4BE1D", "#FEA305", "#F26021", "#F34646")
 ```
 
@@ -95,6 +97,10 @@ plotter <- function(clean = FALSE, hourly = TRUE, sites = c("legacy", "timberlin
                            start_date = "2023-05-08 08:30:00", end_date = "2023-05-18 09:30:00", 
                            parameter = "Specific Conductivity", title = "Sp. Conductivity", units = "Sp. Conductivity (uS/cm) "){
   
+  site_select_upper <- filter(site_names, site %in% sites)%>%pull(site_upper)
+  site_select_join <- filter(site_names, site %in% sites)
+  
+  
   flag_start_date <- ymd_hms(start_date)
   flag_end_date <- ymd_hms(end_date)
   
@@ -108,11 +114,6 @@ plotter <- function(clean = FALSE, hourly = TRUE, sites = c("legacy", "timberlin
     if(clean == TRUE){
    flag_plot_data <- flag_plot_data %>%
      filter(is.na(cleaner_flag))
-    # filter(!grepl("suspect data", flag))%>%
-    # filter(!grepl("outside of seasonal range", flag))%>%
-    # filter(!grepl("sv window", flag))%>%
-    # filter(!grepl("slope violation", flag))
-  
     }
     if(hourly == TRUE){
     flag_plot_data <- flag_plot_data%>%
@@ -126,13 +127,17 @@ plotter <- function(clean = FALSE, hourly = TRUE, sites = c("legacy", "timberlin
   }
   
   all_flag_plot_data <- map(sites, grab_site_data)%>%
-    bind_rows()
+    bind_rows()%>%
+    left_join(site_select_join, by  = "site")
+    
   
-  all_flag_plot_data$site <- factor(all_flag_plot_data$site, levels = sites)
+  all_flag_plot_data$site_upper <- factor(all_flag_plot_data$site_upper, levels = site_select_upper)
+  
+  
   
   ggplot() +
     geom_line(data = all_flag_plot_data, 
-               aes(x = DT_round, y = mean, color = site), size = 2) +
+               aes(x = DT_round, y = mean, color = site_upper), size = 2) +
     scale_color_manual(name = "Site", values = or_colors) +
     labs(x = "Date",
          y = paste(units)) +
@@ -142,6 +147,7 @@ plotter <- function(clean = FALSE, hourly = TRUE, sites = c("legacy", "timberlin
   
 }
 
+#plotter()
 
 ```
 
@@ -194,7 +200,7 @@ clean_temp_may <- plotter(sites = may_sites, clean = TRUE, parameter = "Temperat
 
   ggarrange( precip_plot, precip_plot, clean_depth_may,clean_spec_cond_may,  clean_do_may , clean_temp_may, ncol = 2, nrow = 3, legend = "bottom", common.legend = T)
 
-  ggsave("data/sharing/figures/2023/DRAFT_BG_urban_storm_may_2023.jpg",width = 20, height = 14, dpi = 300)
+  ggsave("data/sharing/figures/2023/DRAFT_Red_urban_storm_may_2023.jpg",width = 20, height = 14, dpi = 300)
 ```
 
 ## July 31st storm
@@ -204,7 +210,7 @@ Params: Turb (Not at Archery ), Depth, Cond, DO
 
 ```{r}
 
-july_sites <- c("tamasag","timberline", "prospect", "archery")
+july_sites <- c("tamasag", "legacy", "timberline", "prospect", "archery")
 july_start_date <- "2023-07-28 12:00:00"
 july_end_date <- "2023-08-08 12:00:00"
 #COND
@@ -243,9 +249,73 @@ july_turb <- plotter(sites = c("tamasag", "timberline", "prospect" ), clean = FA
 
    ggarrange( july_depth,july_spec_cond,  july_do , july_turb, ncol = 2, nrow = 2, legend = "bottom", common.legend = T)
   # 
-   ggsave("data/sharing/figures/2023/DRAFT_urban_storm_july_2023.jpg",width = 20, height = 14, dpi = 300)
+   #ggsave("data/sharing/figures/2023/DRAFT_urban_storm_july_2023.jpg",width = 20, height = 14, dpi = 300)
 
 ```
+
+# September 4th Storm
+
+```{r}
+sept_sites <- c("tamasag", "legacy", "prospect", "archery")
+sept_sites_turb <- c("tamasag", "legacy", "prospect")
+sept_start_date <-  "2023-09-03 01:00:00"
+sept_end_date <- "2023-09-07 12:00:00"
+
+
+#COND
+sept_spec_cond <- plotter(sites = sept_sites ,clean = FALSE, 
+                          start_date = sept_start_date, 
+                          end_date = sept_end_date)+ 
+  theme(legend.position = "none", 
+        
+        axis.title.y = element_text(size = 22,face = "bold"))
+
+#Depth
+sept_depth <- plotter(sites = sept_sites, clean = FALSE,
+                        start_date = sept_start_date, 
+                          end_date = sept_end_date, 
+                      parameter = "Depth", units = "Depth (m)")+
+  theme(legend.position = "none", 
+        axis.title.x=element_blank(),
+        axis.title.y = element_text(size = 22,face = "bold"))
+#DO
+sept_do <- plotter(sites = sept_sites, 
+                         start_date = sept_start_date, 
+                          end_date = sept_end_date, clean = FALSE, parameter = "DO", units = "DO (mg/L)")+
+  theme(legend.position = "none",
+        axis.title.y = element_text(size = 22,face = "bold"))
+#TURB
+sept_turb <- plotter(sites = sept_sites_turb, clean = FALSE,
+                     start_date = sept_start_date, 
+                          end_date = sept_end_date, 
+                     parameter = "Turbidity", units = "Turbidity (NTU)")+
+  theme(legend.position = "none",
+        axis.title.x=element_blank(),
+        axis.title.y = element_text(size = 22,face = "bold"))
+
+#Temp
+sept_temp <- plotter(sites = sept_sites, clean = FALSE,
+                     start_date = sept_start_date, 
+                          end_date = sept_end_date, 
+                     parameter = "Temperature", units = "Temperature (C)")+
+  theme(legend.position = "none",
+        axis.title.y = element_text(size = 22,face = "bold"))
+#pH
+sept_ph<- plotter(sites = sept_sites, clean = TRUE,
+                     start_date = sept_start_date, 
+                          end_date = sept_end_date, 
+                     parameter = "pH", units = "pH")+
+  theme(legend.position = "none",
+        axis.title.y = element_text(size = 22,face = "bold"))
+
+ggarrange( sept_depth, sept_turb,sept_spec_cond, sept_do ,   ncol = 2, nrow = 2, legend = "bottom", common.legend = T)
+
+ggsave("data/sharing/figures/2023/DRAFT_blackwater_sept_2023.jpg",width = 20, height = 14, dpi = 300)
+
+
+```
+
+
 
 
 # Reservoir Releases
@@ -279,8 +349,8 @@ Params: pH, Depth, Temp, Chl-a
 ```{r}
 
 horse_sites <- c("tamasag", "lincoln","prospect", "archery", "river bluffs")
-horse_start_date <- "2023-10-15 12:00:00"
-horse_end_date <- "2023-11-02 12:00:00"
+horse_start_date <- "2023-10-18 12:00:00"
+horse_end_date <- "2023-10-26 12:00:00"
 
 #Depth
 horse_depth <- plotter(clean = TRUE, sites = horse_sites, 
@@ -325,7 +395,7 @@ horse_DO <- plotter(clean = FALSE, sites = horse_sites,
 #         axis.title.y = element_text(size = 22,face = "bold"))
 
 ggarrange(horse_depth, horse_DO,horse_cond,  horse_temp, ncol = 2, nrow = 2, legend = "bottom", common.legend = T)
-ggsave("data/sharing/figures/2023/DRAFT_Red_horsetooth_release_oct.jpg",width = 20, height = 14, dpi = 300)
+ggsave("data/sharing/figures/2023/DRAFT_BG_horsetooth_release_oct.jpg",width = 20, height = 14, dpi = 300)
 
 ```
 
