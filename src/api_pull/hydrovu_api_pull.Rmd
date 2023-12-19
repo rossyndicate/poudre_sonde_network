@@ -42,7 +42,7 @@ client_id = as.character(creds["client"])
 client_secret = as.character(creds["secret"])
 
 # get a token for location lists and data access
-hv_token <- hv_auth(client_id, client_secret)
+token <- hv_auth(client_id, client_secret)
 ```
 
 Download the raw data on HydroVu based on time frame and location. Start/end times must EXACTLY match this format:
@@ -51,20 +51,20 @@ YYYY-MM-DD HH:MM:SS MDT
 
 ```{r}
 # where the api data gets saved:
-dump_dir <- "data/api/"
+dump_dir <- "data/api/kw_full_api"
 # into incoming folder
 # after it has been used this data will go into the outgoing folder
 # after it has been used from the outgoing folder it will be appended to the historical data
 
 # Code for making the start time the day of the last saved API pull:
-start <- sort(list.files(dump_dir, pattern = "*.csv") %>%
-                str_sub(start = -14, end = -5), decreasing = TRUE) %>%
-  .[1]
-end <- Sys.time()
+# start <- sort(list.files(dump_dir, pattern = "*.csv") %>%
+#                 str_sub(start = -14, end = -5), decreasing = TRUE) %>%
+#   .[1]
+# end <- Sys.time()
 
 #... or, manual selection of start/end time
- start <- as.POSIXct("2018-01-01 01:00:00 MDT")
- end <- as.POSIXct("2023-07-30 01:00:00 MDT")
+ start <- as.POSIXct("2021-01-01 01:00:00 MDT")
+ end <- as.POSIXct("2021-12-16 01:00:00 MDT")
 
 sites <- c("Rist", 
            "Tamasag", # Rist was moved to Tamasag beginning of 2023
@@ -79,7 +79,7 @@ sites <- c("Rist",
            )
 
 api_puller <- function(site, 
-                       dump_dir = 'data/api/incoming_api_data/', 
+                       dump_dir = 'data/api/kw_full_api/', 
                        start,
                        end){
   
@@ -90,7 +90,7 @@ api_puller <- function(site,
   options(scipen = 999)
   
   site_loc <- locs %>%
-    filter(grepl(site, name))
+    dplyr::filter(grepl(site, name))
   
   site_loc_list <- site_loc$id
   
