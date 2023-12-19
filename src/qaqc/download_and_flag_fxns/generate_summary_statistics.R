@@ -32,8 +32,8 @@ generate_summary_statistics <- function(site_param_df) {
       rollsd = ifelse(is.na(rollsd), roll_sd(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollsd),
       # Determine the slope of a point in relation to the point ahead and behind.
       # katie working on these (j)
-      slope_ahead = abs(front1 - mean)/15,
-      slope_behind = (mean - back1)/15,
+      slope_ahead = ifelse(is.na(slope_ahead), abs(front1 - mean)/15, slope_ahead),
+      slope_behind = ifelse(is.na(slope_behind), (mean - back1)/15, slope_behind),
       rollslope = ifelse(is.na(rollslope), roll_mean(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollslope),
       # Add the standard deviation for points centered in a rolling slope of 7 points.
       # rollsdslope = roll_sd(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_),
@@ -48,7 +48,7 @@ generate_summary_statistics <- function(site_param_df) {
                          month %in% c(10,11) ~ "fall_baseflow",
                          TRUE ~ NA)
       )
-      
+
   return(summary_stats_df)
 
 }
