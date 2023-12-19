@@ -11,9 +11,8 @@ get_start_dates_df <- function(incoming_flagged_data_dfs) {
 
   start_dates_df <- map_dfr(incoming_flagged_data_dfs, DT_finder) %>%
     group_by(site) %>%
-   # These ones shouldn't be used to pull in incoming data since they are dependent of whether
-   # sonde was a 500 or 600 (I think)
-    filter(parameter %nin% c("Baro", "Battery Level", "External Voltage")) %>%
+    # use something that is always monitored:
+    filter(parameter == "Temperature") %>%
     filter(DT_round == min(DT_round)) %>%
     distinct(site, .keep_all=TRUE) %>%
     select(site,
