@@ -1,15 +1,24 @@
 # to do (j): document this function
 get_start_dates_df <- function(incoming_flagged_data_dfs) {
-    find_start_dates <- map(incoming_flagged_data_dfs, function(df) {max(df$DT_round)})
-    start_dates_df <- tibble(site = names(incoming_flagged_data_dfs), start_DT_round = unlist(find_start_dates)) %>%
-                        mutate(
-                          # pull the site name from the index
-                          site = sub("-.*", "", site),
-                          # convert the Unix timestamp to a POSIXct object
-                          start_DT_round = as.POSIXct(.$start_DT_round, origin = "1970-01-01") # is this the right tz?
-                          ) %>%
-                        # summarize and find the earliest date for each site
-                        group_by(site) %>%
-                        summarize(start_DT_round = as.character(min(start_DT_round)))
-    return(start_dates_df)
+
+  DT_finder <- function(df){
+
+    df %>%
+      select(DT_round, site, parameter) %>%
+      filter(DT_round == max(DT_round))
+
+  }
+
+  start_dates_df <- map_dfr(incoming_flagged_data_dfs, DT_finder) %>%
+    group_by(site) %>%
+   # These ones shouldn't be used to pull in incoming data since they are dependent of whether
+   # sonde was a 500 or 600 (I think)
+    filter(parameter %nin% c("Baro", "Battery Level", "External Voltage")) %>%
+    filter(DT_round == min(DT_round)) %>%
+    distinct(site, .keep_all=TRUE) %>%
+    select(site,
+           start_DT_round = DT_round)
+
+  return(start_dates_df)
+
 }
