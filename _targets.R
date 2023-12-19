@@ -6,18 +6,13 @@
 # Load packages required to define the pipeline: ----
 library(targets)
 library(tarchetypes)
-devtools::install_github("steeleb/HydroVuR")
 
 # Set target options: ----
 tar_option_set(
   # need to make sure that we are using all of th
-  packages = c("data.table", "tidyverse", "rvest",
-  "readxl", "lubridate", "zoo",
-  "padr","plotly", "feather",
-  "RcppRoll", "yaml", "ggpubr",
-  "profvis", "janitor", "HydroVuR") # packages that your targets need to run
+  packages = c("tidyverse") # packages that your targets need to run
   # format = "qs", # Optionally set the default storage format.
-    # should this be parquet?
+  # should this be parquet?
 )
 
 # Run the R scripts in the R/ folder with your custom functions: ----
@@ -27,7 +22,7 @@ tar_source(files = c(
   "src/api_pull/hv_locations_all.R",
   "src/api_pull/get_start_dates_df.R",
   "src/api_pull/api_puller.R",
-  # qaqc functions
+  # qa/qc functions
   "src/qaqc/download_and_flag_fxns/",
   "src/mWater_collate/clean_mwater_notes.R",
   "src/mWater_collate/grab_sensor_notes.R"
@@ -51,7 +46,7 @@ list(
     name = hv_token,
     command = hv_auth(client_id = as.character(hv_creds["client"]),
                       client_secret = as.character(hv_creds["secret"])),
-    packages = "httr2"
+    packages = "httr2", "HydroVuR"
   ),
 
   # get the start times for each site ----
@@ -62,6 +57,7 @@ list(
     "data/flagged/all_data_flagged.RDS",
     read = readRDS(!!.x)
   ),
+
 
   ## get the start dates for each site
   tar_target(
@@ -148,10 +144,14 @@ list(
                   "Temperature",
                   "Turbidity")
       site_param_combos <- crossing(sites, params)
-    }
+    },
+    packages = "tidyverse"
+
   ),
 
   ## summarize the data for each site parameter combination
+  # KATIE REQUEST: HERE IS WHERE WE SHOULD JOIN/CBIND BATTERY AND BARO DATA,
+  # AND REMOVE FROM FUTURE STEPS
   tar_target(
     name = all_data_summary_list, # to do (j): name this something else
     command = {
@@ -173,17 +173,19 @@ list(
   ## get the last 3 hours of the historically flagged data and append it to the incoming data
   tar_target(
     name = combined_data, # API data chunk to process (to do (j): rename this)
-    command = combine_hist_inc_data(incoming_data_list = all_data_summary_list, historical_data_list = flagged_data_dfs),
+    command = combine_hist_inc_data(incoming_data_list = all_data_summary_list,
+                                    historical_data_list = flagged_data_dfs),
     packages = "tidyverse"
   ),
 
   # generate summary statistics for each site parameter combination ----
   tar_target(
     name = all_data_summary_stats_list,
-   command =   {
-      all_data_summary_stats_list <- map(combined_data, generate_summary_statistics)
-    },
-   packages = c("tidyverse", "RcppRoll")
+   #command =   {
+      #all_data_summary_stats_list <-
+   command = combined_data %>% map(~generate_summary_statistics(.)),
+    #},
+    packages = c("tidyverse", "RcppRoll")
   ),
 
   # read in look up table for thresholds ----
@@ -194,15 +196,16 @@ list(
   ),
 
   tar_file_read(
-    sensor_spec_ranges,
+    name = sensor_spec_ranges,
     "src/qaqc/sensor_spec_thresholds.yml",
-    read = read_yaml(!!.x)
+    read = read_yaml(!!.x),
+    packages = "yaml"
   ),
 
   # flag data ----
   tar_target(
-    all_data_flagged,
-    {
+    name = all_data_flagged,
+    command = {
       # set sensor spec ranges as global variable
       sensor_spec_ranges <<- sensor_spec_ranges # to do (j): again, why do we need to call these objects here?
       # set threshold lookup as global variable
@@ -222,7 +225,8 @@ list(
           mutate(historical_flagged_data_1 = TRUE)
       })
       # network check
-      final_flag <- map(all_data_flagged, site_comp_test) # to do (j): I want to rename site_comp_test to network_check.
+      final_flag <- all_data_flagged %>%
+        map(~site_comp_test(.)) # to do (j): I want to rename site_comp_test to network_check.
 
       all_data_flagged <- final_flag
     }
@@ -230,8 +234,8 @@ list(
 
   # update the historically flagged data ----
   tar_target(
-    update_historical_flag_data,
-    {
+    name = update_historical_flag_data,
+    command = {
       update_historical_flag_data <- update_historical_flag_list(
         new_flagged_data = all_data_flagged,
         historical_flagged_data = flagged_data_dfs
@@ -241,9 +245,9 @@ list(
 
   # save the updated flagged data ----
   tar_target(
-    write_flagged_data_RDS,
-    saveRDS(update_historical_flag_data, "data/flagged/test_all_data_flagged.RDS")
-  ),
+    name = write_flagged_data_RDS,
+    command = saveRDS(update_historical_flag_data, "data/flagged/test_all_data_flagged.RDS")
+  )
 
   # connect to FC system
 
@@ -258,4 +262,8 @@ list(
   #   )
   # )
 )
+
+
+
+
 
