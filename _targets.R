@@ -6,11 +6,17 @@
 # Load packages required to define the pipeline: ----
 library(targets)
 library(tarchetypes)
+devtools::install_github("steeleb/HydroVuR")
 
 # Set target options: ----
 tar_option_set(
+  packages = c("tidyverse")
   # need to make sure that we are using all of th
-  packages = c("tidyverse") # packages that your targets need to run
+  # packages = c("data.table", "tidyverse", "rvest",
+  #              "readxl", "lubridate", "zoo",
+  #              "padr","plotly", "feather",
+  #              "RcppRoll", "yaml", "ggpubr",
+  #              "profvis", "janitor", "HydroVuR") # packages that your targets need to run
   # format = "qs", # Optionally set the default storage format.
   # should this be parquet?
 )
@@ -45,8 +51,9 @@ list(
   tar_target(
     name = hv_token,
     command = hv_auth(client_id = as.character(hv_creds["client"]),
-                      client_secret = as.character(hv_creds["secret"])),
-    packages = "httr2", "HydroVuR"
+                      client_secret = as.character(hv_creds["secret"]),
+                      url = "https://www.hydrovu.com/public-api/oauth/token"),
+    packages = c("httr2", "HydroVuR")
   ),
 
   # get the start times for each site ----
@@ -109,7 +116,8 @@ list(
   tar_target(
     name = mWater_field_notes,
     command = grab_mWater_sensor_notes(),
-    packages = "tidyverse"),
+    packages = "tidyverse"
+    ),
 
   #bind .xlsx and mWater notes save to field notes for downstream use
   tar_target(
@@ -221,12 +229,12 @@ list(
           add_repeat_flag() %>%
           add_suspect_flag() %>%
           # we should also be incorporating the add_malfuntion_flag() here no?
-          mutate(mean_public = ifelse(is.na(flag), mean, NA)) %>%
-          mutate(historical_flagged_data_1 = TRUE)
+          mutate(mean_public = ifelse(is.na(flag), mean, NA)) #%>%
+          #mutate(historical_flagged_data_1 = TRUE)
       })
       # network check
       final_flag <- all_data_flagged %>%
-        map(~site_comp_test(.)) # to do (j): I want to rename site_comp_test to network_check.
+        map(~network_check(.)) # to do (j): I want to rename site_comp_test to network_check.
 
       all_data_flagged <- final_flag
     }
