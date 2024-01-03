@@ -19,8 +19,8 @@ add_field_flag <- function(df) {
     # Add flags for the next 45 minutes after a site visit
     for (i in 1:3) {
       df <- df %>%
-        add_flag(lag(str_detect(flag, "site visit"), n = i), "sv window") %>%
-        add_flag(lead(str_detect(flag, "site visit"), n = i), "sv window")
+        add_flag(lag(str_detect(flag, "site visit"), n = i) & !grepl("sv window", flag), "sv window") %>%
+        add_flag(lead(str_detect(flag, "site visit"), n = i) & !grepl("sv window", flag), "sv window")
     }
   return(df)
 

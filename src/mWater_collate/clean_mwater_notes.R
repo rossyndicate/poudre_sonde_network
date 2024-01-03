@@ -1,3 +1,5 @@
+clean_mwater_notes <- function(){
+
 #Set up
 library(tidyverse)
 `%nin%` = Negate(`%in%`)
@@ -53,7 +55,8 @@ all_notes_cleaned <- read_csv(url(api_url),show_col_types = FALSE)%>%
   #Remove other columns
   select(-c(photos_downloaded_other,visit_type_other, site_other, other_which_sensor_malfunction ))
 
-
+return(all_notes_cleaned)
 # Remove extra objects not needed other scripts
 
-rm(creds, api_url)
+#rm(creds, api_url)
+}

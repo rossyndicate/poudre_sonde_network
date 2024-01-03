@@ -1,5 +1,5 @@
 
-site_comp_test <- function(df) {
+network_check <- function(df) {
 
   df <- df
 
