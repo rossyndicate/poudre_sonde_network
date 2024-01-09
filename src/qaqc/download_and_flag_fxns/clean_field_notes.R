@@ -7,8 +7,8 @@
 
 clean_field_notes <- function(raw_field_notes){
 
-  field_notes <- raw_field_notes %>%
-    mutate(start_DT = ymd_hm(paste(date, start_time_mst, tzone = "MST"))) %>%
+  field_notes <- raw_field_notes%>%
+    mutate(start_DT = ymd_hm(paste(date, start_time_mst), tz = "MST"))%>%
     mutate(#start_DT = with_tz(start_DT, tzone = "MST"),
       DT_round = floor_date(start_DT, "15 minutes"),
       DT_join = as.character(DT_round),
