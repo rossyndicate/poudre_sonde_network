@@ -20,7 +20,8 @@ combine_hist_inc_data <- function(incoming_data_list, historical_data_list) {
                       function(data) {
                         data %>%
                           filter(DT_round >= ymd_hms(max(DT_round) - hours(3), tz = "MST")) %>%
-                          mutate(historical = TRUE) #%>%
+                          mutate(historical = TRUE,
+                                 last_site_visit = force_tz(last_site_visit, tzone = "MST")) #%>%
                           # rename(cleaner_flag_old = cleaner_flag,
                           #        over_50_percent_fail_window_old = over_50_percent_fail_window,
                           #        flag_old = flag)
