@@ -7,7 +7,8 @@ update_historical_flag_list <- function(new_flagged_data, historical_flagged_dat
   updated_historical_flag_list <- map(matching_indexes, function(index) {
 
     old <- historical_flagged_data[[index]] %>%
-      filter(DT_round < ymd_hms(max(DT_round) - hours(3), tz = "MST"))
+      filter(DT_round < ymd_hms(max(DT_round) - hours(3), tz = "MST"))%>%
+      mutate(last_site_visit = force_tz(last_site_visit, tzone = "MST")) #%>%
 
     bind_rows(old, new_flagged_data[[index]]) %>%
       arrange(DT_round) %>%
