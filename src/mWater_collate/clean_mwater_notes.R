@@ -22,9 +22,9 @@ api_url = as.character(creds["url"])
 all_notes_cleaned <- read_csv(url(api_url),show_col_types = FALSE)%>%
   mutate(
     #start and end dt comes in as UTC -> to MST
-    start_DT = with_tz(ymd_hms(start_dt), tz = "MST"),
-    end_dt = with_tz(ymd_hms(end_dt), tz = "MST"),
-    malfunction_end_dt = with_tz(ymd_hms(malfunction_end_dt), tz = "MST"),
+    start_DT = with_tz(mdy_hm(start_dt), tz = "MST"),
+    end_dt = with_tz(mdy_hm(end_dt), tz = "MST"),
+    malfunction_end_dt = with_tz(mdy_hm(malfunction_end_dt), tz = "MST"),
     date = as.Date(start_DT, tz = "MST"),
     start_time_mst = format(start_DT, "%H:%M"),
     sensor_pulled = as.character(sn_removed),
