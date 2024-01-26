@@ -21,7 +21,7 @@ clean_field_notes <- function(raw_field_notes){
                                       !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
                                       is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
                                       is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA),
-           end_dt  = NA) %>%
+           end_dt  = as.POSIXct(NA, tz = "MST")) %>%
     # remove field dates where sensor was not handled:
     filter(grepl("Sensor Cleaning or Check|Sensor Calibration", visit_type, ignore.case = TRUE))
 

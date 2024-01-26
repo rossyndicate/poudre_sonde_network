@@ -11,7 +11,12 @@ lapply(c("tidyverse", "feather", "data.table", "ggpubr", "tidyr", "broom", "flex
 
 #walk(list.files('src/qaqc/explore_and_fix_fxns', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
 # Source most recent flagging data
-all_data_flagged <- read_feather("data/flagged/all_data_flagged_new.feather") 
+all_data_flagged <- readRDS("data/flagged/sjs_all_data_flagged.RDS")%>%
+  bind_rows()
+# %>%
+#   mutate(mean_public = ifelse(is.na(flag), mean, NA))%>%
+#   filter(!(parameter == "pH" & mean < 6))%>%
+#   filter(!(parameter == "pH" & mean > 10))
 
 cleaned_data <- filter(all_data_flagged, is.na(cleaner_flag))
 options(dplyr.summarise.inform = FALSE)
@@ -32,7 +37,7 @@ calc_sum_stats <- function(site_select, param_select){
    site_select_upper <- filter(site_names, site %in% site_select)%>%pull(site_upper)
   
   site_stats <- all_data_flagged%>%
-    filter(site == site_select & parameter == param_select & is.na(cleaner_flag) & year(DT_round) ==2023)%>%
+    filter(site == site_select & parameter == param_select & !is.na(mean_public) & year == 2023)%>%
     select(DT_round, mean)%>%
     summarize(
     n_obs = n(),
@@ -65,6 +70,7 @@ site_sum_stats <- pmap_df(combinations, function(site_select, param_select) {
 })
 ```
 
+# Summary stats table
 
 ```{r create_table}
 
@@ -80,7 +86,7 @@ std_border <- fp_border_default(width = 1, color = "black")
 ft <- flextable(subset_stats)%>%
   separate_header() %>%
   align(align = "center", part = "all")%>%
-  colformat_double( big.mark = "'", decimal.mark = ".", digits = 3)%>%
+  colformat_double( big.mark = ",", decimal.mark = ".", digits = 3)%>%
   set_table_properties(layout = "fixed")%>%
   border_remove()%>%
   border_outer(part="all", border = std_border )%>%
@@ -114,8 +120,9 @@ ft <- highlight_max_min(column = "sd")
 return(ft)
 }
   
-pH <- create_table(parameter_select = "pH")
-DO<- create_table(parameter_select = "DO")
+create_table(parameter_select = "pH")
+create_table(parameter_select = "DO")
+create_table(parameter_select = "Specific Conductivity")
 
 
 # sect_properties <- prop_section(
@@ -158,6 +165,10 @@ color_joiner <-function(data, flag_type) {
     left_join(color_code, by = "flag")
   
 }  
+site_colors <- c("Tamasag" = "#bd90f8" ,"Legacy"= "#01377D", "Lincoln" =  "#009DD1", "Timberline" = "#97E7F5",
+                "Prospect" =  "#26B170","Boxelder"="#F5E15A","Archery" =  "#FEA305", "River Bluffs" =   "#F26021")
+
+
 
 bg_colors <- c( "#01377D", "#009DD1", "#97E7F5", "#7ED348", "#26B170", "#000000")
 or_colors <-c("#F5E15A", "#F4BE1D", "#FEA305", "#F26021", "#F34646")
@@ -208,7 +219,7 @@ plotter <- function(clean = FALSE, hourly = TRUE, sites = c("legacy", "timberlin
     # Ive found for storm events that flags remove valuable trends due to to their sharp increases in slope
     if(clean == TRUE){
    flag_plot_data <- flag_plot_data %>%
-     filter(is.na(cleaner_flag))
+     filter(is.na(flag))
     }
     if(hourly == TRUE){
     flag_plot_data <- flag_plot_data%>%
@@ -233,7 +244,7 @@ plotter <- function(clean = FALSE, hourly = TRUE, sites = c("legacy", "timberlin
   ggplot() +
     geom_line(data = all_flag_plot_data, 
                aes(x = DT_round, y = mean, color = site_upper), size = 2) +
-    scale_color_manual(name = "Site", values = or_colors) +
+    scale_color_manual(name = "Site", values = bg_colors) +
     labs(x = "Date",
          y = paste(units)) +
     #ggtitle(paste(title)) +
@@ -260,14 +271,17 @@ may_precip <-read_csv("data/context_data/2023_report/utility_center_precip_may.c
   mutate(precip_accum_cm = precip_accum_in*2.54)
 
 precip_plot <- ggplot(may_precip, aes(x= DateTime, y = precip_accum_cm))+
-  geom_line(color = "#002FA7", linewidth = 2)+
+  geom_col(color = "#002FA7", size = 3)+
+  # Reverse the y-axis
+  scale_y_reverse() +
+
   labs(
     x = "Date",
-    y = "Precip. Accummulation (cm)"
-  )+
+    y = "Precipitation (cm)"
+  ) +
   theme_classic(base_size = 28)+
   theme( legend.position = "none",
-         axis.title.x  = element_blank(), 
+         axis.title.x  = element_blank(),
          axis.title.y = element_text(size = 20,face = "bold") )
 precip_plot
                            
@@ -295,7 +309,7 @@ clean_temp_may <- plotter(sites = may_sites, clean = TRUE, parameter_select = "T
 
   ggarrange( precip_plot, precip_plot, clean_depth_may,clean_spec_cond_may,  clean_do_may , clean_temp_may, ncol = 2, nrow = 3, legend = "bottom", common.legend = T)
 
-  ggsave("data/sharing/figures/2023/DRAFT_Red_urban_storm_may_2023.jpg",width = 20, height = 14, dpi = 300)
+  ggsave("data/sharing/figures/2023/DRAFT_urban_storm_may_2023.jpg",width = 20, height = 14, dpi = 300)
 ```
 
 ## July 31st storm
@@ -344,7 +358,7 @@ july_turb <- plotter(sites = c("tamasag", "timberline", "prospect" ), clean = FA
 
    ggarrange( july_depth,july_spec_cond,  july_do , july_turb, ncol = 2, nrow = 2, legend = "bottom", common.legend = T)
   # 
-   #ggsave("data/sharing/figures/2023/DRAFT_urban_storm_july_2023.jpg",width = 20, height = 14, dpi = 300)
+   ggsave("data/sharing/figures/2023/DRAFT_urban_storm_july_2023.jpg",width = 20, height = 14, dpi = 300)
 
 ```
 
@@ -416,7 +430,7 @@ ggsave("data/sharing/figures/2023/DRAFT_blackwater_sept_2023.jpg",width = 20, he
 # Reservoir Releases
 
 ## Fossil Creek release (Nov 10th)
-NOT YET IN DATASET
+
 Sites: "archery", "river bluffs"
 Params: pH, Depth, Temp, Chl-a
 
@@ -456,12 +470,14 @@ foscrk_do <- plotter(sites = foscrk_sites, clean = FALSE,
         axis.title.x=element_blank(),
         axis.title.y = element_text(size = 22,face = "bold"))
 #chla
-foscrk_chla <- plotter(sites = foscrk_sites, clean = FALSE,
+foscrk_chla <- plotter(sites = foscrk_sites, clean = TRUE,hourly = TRUE,
                           start_date = foscrk_start_date, 
                           end_date = foscrk_end_date, 
                       parameter_select = "Chl-a Fluorescence", units = "Chl-a Fluorescence (RFU)")+
+  geom_smooth(method = "lm", se = FALSE, size = 2)+
   theme(legend.position = "none",
-        axis.title.y = element_text(size = 22,face = "bold"))
+        axis.title.y = element_text(size = 22,face = "bold"))+
+  ylim(1.25,3.5)
 #ph
 foscrk_pH <- plotter(sites = foscrk_sites, clean = FALSE,
                           start_date = foscrk_start_date, 
@@ -481,12 +497,13 @@ foscrk_temp <- plotter(sites = foscrk_sites, clean = FALSE,
 ggarrange(foscrk_Q, foscrk_pH, foscrk_do, ncol = 1, nrow= 3, common.legend = TRUE, legend = "bottom")
 ggsave("data/sharing/figures/2023/DRAFT_foscrk_release.jpg",width = 20, height = 14, dpi = 300)
 
+#ggarrange(foscrk_chla_raw, foscrk_chla, ncolums = 2, nrow = 1, common.legend = TRUE, legend = "bottom")
 
 ```
 
 
 
-## Horsetooh release (Oct 15- Nov 2)
+## Horsetooth release (Oct 15- Nov 2)
 Sites: "tamasag", "lincoln","prospect", "archery", "river bluffs"
 Params: pH, Depth, Temp, Chl-a
 
@@ -539,11 +556,28 @@ horse_DO <- plotter(clean = FALSE, sites = horse_sites,
 #         axis.title.y = element_text(size = 22,face = "bold"))
 
 ggarrange(horse_depth, horse_DO,horse_cond,  horse_temp, ncol = 2, nrow = 2, legend = "bottom", common.legend = T)
-ggsave("data/sharing/figures/2023/DRAFT_BG_horsetooth_release_oct.jpg",width = 20, height = 14, dpi = 300)
+ggsave("data/sharing/figures/2023/DRAFT_horsetooth_release_oct.jpg",width = 20, height = 14, dpi = 300)
 
 ```
 
+# Testing
+```{r}
+plotter(clean = TRUE, hourly = TRUE, sites = c("tamasag", "legacy"), start_date = "2023-04-01 12:00:00", end_date = "2023-05-26 12:00:00", parameter_select = "pH", units = "pH")+
+  theme(legend.position = "none",
+        axis.title.y = element_text(size = 22,face = "bold"))
 
+start_dt <- ymd_hms("2023-05-01 12:00:00", tz = "MST")
+end_dt <- ymd_hms("2023-05-25 12:00:00", tz = "MST")
+
+
+ggplot(filter(all_data_flagged, site == "river bluffs" & year == 2023 & parameter %in% c("DO") & between(DT_round, start_dt, end_dt )& is.na(flag) ), aes(x = DT_round, y = mean)) +
+  geom_line(color = "red")+
+    #aes(color = !is.na(flag))) +
+  #geom_line()+
+  geom_line(data = filter(all_data_flagged, site == "boxelder"& year == 2023 & parameter %in% c("DO") & between(DT_round, start_dt, end_dt)& !is.na(mean)), aes(group = site), color = "black") +
+  labs(color = "Flagged", y = "DO") +
+  theme_bw()
+```
 
 
 
