@@ -1,0 +1,134 @@
+---
+title: "Create PWQN Timelapse"
+author: "Sam Struthers- CSU ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+`%nin%` = Negate(`%in%`)
+library(tidyverse)
+library(animation)
+library(gganimate)
+library(dygraphs)
+library(lubridate)
+library(xts)
+library(exifr)
+library(imputeTS)
+library(png)
+library(grid)
+library(ggthemes)
+library(patchwork)
+library(jpeg)
+library(ggdark)
+library(animation)
+library(magick)
+
+
+source("scratch/reporting/grab_raw_data.R")
+source("src/timelapse/get_tl_photo_filenames.R")
+```
+
+# Enter dates, site and parameters for timelapse
+
+```{r}
+
+start_dt <- "2023-06-01 12:00"
+end_dt  = "2023-06-10 12:00"
+site = "legacy"
+#first param should be depth usually
+parameters = c( "Depth", "Turbidity")
+
+param_unit  = c("ft", "NTU" )
+
+tl_filenames <- get_tl_photo_filenames(site, start_dt,end_dt)
+
+wq_data <- grab_raw_data(sites = site, parameters = parameters, start_dt = start_dt, end_dt = end_dt)%>%
+  mutate(DT_round = with_tz(DT_round, "MST"))%>%
+  pivot_wider(names_from = parameter, values_from = value, id_cols = "DT_round")
+
+wq_tl <- left_join(tl_filenames, wq_data, by = "DT_round")%>%
+  na.omit()
+
+cat("There are", nrow(wq_tl), "photos with wq observations over the selected period.")
+```
+
+# Timelapse Prep
+
+## View Water Quality Data
+
+This grabs wq data from wq_tl object and makes a simple plot of the selected parameters. Run the chunk below to see the data
+
+```{r}
+basic_plot()
+```
+
+If the data is satisfactory, continue. Otherwise, choose different dates/ sites above. 
+
+## Create frames
+
+This will create each individual frame which includes a photo, and a plot of two parameters. Depth should be the first parameter and a WQ variable can be the second. Change the folder path below to where you'd like to save the photos (make sure it is empty!)
+Run the chunk below to create all the images (~ takes 5 minutes per day at a 30 min interval)
+
+```{r}
+# change to your folder path :)
+folder_path <- "data/timelapse_photos/sjs_test/"
+
+map(1:nrow(wq_tl), ~photo_plotter(.x, output_folder = folder_path))
+```
+
+# Create Timelapse
+
+## Enter Name
+
+Enter the name of the timelapse you are making (make it unique!) and run the first chunk
+
+```{r}
+tl_name <- "sjs_legacy_test"
+
+```
+
+## Create timelapsed video
+
+Run chunk below if you have verified:
+- Verified the WQ data is appropriate
+- You have saved all the individual plots to a folder
+- Created a unique name for the timelapse 
+
+```{r}
+tl_name <- paste0("data/timelapse_photos/finished_tl/", tl_name, ".mp4")
+
+tl_photos <- (list.files(folder_path, full.names = TRUE))
+
+#This extracts the underlying height, width, and type of image.
+img.height <- magick::image_info(magick::image_read(tl_photos[1]))$height
+img.width <- magick::image_info(magick::image_read(tl_photos[1]))$width
+img.type <- magick::image_info(magick::image_read(tl_photos[1]))$format
+
+#This tells FFmpeg that each picture should be displayed for 0.25 seconds,
+# the height of the image, the width of the image, and the appropriate
+# image engine to use.
+#Note: tolower() converts uppercase letters to lowercase letters.
+animation::ani.options(interval = 0.075,
+                       ani.height = img.height,
+                       ani.width = img.width,
+                       ani.dev = tolower(img.type),
+                       ani.type = tolower(img.type))
+
+#By default the input dimensions of the image (designated here by img.height
+# and img.width) dictate the output resolution. Below, I'm increasing the
+# video dimensions to improve the image quality.
+opts <- paste("-s ", img.height * 2, "x", img.width * 2, sep = "")
+
+animation::saveVideo(
+
+  for(i in 1:length(tl_photos)){
+    tl_image <- magick::image_read(tl_photos[i])
+    plot(tl_image)
+  },
+  #Designate the name of the image within the working directory.
+  video.name = tl_name)
+
+```
+
+
