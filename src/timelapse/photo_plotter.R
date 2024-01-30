@@ -4,19 +4,18 @@ photo_plotter <- function(index = 200, output_folder){
   param_1_label <- paste0(parameters[1], " (", param_unit[1],")")
   param_2_label <- paste0(parameters[2], " (", param_unit[2],")")
 
-# get the adjustment so axes look nice
-  adjustment <- tibble(parameter = c("Turbidity", "Specific Conductivity", "DO"),
-                       value = c(100, 500, 10))%>%
-    filter(parameter == parameters[2])%>%
-    pull(value)
+# get the adjustment, breaks etc so axes look nice
+  param_1_max <- max(wq_tl[[parameters[1]]], na.rm = T)
+  param_1_max_int <- as.integer(max(wq_tl[[parameters[1]]], na.rm = T))+1
+
+  adjustment <- max(wq_tl[[parameters[2]]], na.rm = T) / param_1_max
+
+  brk <- ifelse(param_1_max_int < 6, 1,2)
+
 # Bounds for the y-axis
-  bounds <- tibble(parameter = c("Turbidity", "Depth",  "Specific Conductivity", "DO"),
-                  lower = c(0, 0,0,0),
-                  upper = c(150, 6, 2000, 14))
-  lower_y_1 <-  filter(bounds, parameter == parameters[1])%>% pull(lower)
-  upper_y_1 <-  filter(bounds, parameter == parameters[1])%>% pull(upper)
-  lower_y_2 <-  filter(bounds, parameter == parameters[2])%>% pull(lower)
-  upper_y_2 <-  filter(bounds, parameter == parameters[2])%>% pull(upper)
+
+  lower_bound <- 0
+  upper_bound <-  max(wq_tl[[parameters[2]]], na.rm = T)
 
 
   #This is the index of the image for the background for the individual photo
@@ -48,16 +47,16 @@ photo_plotter <- function(index = 200, output_folder){
               color = "#F34646", size=2) +
     geom_point(data = simul, aes(x = DT_round, y = .data[[parameters[2]]]),
                color = "#F34646")+
-    ylim(min(wq_tl[[parameters[2]]], na.rm = T),
-         max(wq_tl[[parameters[2]]], na.rm = T))+
+    # ylim(min(wq_tl[[parameters[2]]], na.rm = T),
+    #      max(wq_tl[[parameters[2]]], na.rm = T))+
     xlim(min(wq_tl$DT_round, na.rm = T),
          max(wq_tl$DT_round, na.rm = T))+
-    scale_y_continuous(name = param_2_label,
+    scale_y_continuous(name = param_2_label, limits = c(0, upper_bound),
                        sec.axis = sec_axis(trans = ~./adjustment ,
                                            name = param_1_label,
-                                           breaks = seq(0,6,1)))+
+                                           breaks = seq(0,param_1_max_int,brk)))+
     dark_theme_light(base_size = 10) +
-    theme(axis.title.y.right = element_text(color="white"), axis.title.y.left = element_text(color="#F34646")) +
+    theme(axis.title.y.right = element_text(color="white"),axis.text.y.right = element_text(color = "white"), axis.title.y.left = element_text(color="#F34646"), axis.text.y.left = element_text(color = "#F34646")) +
     theme(
       panel.background = element_rect(fill = "transparent"),
       plot.background = element_rect(fill = "transparent", color = NA),
@@ -85,5 +84,7 @@ photo_plotter <- function(index = 200, output_folder){
   #dev.copy(gp1,paste0('data/timelapse_photos/vid_image/', max(upto$rowid), ".png"))
   #dev.off()
 }
-#photo_plotter(249, "data/timelapse_photos/sjs_test/")
+
+#test functions
+#photo_plotter(2, "data/timelapse_photos/sjs_test/")
 #map(1:nrow(wq_tl), ~photo_plotter(.x, "data/timelapse_photos/sjs_test/"))
