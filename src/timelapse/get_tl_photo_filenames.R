@@ -3,10 +3,15 @@ get_tl_photo_filenames <- function(site = "legacy",start_dt = "2023-05-20 12:00"
   #convert dates to DT objects
   start_dt <- ymd_hm(start_dt, tz = "MST")
   end_dt <- ymd_hm(end_dt, tz = "MST")
+  if(site == "river bluffs"){
+    site <- "riverbluffs"
+  }
 
   if(site %nin% c("tamasag", "legacy", "timberline", "prospect", "boxelder", "archery", "riverbluffs")){
     print("Invalid site name, please select from: 'tamasag' 'legacy' 'timberline' 'prospect' 'boxelder' 'archery' 'riverbluffs'")
-    return(NA)
+
+  nah <- tibble()
+    return(nah)
   }
 
   #look through all the files in the site's folder
@@ -22,7 +27,8 @@ get_tl_photo_filenames <- function(site = "legacy",start_dt = "2023-05-20 12:00"
 
   if(nrow(all_files) == 0){
     print("No files found for this site and date range")
-    return(NA)
+    nah <- tibble()
+    return(nah)
   }else{
    return(all_files)
   }
