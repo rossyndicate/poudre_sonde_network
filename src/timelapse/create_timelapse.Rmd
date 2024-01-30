@@ -27,30 +27,48 @@ library(magick)
 
 source("scratch/reporting/grab_raw_data.R")
 source("src/timelapse/get_tl_photo_filenames.R")
+source("src/timelapse/basic_plot.R")
+source("src/timelapse/photo_plotter.R")
+
 ```
 
 # Enter dates, site and parameters for timelapse
 
+sites: "tamasag", "legacy", "timberline", "prospect", "boxelder", "archery", "river bluffs"
+
 ```{r}
 
-start_dt <- "2023-06-01 12:00"
-end_dt  = "2023-06-10 12:00"
-site = "legacy"
+start_dt <- "2023-4-30 08:00"
+end_dt  = "2023-5-21 12:00"
+site = "boxelder"
 #first param should be depth usually
-parameters = c( "Depth", "Turbidity")
+parameters = c( "Depth", "Specific Conductivity")
 
-param_unit  = c("ft", "NTU" )
+param_unit  = c("ft", "us/cm" )
 
+
+#Pull in timelapse images
 tl_filenames <- get_tl_photo_filenames(site, start_dt,end_dt)
 
-wq_data <- grab_raw_data(sites = site, parameters = parameters, start_dt = start_dt, end_dt = end_dt)%>%
+#check to see if there are any photos for this site and time period
+if(nrow(tl_filenames) == 0 ){
+  print("No photos for this site and time period. Please choose a different site")
+}else{
+  #pull in WQ data if there are photos
+  wq_data <- grab_raw_data(sites = site, parameters = parameters, start_dt = start_dt, end_dt = end_dt)%>%
   mutate(DT_round = with_tz(DT_round, "MST"))%>%
   pivot_wider(names_from = parameter, values_from = value, id_cols = "DT_round")
 
-wq_tl <- left_join(tl_filenames, wq_data, by = "DT_round")%>%
-  na.omit()
+  if(nrow(wq_data) == 0){
+  print("No data for this site and time period. Please choose different parameters")
+    }
+  if(nrow(wq_data) > 0){
+   wq_tl <- left_join(tl_filenames, wq_data, by = "DT_round")%>%
+     na.omit()
 
 cat("There are", nrow(wq_tl), "photos with wq observations over the selected period.")
+}}
+
 ```
 
 # Timelapse Prep
@@ -65,30 +83,27 @@ basic_plot()
 
 If the data is satisfactory, continue. Otherwise, choose different dates/ sites above. 
 
+## Give name of event (make it unique!)
+
+```{r}
+tl_name <- "boxelder_may2023"
+```
+
+
 ## Create frames
 
 This will create each individual frame which includes a photo, and a plot of two parameters. Depth should be the first parameter and a WQ variable can be the second. Change the folder path below to where you'd like to save the photos (make sure it is empty!)
 Run the chunk below to create all the images (~ takes 5 minutes per day at a 30 min interval)
 
 ```{r}
-# change to your folder path :)
-folder_path <- "data/timelapse_photos/sjs_test/"
+# individual frames will be saved to photo plotter output under the name given above
+folder_path <- paste0("data/timelapse_photos/photo_plotter_output/", tl_name, "/")
 
 map(1:nrow(wq_tl), ~photo_plotter(.x, output_folder = folder_path))
 ```
 
 # Create Timelapse
 
-## Enter Name
-
-Enter the name of the timelapse you are making (make it unique!) and run the first chunk
-
-```{r}
-tl_name <- "sjs_legacy_test"
-
-```
-
-## Create timelapsed video
 
 Run chunk below if you have verified:
 - Verified the WQ data is appropriate
