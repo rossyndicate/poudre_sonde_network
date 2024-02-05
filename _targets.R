@@ -1,17 +1,12 @@
-# Created by use_targets().
-# Follow the comments below to fill in this target script.
-# Then follow the manual to check and run the pipeline:
-#   https://books.ropensci.org/targets/walkthrough.html#inspect-the-pipeline
+# Architecture created by use_targets().
 
-# Load packages required to define the pipeline: ----
+# Load packages required to define the pipeline:
 library(targets)
 library(tarchetypes)
-devtools::install_github("steeleb/HydroVuR")
 
 # Set target options: ----
 tar_option_set(
   packages = c("tidyverse")
-  # need to make sure that we are using all of th
   # packages = c("data.table", "tidyverse", "rvest",
   #              "readxl", "lubridate", "zoo",
   #              "padr","plotly", "feather",
@@ -21,33 +16,39 @@ tar_option_set(
   # should this be parquet?
 )
 
-# Run the R scripts in the R/ folder with your custom functions: ----
-tar_source(files = c(
-  # api pull functions
-  "src/api_pull/hv_getdata_id.R",
-  "src/api_pull/hv_locations_all.R",
-  "src/api_pull/get_start_dates_df.R",
-  "src/api_pull/api_puller.R",
-  # qa/qc functions
-  "src/qaqc/download_and_flag_fxns/",
-  "src/mWater_collate/clean_mwater_notes.R",
-  "src/mWater_collate/grab_sensor_notes.R"
-  # "src/qaqc/explore_and_fix_fxns.R"
-))
+# # Run the R scripts in the R/ folder with your custom functions: ----
+# tar_source(files = c(
+#   # loading in the data (api pull, field notes)
+#   "src/api_pull/hv_getdata_id.R",
+#   "src/api_pull/hv_locations_all.R",
+#   "src/api_pull/get_start_dates_df.R",
+#   "src/api_pull/api_puller.R",
+#   # qa/qc functions
+#   "src/qaqc/download_and_flag_fxns/",
+#   "src/mWater_collate/clean_mwater_notes.R",
+#   "src/mWater_collate/grab_sensor_notes.R"
+#   # "src/qaqc/explore_and_fix_fxns.R"
+# ))
 
+# Run the R scripts in the R/ folder with your custom functions
+# 'files` = the file and directory path to look for R scripts to run
+tar_source(files = "src/qaqc/download_and_flag_fxns")
+tar_source(files = "src/mWater_collate")
+tar_source(files = "src/api_pull")
+
+# Pull in the API data
 list(
-  # Pull in the API data -----------------------------------------------
-
-  # accessing the API data ----
+  # To access the API, you need credentials that must be formulated
+  # like the example "src/api_pull/CopyYourCreds.yml" file. Contact Katie Willi
+  # to request access.
   tar_file_read(
     name = hv_creds,
-    # to do (j): make sure that credentials are in a separate folder from scripts?
     "src/api_pull/credentials.yml",
     read = read_yaml(!!.x),
     packages = "yaml"
   ),
 
-  # get a token for location lists and data access ----
+  # get a token for location lists and data access
   tar_target(
     name = hv_token,
     command = hv_auth(client_id = as.character(hv_creds["client"]),
@@ -56,9 +57,9 @@ list(
     packages = c("httr2", "HydroVuR")
   ),
 
-  # get the start times for each site ----
+  # Download new data from API based on current QAQC data frame timestamps
 
-  ## read in the historically flagged data
+  ## read in the historically flagged data...
   tar_file_read(
     name = flagged_data_dfs, # this data is from the RMD files. eventually it will be from this pipeline.
     "data/flagged/all_data_flagged.RDS",
@@ -66,23 +67,25 @@ list(
   ),
 
 
-  ## get the start dates for each site
+  ## ... get the start dates per site based on that flagged data...
   tar_target(
     name = start_dates_df,
     command = get_start_dates_df(incoming_flagged_data_dfs = flagged_data_dfs),
     packages = "tidyverse"
   ),
 
-  # get the data for each site ----
+  # ... using those start dates, download new API data
   tar_target(
     name = incoming_data_csvs_upload, # this is going to have to append to the historical data
     command = walk2(.x = start_dates_df$site,
                     .y = start_dates_df$start_DT_round,
-                    ~api_puller(site = .x, start_dt = .y, api_token = hv_token,
-                                dump_dir = "data/api/incoming_api_data/")),
+                    ~api_puller(site = .x, start_dt = .y, end_dt = Sys.time(),
+                                api_token = hv_token, dump_dir = "data/api/incoming_api_data/")),
     packages = c("tidyverse", "HydroVuR", "httr2")
   ),
 
+
+  # KW: old method of getting data - a little less robust
   # {
   #   end_dt = Sys.time()
   #   walk2(
@@ -98,7 +101,7 @@ list(
 
   # load xlsx field notes ----
   tar_file_read(
-    name = raw_field_notes,
+    name = old_raw_field_notes,
     "data/sensor_field_notes.xlsx",
     read = read_excel(!!.x),
     packages = "readxl"
@@ -106,8 +109,8 @@ list(
 
   # clean xlsx field notes ----
   tar_target(
-    name = old_field_notes,
-    command = clean_field_notes(raw_field_notes),
+    name = old_tidy_field_notes,
+    command = clean_field_notes(old_raw_field_notes),
     packages = "tidyverse"
   ),
 
@@ -117,12 +120,12 @@ list(
     name = mWater_field_notes,
     command = grab_mWater_sensor_notes(),
     packages = "tidyverse"
-    ),
+  ),
 
   #bind .xlsx and mWater notes save to field notes for downstream use
   tar_target(
     name = field_notes,
-    command = rbind(old_field_notes, mWater_field_notes)
+    command = rbind(old_tidy_field_notes, mWater_field_notes)
   ),
 
   # load incoming API data ----
@@ -189,9 +192,9 @@ list(
   # generate summary statistics for each site parameter combination ----
   tar_target(
     name = all_data_summary_stats_list,
-   #command =   {
-      #all_data_summary_stats_list <-
-   command = combined_data %>% map(~generate_summary_statistics(.)),
+    #command =   {
+    #all_data_summary_stats_list <-
+    command = combined_data %>% map(~generate_summary_statistics(.)),
     #},
     packages = c("tidyverse", "RcppRoll")
   ),
@@ -199,8 +202,9 @@ list(
   # read in look up table for thresholds ----
   tar_file_read(
     name = threshold_lookup,
-    "data/summary_stats/threshold_lookup.RDS",
-    read = readRDS(!!.x)
+    "src/qaqc/seasonal_thresholds.csv",
+    read = read_csv(!!.x),
+    packages = c("tidyverse")
   ),
 
   tar_file_read(
@@ -230,7 +234,7 @@ list(
           add_suspect_flag() %>%
           # we should also be incorporating the add_malfuntion_flag() here no?
           mutate(mean_public = ifelse(is.na(flag), mean, NA)) #%>%
-          #mutate(historical_flagged_data_1 = TRUE)
+        #mutate(historical_flagged_data_1 = TRUE)
       })
       # network check
       final_flag <- all_data_flagged %>%
