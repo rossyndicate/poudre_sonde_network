@@ -11,8 +11,8 @@
   min: 0
   max: 100
 "Depth":
-  min: -10
-  max: 100
+  min: 0
+  max: 30
 "DO":
   min: 0
   max: 60
