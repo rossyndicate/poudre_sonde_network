@@ -19,14 +19,14 @@ network_check <- function(df) {
                    "archery",
                    "river bluffs")
 
-  width_fun = ifelse(site_name == "tamasag", 20,
-              ifelse(site_name == "legacy",16,
-              ifelse(site_name == "lincoln", 16,
-              ifelse(site_name =="timberline", 16,
-              ifelse(site_name ==  "prospect", 12,
-              ifelse(site_name == "boxelder", 16,
-              ifelse(site_name ==   "archery", 12,
-              ifelse(site_name == "river bluffs", 12, NA))))))))
+  width_fun = ifelse(site_name == "tamasag", 17, # 2 hours before/after
+              ifelse(site_name == "legacy", 17,
+              ifelse(site_name == "lincoln", 17,
+              ifelse(site_name =="timberline", 17,
+              ifelse(site_name ==  "prospect", 17,
+              ifelse(site_name == "boxelder", 17,
+              ifelse(site_name ==   "archery", 17,
+              ifelse(site_name == "river bluffs", 17, NA))))))))
 
   # determining the index for the site of interest.
   site_index <- which(sites_order == site_name)
@@ -71,12 +71,22 @@ network_check <- function(df) {
 
   df_test <- join %>%
     mutate(flag_binary = ifelse(#grepl("slope|suspect", flag) &
-      (is.na(flag_up) | grepl("seasonal range|repeat|sonde not employed|missing data|site visit|sv window", flag_up)) &
-        (is.na(flag_down) | grepl("seasonal range|repeat|sonde not employed|missing data|site visit|sv window", flag_down)), 0, 1)) %>%
+        (is.na(flag_up) | grepl("repeat|sonde not employed|missing data|site visit|sv window", flag_up)) &
+        (is.na(flag_down) | grepl("repeat|sonde not employed|missing data|site visit|sv window", flag_down)), 0, 1)) %>%
     #arrange(timestamp) %>%
     mutate(overlapping_flag = zoo::rollapply(flag_binary, width = width_fun, FUN = check_2_hour_window_fail, fill = NA, align = "center")) %>%
-    mutate(cleaner_flag = ifelse(!is.na(flag) & !grepl("seasonal range|repeat|sonde not employed|missing data|site visit|sv window", flag) & overlapping_flag == TRUE, NA, flag)) %>%
+    mutate(cleaner_flag = ifelse(!is.na(flag) & !grepl("repeat|sonde not employed|missing data|site visit|sv window", flag) & overlapping_flag == TRUE, NA, flag)) %>%
     select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag))
+
+
+  # df_test <- join %>%
+  #   mutate(flag_binary = ifelse(#grepl("slope|suspect", flag) &
+  #     (is.na(flag_up) | grepl("seasonal range|repeat|sonde not employed|missing data|site visit|sv window", flag_up)) &
+  #       (is.na(flag_down) | grepl("seasonal range|repeat|sonde not employed|missing data|site visit|sv window", flag_down)), 0, 1)) %>%
+  #   #arrange(timestamp) %>%
+  #   mutate(overlapping_flag = zoo::rollapply(flag_binary, width = width_fun, FUN = check_2_hour_window_fail, fill = NA, align = "center")) %>%
+  #   mutate(cleaner_flag = ifelse(!is.na(flag) & !grepl("seasonal range|repeat|sonde not employed|missing data|site visit|sv window", flag) & overlapping_flag == TRUE, NA, flag)) %>%
+  #   select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag))
 
   return(df_test)
 

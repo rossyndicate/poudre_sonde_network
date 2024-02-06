@@ -109,7 +109,7 @@ add_malfunction_flag <- function(df){
 
 
     # TAMASAG
-    ## 2023
+    add_flag((year == "2023" & DT_round >= ymd_hms("2023-04-20 09:00:00", tz = "MST") & DT_round <= ymd_hms("2023-05-01 08:00:00", tz = "MST") & site == "tamasag" & parameter %in% c("Specific Conductivity", "pH")), "sensor malfunction") %>%
     ### turb calibration issue
     add_flag((year == "2023" & DT_round >=ymd_hms("2023-05-15 11:20:00", tz = "MST") & DT_round <= ymd_hms("2023-05-15 18:00:00", tz = "MST") & site == "tamasag" & parameter == "Turbidity"), "sensor malfunction") %>%
     ### turb moisture under lens
