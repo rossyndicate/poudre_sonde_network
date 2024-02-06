@@ -9,15 +9,16 @@
 
 files_missing <- function(){
 
-  #source clean mwater script for all notes cleaned
-
-  source("src/mWater_collate/clean_mwater_notes.R")
+  `%nin%` = Negate(`%in%`)
+  # #source clean mwater script for all notes cleaned
+  #
+  # source("src/mWater_collate/clean_mwater_notes.R")
 
   #grab context metadata
-  site_meta <- read_csv("data/water_sampling_sites.csv",show_col_types = FALSE)%>%
+  site_meta <- read_csv("data/metadata/water_sampling_sites.csv",show_col_types = FALSE)%>%
     select(site = site_code, Site_Name, site_label_rmrs)
   # sort for sites in upper network (ie. acronyms rather than street names)
-  upper_sites <- read_csv("data/water_sampling_sites.csv",show_col_types = FALSE)%>%
+  upper_sites <- read_csv("data/metadata/water_sampling_sites.csv",show_col_types = FALSE)%>%
     filter(watershed != "CLP  Mainstem-Fort Collins")%>%
     #this is to help match with user input
     mutate(site_code = tolower(site_code))
