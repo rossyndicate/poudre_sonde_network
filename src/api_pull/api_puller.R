@@ -1,7 +1,5 @@
 # to do (j): document this function
-api_puller <- function(site, start_dt, api_token, dump_dir) {
-
-  end_dt <- "2023-11-30 14:26:54 EST" #Sys.time()
+api_puller <- function(site, start_dt, end_dt = Sys.time(), api_token, dump_dir) {
 
   locs <- hv_locations_all(api_token)
 
