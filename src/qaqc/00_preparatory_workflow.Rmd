@@ -66,12 +66,12 @@ the api pull step.
 # format and summarize data
 # Determine each site and parameter in all_data 
 sites <- unique(all_data$site)
-params <- c(#"Battery Level",
-            #"Baro",
+params <- c("Battery Level",
+            "Baro",
             "Chl-a Fluorescence", 
             "Depth", 
             "DO", 
-            #"External Voltage", 
+            "External Voltage", 
             "ORP", 
             "pH",
             "Specific Conductivity",
@@ -99,11 +99,13 @@ all_data_summary_df <- bind_rows(all_data_summary_list)
 
 ### Add summary stats and flag new data
 
-The new data that is being flagged \#### Add summary statistics to the formatted data
+The new data that is being flagged 
+
+#### Add summary statistics to the formatted data
 
 ```{r}
-# will need to make sure that the summary stats are not being calculated for the top of the data that has already been flagged
 all_data_summary_stats_list <- all_data_summary_list %>%
+  # modified generate_summary_statistics (for performing across "full" dataset)
   map(~ generate_summary_statistics_full(.))
 ```
 
@@ -118,8 +120,10 @@ threshold_lookup <- all_data_summary_stats_list %>%
   map(~ make_threshold_table(.)) %>%
   bind_rows()
 
+write_csv(threshold_lookup, 'src/qaqc/seasonal_thresholds.csv')
+
 # save the threshold lookup table as a RDS 
-saveRDS(threshold_lookup, 'data/summary_stats/threshold_lookup.RDS')
+# saveRDS(threshold_lookup, 'data/summary_stats/threshold_lookup.RDS')
 
 # saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
 ```
@@ -138,26 +142,25 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
   data %>%
     add_field_flag() %>%
     add_spec_flag() %>%
-    add_seasonal_flag_full() %>%
+    add_realistic_flag() %>%
+    add_seasonal_flag() %>%
     add_na_flag() %>%
     add_repeat_flag() %>%
-    add_suspect_flag() #%>%
-  #mutate(mean_public = ifelse(is.na(flag), mean, NA)) #%>%
-  #mutate(historical_flagged_data_1 = TRUE) %>% 
-  #relocate(historical_flagged_data_1, .after = "t_sd_0199")
-  #mutate(historical_flagged_data_2 = TRUE) %>% 
-  #relocate(historical_flagged_data_2, .after = "historical_flagged_data_1")
+    # modified add_suspect_flag (for performing across "full" dataset)
+    add_suspect_flag_full() 
 })
 
 final_flag <- all_data_flagged %>%
-  map(~site_comp_test(.))
+  map(~network_check(.))
 
-saveRDS(final_flag, 'data/flagged/all_data_flagged_new.RDS')
+saveRDS(final_flag, 'data/flagged/all_data_flagged_complete.RDS')
 
-write_feather(final_flag %>% bind_rows(), 'data/flagged/all_data_flagged_new.feather')
+write_feather(final_flag %>% bind_rows(), 'data/flagged/all_data_flagged_complete.feather')
 ```
 
-Develop a final data set for testing purposes
+## Develop a final data set for testing purposes!
+
+Here, I'm splitting the final data set at the end of November to test the 3-hour pull functionality in our {targets} pipeline:
 
 ```{r} 
 subset_func <- function(df){
