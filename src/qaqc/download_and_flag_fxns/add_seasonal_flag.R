@@ -32,9 +32,9 @@ add_seasonal_flag <- function(df) {
     add_flag(((mean < t_mean01 | mean > t_mean99) & !grepl("outside of seasonal range", flag)), "outside of seasonal range") %>%
     # flag obs whose slope is outside the 1st - 99th percentile range
     add_flag(((slope_ahead >= t_slope_behind_99 | slope_behind >= t_slope_behind_99 |
-              slope_ahead <= t_slope_behind_01 | slope_behind <= t_slope_behind_01) & !grepl("slope violation", flag)), "slope violation") %>%
+              slope_ahead <= t_slope_behind_01 | slope_behind <= t_slope_behind_01) & !grepl("slope violation", flag)), "slope violation")
     # ... flag obs that are outside of the rolling mean times 3 sd's of the 1-99 percentile seasonal values
-    add_flag(((mean <= rollavg - (3 * as.numeric(t_sd_0199)) | mean >= rollavg + (3 * as.numeric(t_sd_0199))) & !grepl("outside sd range", flag)), "outside sd range") %>%
+    # add_flag(((mean <= rollavg - (3 * as.numeric(t_sd_0199)) | mean >= rollavg + (3 * as.numeric(t_sd_0199))) & !grepl("outside sd range", flag)), "outside sd range") %>%
     # ... flag obs that are outside of the rolling slope... how to play around with this better....
     # add_flag((parameter == "Turbidity") &
     #            (slope_behind <= rollslope - (3 * rollsdslope) | slope_behind >= rollslope + (3 * rollsdslope)), "outside sd range") %>%

@@ -22,9 +22,12 @@ generate_summary_statistics <- function(site_param_df) {
     # ... so that we can get the proper leading/lagging values across our entire timeseries:
     mutate(
       # Add the next value and previous value for mean.
+      # Only do this for newest data (i.e., our appended historical
+      # data already has these filled out and we don't want to over-
+      # write them)
       front1 = ifelse(is.na(front1), lead(mean, n = 1), front1),
       back1 = ifelse(is.na(back1), lag(mean, n = 1), back1),
-      # Add the median for a point centered in a rolling median of 7 points.
+      # Add the median for a point and 6 points behind it:
       rollmed = ifelse(is.na(rollmed), roll_median(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollmed), # to go (j): check_na() function for when we append data
       # Add the mean for a point centered in a rolling mean of 7 points.
       rollavg = ifelse(is.na(rollavg), roll_mean(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollavg),
@@ -32,7 +35,7 @@ generate_summary_statistics <- function(site_param_df) {
       rollsd = ifelse(is.na(rollsd), roll_sd(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollsd),
       # Determine the slope of a point in relation to the point ahead and behind.
       # katie working on these (j)
-      slope_ahead = ifelse(is.na(slope_ahead), abs(front1 - mean)/15, slope_ahead),
+      slope_ahead = ifelse(is.na(slope_ahead), (front1 - mean)/15, slope_ahead),
       slope_behind = ifelse(is.na(slope_behind), (mean - back1)/15, slope_behind),
       rollslope = ifelse(is.na(rollslope), roll_mean(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollslope),
       # Add the standard deviation for points centered in a rolling slope of 7 points.

@@ -14,7 +14,7 @@ get_start_dates_df <- function(incoming_flagged_data_dfs) {
     # use something that is always monitored:
     filter(parameter == "Temperature") %>%
     filter(DT_round == min(DT_round)) %>%
-    distinct(site, .keep_all=TRUE) %>%
+    distinct(site, .keep_all = TRUE) %>%
     select(site,
            start_DT_round = DT_round)
 

@@ -16,7 +16,7 @@ add_realistic_flag <- function(df){
   df <- df %>%
     # adding sensor range flags
     add_flag(parameter == parameter_name & (mean < sensor_min | mean > sensor_max) & !grepl("outside of sensor realistic range", flag),
-             "outside of sensor realistic range") %>%
+             "outside of sensor realistic range")
 
     return(df)
 
