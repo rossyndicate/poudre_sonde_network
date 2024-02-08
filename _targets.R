@@ -4,7 +4,8 @@
 library(targets)
 library(tarchetypes)
 
-git # Set target options:
+# git # what is this doing here?
+# Set target options:
 tar_option_set(
   packages = c("tidyverse")
 )
@@ -15,8 +16,21 @@ tar_source(files = "src/qaqc/download_and_flag_fxns")
 tar_source(files = "src/mWater_collate")
 tar_source(files = "src/api_pull")
 
-# Pull in the API data
 list(
+  # Make sure directory is structured correctly ----
+  # For now we will use the data directory structure that we have been using, but
+  # this will need to be updated with the directory structure in the fc system.
+
+  ## Incoming API data and related API data archive folder ----
+  tar_target(
+    name = verify_incoming_data_dir,
+    command = {
+      check_incoming_api_dir(incoming_dir = "data/api/incoming_api_data/",
+                             archive_dir = "data/api/archive_api_data/")
+      }
+  ),
+
+  # Pull in the API data ----
   # To access the API, you need credentials that must be formulated
   # like the example "src/api_pull/CopyYourCreds.yml" file. Contact Katie Willi
   # to request access.
@@ -228,13 +242,11 @@ list(
   tar_target(
     name = write_flagged_data_RDS,
     command = saveRDS(update_historical_flag_data, "data/flagged/test_all_data_flagged.RDS")
-  )
+  ),
 
   # connect to FC system
 
   # update FC system
-
-  # clear out the incoming API data folder and move those files to an archive folder.
 
   #  append incoming data to the historical API data and remove data from incoming data folder ----
   # tar_target(
@@ -244,6 +256,15 @@ list(
   #     inc_dir = "data/api/incoming_api_data/"
   #   )
   # )
+
+  # clear out the incoming API data folder and move those files to an archive folder.
+  tar_target(
+    name = empty_incoming_data_dir,
+    command = {
+      clear_incoming_data_dir(incoming_dir = "data/api/incoming_api_data/",
+                              archive_dir = "data/api/archive_api_data/")
+    }
+  )
 )
 
 

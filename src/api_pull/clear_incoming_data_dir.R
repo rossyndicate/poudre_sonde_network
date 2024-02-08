@@ -1,0 +1,39 @@
+clear_incoming_data_dir <- function(incoming_dir, archive_dir) {
+  # Check if the previous step in the targets pipeline ran
+  # (This check can be omitted if not needed)
+
+  # List files in the incoming and archive directories
+  incoming_files <- list.files(incoming_dir, full.names = FALSE)
+  archive_files <- list.files(archive_dir, full.names = FALSE)
+
+  # Find files that are not already in the archive directory
+  files_to_copy <- setdiff(incoming_files, archive_files)
+
+  # Copy only the files that are not already in the archive directory
+  if (length(files_to_copy) > 0) {
+    for (file in files_to_copy) {
+      full_file_name <- file.path(incoming_dir, file)
+      file.copy(full_file_name, archive_dir)
+    }
+    print("Files have been copied from the incoming directory to the archive directory.")
+  } else {
+    print("All files are already present in the archive directory. Nothing to copy.")
+  }
+
+  # Check if all files from incoming directory are now in the archive directory
+  if (all(incoming_files %in% archive_files)) {
+    print("All files in the incoming directory have been successfully copied to the archive directory.")
+  } else {
+    print("Not all files from the incoming directory have been successfully copied to the archive directory.")
+    # Should this halt the pipeline?
+  }
+
+  # Delete the copied files from the incoming directory
+  if (length(files_to_copy) > 0) {
+    for (file in files_to_copy) {
+      full_file_name <- file.path(incoming_dir, file)
+      file.remove(full_file_name)
+    }
+    print("Copied files have been removed from the incoming directory.")
+  }
+}
