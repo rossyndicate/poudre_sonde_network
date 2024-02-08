@@ -1,0 +1,92 @@
+---
+title: "Organize Photos"
+author: "Sam Struthers"
+date: "1/26/24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+`%nin%` = Negate(`%in%`)
+library(tidyverse)
+library(animation)
+library(gganimate)
+library(dygraphs)
+library(lubridate)
+library(xts)
+library(exifr)
+library(imputeTS)
+library(png)
+library(grid)
+library(ggthemes)
+library(patchwork)
+```
+# Basic task:
+Organize all site photos into individual site folders
+Don't grab videos or data that has the wrong dates
+
+## Get all the names
+
+```{r}
+# select site
+
+compile_files <- function(folder_name){
+  site <- str_extract(folder_name, "tamasag|legacy|timberline|prospect|boxelder|archery|riverbluffs|rist|elc")
+  photo_files <- list.files(path = folder_name, full.names = TRUE, recursive = TRUE)
+  #files in folder
+new_folder_files <- list.files(path = paste0('data/timelapse_photos/2023_compiled/',site), full.names = TRUE)
+
+photo_renamer <- function(file) {
+  #grab dt from file
+  dt <- read_exif(path = file,
+                  tags = c("DateTimeOriginal")) %>%
+    pull(DateTimeOriginal) %>%
+    parse_date_time("YmdHMS", tz="MST")%>%
+    format("%Y%m%d_%H%M")
+  #create new file name from dt
+  new_file_name <- paste0('data/timelapse_photos/2023_compiled/',site,"/", dt,'.JPG')
+
+  #check to see if this file is already in the folder
+  if(new_file_name %nin% new_folder_files){
+    #if it is not, copy it over
+  file.copy(file,to =  new_file_name)  
+  }
+  
+  
+}
+map(photo_files, photo_renamer)
+print(paste0("Finished ", folder_name))
+
+}
+
+#to be compiled folder
+folders <- list.files(path = "data/timelapse_photos/to_be_compiled/", full.names = TRUE)%>%
+  # include files that do not have WRONGDATES in the name
+  str_subset("WRONGDATES", negate = TRUE)%>%
+  str_subset("VIDEOS", negate = TRUE)
+  
+  #copy all the files to the compiled folder
+  map(folders, compile_files)
+
+
+
+
+```
+
+# view timelapse year coverage
+```{r}
+
+
+ 
+# plot the number of photos per day facet by site
+all_files%>%
+  filter(site == "archery")%>%
+  ggplot(aes(x = date, y = photo))+
+  geom_point()+
+  facet_wrap(~site)+
+  theme_bw()+
+  #theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  labs(x = "Date", y = "Number of Photos", title = "Number of Photos per Day")
+```
+

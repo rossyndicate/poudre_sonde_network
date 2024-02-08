@@ -1,5 +1,5 @@
 # to do (j): document this function
-api_puller <- function(site, start_dt, end_dt, api_token, dump_dir) {
+api_puller <- function(site, start_dt, end_dt = Sys.time(), api_token, dump_dir) {
 
   locs <- hv_locations_all(api_token)
 
@@ -9,7 +9,7 @@ api_puller <- function(site, start_dt, end_dt, api_token, dump_dir) {
 
   site_loc <- locs %>%
     mutate(name = tolower(name)) %>%
-    filter(grepl(site, name))
+    filter(grepl(site, name, ignore.case = TRUE))
 
   site_loc_list <- site_loc$id
 
@@ -25,19 +25,18 @@ api_puller <- function(site, start_dt, end_dt, api_token, dump_dir) {
   # reduce overlapping data
 
   # tz weirdness
-  utc_start_date <- format(as.POSIXct(format(start_dt, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
+  utc_start_date <- format(as.POSIXct(format(start_dt + hours(7), tz = "MST"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
 
   utc_end_date <- format(as.POSIXct(format(end_dt, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
 
   timezone = "UTC"
 
   # Map over the location ids
-  alldata <- map(site_loc_list,
-                 hv_data_id,
-                 start_time = utc_start_date,
-                 end_time = utc_end_date,
-                 token = api_token,
-                 tz = timezone)
+  alldata <- site_loc_list %>% map(~hv_data_id(.,
+                            start_time = utc_start_date,
+                            end_time = utc_end_date,
+                            token = api_token,
+                            tz = timezone))
 
   # grab only locations with data (stored as a data frame) / drop 404 errors
   filtered <- purrr::keep(alldata, is.data.frame)
@@ -62,7 +61,7 @@ api_puller <- function(site, start_dt, end_dt, api_token, dump_dir) {
     write_csv(one_df,
               paste0(dump_dir, "/", site, "_", lubridate::as_date(end_dt), ".csv"))
 
-    return(one_df)
+    # return(one_df)
   }
 
 }

@@ -26,14 +26,14 @@
   min: -1.400
   max: 1.400
 "pH":
-  min: 0
-  max: 14
+  min: 5
+  max: 10
 "Specific Conductivity":
-  min: 0
-  max: 350000
+  min: 40
+  max: 2500
 "Temperature":
   min: -5
-  max: 50
+  max: 30
 "Turbidity":
   min: 0
   max: 4000

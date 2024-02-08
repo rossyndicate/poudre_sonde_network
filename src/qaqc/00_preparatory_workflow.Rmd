@@ -1,0 +1,181 @@
+---
+title: "Preparatory Workflow"
+author: "ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warnings = 'hide', error = FALSE, message = 'hide')
+```
+
+Load necessary packages:
+
+```{r}
+source("src/package_loader.R")
+lapply(c("data.table", "tidyverse", "rvest", "readxl", "lubridate", "zoo", "padr","plotly", "feather", "RcppRoll", "yaml", "ggpubr", "profvis", "janitor"), package_loader)
+
+walk(list.files('src/qaqc/download_and_flag_fxns', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
+
+walk(list.files('src/mWater_collate/', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
+```
+
+# Import and collate data
+
+Load field notes and define the start time as the 15 minute preceding the field time
+
+```{r}
+old_field_notes <- readxl::read_excel('data/sensor_field_notes.xlsx') %>%
+  clean_field_notes()
+
+new_field_notes <- grab_mWater_sensor_notes()
+
+#merge new mwater notes (sensor_notes) and old notes (field notes)  
+all_field_notes <- rbind(old_field_notes, new_field_notes)
+
+```
+
+Merge the data sets from all API pulls:
+
+```{r}
+all_data <- munge_api_data(api_path = "data/api/kw_full_api/") %>%
+  filter(year(DT_round) >= 2022) 
+```
+
+### Export collated raw file
+
+```{r}
+# This will be a parquet file in the future?
+#write_feather(all_data, paste0('data/SOME_FOLDER_FOR_POSTERITY/collated_raw_sonde_v', Sys.Date(), '.feather'))
+```
+
+# Level 1 QA-QC
+
+I think we will want to develop pipelines specific for each site and parameter for
+processing speed (targets?). Up until this point all the data from the API is in one huge
+csv. After this point the data gets split up into site-parameter combinations. This means
+that the data that will be incoming will be one large data packet. This should change in
+the api pull step.
+
+#### Format data
+
+```{r}
+# format and summarize data
+# Determine each site and parameter in all_data 
+sites <- unique(all_data$site)
+params <- c("Battery Level",
+            "Baro",
+            "Chl-a Fluorescence", 
+            "Depth", 
+            "DO", 
+            "External Voltage", 
+            "ORP", 
+            "pH",
+            "Specific Conductivity",
+            "Temperature",
+            "Turbidity")
+
+# Constructing a df to iterate over each site-parameter combination
+site_param_combos <- crossing(sites, params)
+
+# Make a list of the summarized data
+all_data_summary_list <- map2(.x = site_param_combos$sites, 
+                              .y = site_param_combos$params, 
+                              ~summarize_site_param_full(site_arg = .x,
+                                                         parameter_arg = .y,
+                                                         api_data = all_data,
+                                                         notes = all_field_notes)) %>% 
+  # set the names for the dfs in the list
+  set_names(paste0(site_param_combos$sites, "-", site_param_combos$params)) %>% 
+  # remove NULL values from the list
+  keep(~ !is.null(.))
+
+# Bind rows for each df in list
+all_data_summary_df <- bind_rows(all_data_summary_list)
+```
+
+### Add summary stats and flag new data
+
+The new data that is being flagged 
+
+#### Add summary statistics to the formatted data
+
+```{r}
+all_data_summary_stats_list <- all_data_summary_list %>%
+  # modified generate_summary_statistics (for performing across "full" dataset)
+  map(~ generate_summary_statistics_full(.))
+```
+
+## Create a lookup table for site-parameter thresholds to use in flagging strange data. These thresholds are based on data from the 2022 and 2023 field season. In future seasons, this data will be fixed (i.e., unchanging).
+
+```{r}
+# this does not need to be a yaml solution
+# add this to the threshold look up table and then save the threshold look up table 
+sensor_spec_ranges <- yaml::read_yaml("src/qaqc/sensor_spec_thresholds.yml")
+
+threshold_lookup <- all_data_summary_stats_list %>%
+  map(~ make_threshold_table(.)) %>%
+  bind_rows()
+
+write_csv(threshold_lookup, 'src/qaqc/seasonal_thresholds.csv')
+
+# save the threshold lookup table as a RDS 
+# saveRDS(threshold_lookup, 'data/summary_stats/threshold_lookup.RDS')
+
+# saveRDS(all_data_summary_stats_list, 'data/summary_stats/all_data_summary_stats_list.RDS')
+```
+
+#### Add flags to all dataframes in all_data_summary_stats_list
+
+Add flagging functions for each df in all_data_summary_list
+
+Pass the dfs in all_data_summary_stats_list through the flagging functions:
+
+```{r}
+# make sure that data that has already been flagged is not flagged again, except for the large anomaly flag
+# ifelse(historical_data == FALSE, {add_flag}, {do nothing})
+
+all_data_flagged <- map(all_data_summary_stats_list, function(data) {
+  data %>%
+    add_field_flag() %>%
+    add_spec_flag() %>%
+    add_realistic_flag() %>%
+    add_seasonal_flag() %>%
+    add_na_flag() %>%
+    add_repeat_flag() %>%
+    # modified add_suspect_flag (for performing across "full" dataset)
+    add_suspect_flag_full() 
+})
+
+final_flag <- all_data_flagged %>%
+  map(~network_check(.))
+
+saveRDS(final_flag, 'data/flagged/all_data_flagged_complete.RDS')
+
+write_feather(final_flag %>% bind_rows(), 'data/flagged/all_data_flagged_complete.feather')
+```
+
+## Develop a final data set for testing purposes!
+
+Here, I'm splitting the final data set at the end of November to test the 3-hour pull functionality in our {targets} pipeline:
+
+```{r} 
+subset_func <- function(df){
+  
+  df_sub <- df %>%
+    filter(DT_round <= ymd_hms("2023-11-28 12:00:00", tz = "MST"))
+  
+}
+
+subset_data <- final_flag %>%
+  map(~subset_func(.)) 
+
+saveRDS(subset_data, 'data/flagged/all_data_flagged.RDS')
+
+write_feather(subset_data %>% bind_rows(), 'data/flagged/all_data_flagged.feather')
+```
+
+

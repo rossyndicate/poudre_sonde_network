@@ -125,7 +125,7 @@ path <- "data/field_pics/"
 cat("\nAll Available Pictures Downloaded\n")
 }
 
-download_pictures()
+#download_pictures()
 #RUN TO DOWNLOAD NEW PICTURES
 # It takes about 2-5 minutes to download ~25-50 photos
 # Sometimes the request to mWater time out, just re run the function below if that happens

@@ -28,3 +28,7 @@ scratch/reporting/PWQN_overview.html
 _targets/
 
 **/images/
+
+#Sam testing script
+scratch/sjs_scratch.Rmd
+

@@ -11,21 +11,21 @@ source("src/package_loader.R")
 lapply(c("tidyverse", "feather", "data.table", "ggpubr"), package_loader)
 
 # Source most recent flagging data
-all_data_flagged <- readRDS("data/flagged/all_data_flagged.RDS") 
+all_data_flagged <- readRDS("data/flagged/all_data_flagged_new.RDS") 
 ```
 
 ```{r}
 # This is not quite working the way it should - Trying to determine how much of the data per site-parameter combo is flagged, AFTER removing NA/sonde not employed data. 
-summ_flag <- read_feather('data/flagged/all_data_flagged.feather') %>%
-  data.table() %>%
-  filter(month %in% c(5, 6, 7, 8, 9, 10, 11)) %>%
-  mutate(yn_flag = ifelse(grepl("site visit|sv window|slope violation|repeated value|outside of seasonal range|outside sd range|outside of sensor specification range|suspect data", cleaner_flag), "flag", 
-                ifelse(grepl("missing data|sonde not employed", cleaner_flag), "no flag", "no flag"))) %>%
-  dplyr::group_by(site, parameter, yn_flag) %>%
-  dplyr::summarize(total = n()) %>%
-  ungroup() %>%
-  group_by(site, parameter) %>%
-  mutate(percentage_not_flagged = ifelse(yn_flag == "flag", total / sum(total) * 100, 0))
+# summ_flag <- read_feather('data/flagged/all_data_flagged.feather') %>%
+#   data.table() %>%
+#   filter(month %in% c(5, 6, 7, 8, 9, 10, 11)) %>%
+#   mutate(yn_flag = ifelse(grepl("site visit|sv window|slope violation|repeated value|outside of seasonal range|outside sd range|outside of sensor specification range|suspect data", cleaner_flag), "flag", 
+#                 ifelse(grepl("missing data|sonde not employed", cleaner_flag), "no flag", "no flag"))) %>%
+#   dplyr::group_by(site, parameter, yn_flag) %>%
+#   dplyr::summarize(total = n()) %>%
+#   ungroup() %>%
+#   group_by(site, parameter) %>%
+#   mutate(percentage_not_flagged = ifelse(yn_flag == "flag", total / sum(total) * 100, 0))
 ```
 
 ```{r}
@@ -103,8 +103,8 @@ plotter <- function(clean = FALSE, start_date = "2023-04-11 00:00:00",
   sd_range <- color_joiner(data = flag_plot_data, flag_type = "outside sd range")
   
   
-  y_min <- flag_plot_data$t_mean01[1]
-  y_max <- flag_plot_data$t_mean99[1]
+  y_min <- flag_plot_data$t_mean01[1] + 100
+  y_max <- flag_plot_data$t_mean99[1] + 100
   
   ggplot() +
     geom_point(data = flag_plot_data, 
@@ -112,23 +112,23 @@ plotter <- function(clean = FALSE, start_date = "2023-04-11 00:00:00",
     geom_point(data = suspect_data,
                aes(x = DT_round, y = mean), pch=21, color = "white",
                fill = unique(suspect_data$color), size = 4) +
-    geom_point(data = seasonal_range, 
-               aes(x = DT_round, y = mean), pch=21, color = "white", 
-               fill = unique(seasonal_range$color), size = 4) +
-    geom_point(data = repeated_value, 
-               aes(x = DT_round, y = mean), pch=21, color = "white", 
+    # geom_point(data = seasonal_range,
+    #            aes(x = DT_round, y = mean), pch=21, color = "white",
+    #            fill = unique(seasonal_range$color), size = 4) +
+    geom_point(data = repeated_value,
+               aes(x = DT_round, y = mean), pch=21, color = "white",
                fill = unique(repeated_value$color), size = 4) +
-    geom_point(data = sd_range, 
-               aes(x = DT_round, y = mean), pch=21, color = "white", 
+    geom_point(data = sd_range,
+               aes(x = DT_round, y = mean), pch=21, color = "white",
                fill = unique(sd_range$color), size = 4) +
     geom_point(data = slope_violation,
-               aes(x = DT_round, y = mean), pch=21, color = "white", 
+               aes(x = DT_round, y = mean), pch=21, color = "white",
                fill = unique(slope_violation$color), size = 4) +
     geom_point(data = site_visit,
-               aes(x = DT_round, y = mean), pch=21, color = "white", 
+               aes(x = DT_round, y = mean), pch=21, color = "white",
                fill = unique(site_visit$color), size = 4) +
-    geom_point(data = sonde_not_employed, 
-               aes(x = DT_round, y = mean), pch=21, color = "white", 
+    geom_point(data = sonde_not_employed,
+               aes(x = DT_round, y = mean), pch=21, color = "white",
                fill = unique(sonde_not_employed$color), size = 4) +
     labs(x = "Date-time",
          y = paste(units)) +
@@ -139,7 +139,6 @@ plotter <- function(clean = FALSE, start_date = "2023-04-11 00:00:00",
 }
 
 # filerting out flagged data:
-
 final_raw_plotter <- function(clean = FALSE, start_date = "2023-04-11 00:00:00", 
                     end_date ="2023-04-18 00:00:00", site = "river bluffs", 
                     parameter = "DO", title = "River Bluffs Dissolved Oxygen", units = "mg/L"){
@@ -208,7 +207,7 @@ bad_pros =plotter(clean = F, start_date = "2022-08-01 08:30:00", end_date = "202
 good_pros =plotter(clean = T, start_date = "2022-08-01 08:30:00", end_date = "2022-08-08 09:30:00", site = "prospect", parameter = "Specific Conductivity", title = "Prospect Sp. Conductivity", units = "uS/cm")
 
 ggarrange(bad_timb, bad_pros, nrow = 2)
-ggsave(filename = 'scratch/reporting/bad_flags.png',
+ ggsave(filename = 'scratch/reporting/bad_flags.png',
        width = 7, height = 6.47)
 
 ggarrange(good_timb, good_pros, nrow = 2)
