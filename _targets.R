@@ -4,7 +4,7 @@
 library(targets)
 library(tarchetypes)
 
-# Set target options:
+git # Set target options:
 tar_option_set(
   packages = c("tidyverse")
 )
