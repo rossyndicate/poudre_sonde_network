@@ -32,7 +32,7 @@ Don't grab videos or data that has the wrong dates
 # select site
 
 compile_files <- function(folder_name){
-  site <- str_extract(folder_name, "tamasag|legacy|timberline|prospect|boxelder|archery|riverbluffs")
+  site <- str_extract(folder_name, "tamasag|legacy|timberline|prospect|boxelder|archery|riverbluffs|rist|elc")
   photo_files <- list.files(path = folder_name, full.names = TRUE, recursive = TRUE)
   #files in folder
 new_folder_files <- list.files(path = paste0('data/timelapse_photos/2023_compiled/',site), full.names = TRUE)
@@ -60,21 +60,15 @@ print(paste0("Finished ", folder_name))
 
 }
 
-sites <- c("tamasag", "legacy", "timberline", "prospect", "boxelder", "archery", "riverbluffs")
-
-for(i in 1:length(sites)){
-  
-  site <- sites[i]
-  dir.create(file.path(paste0("data/timelapse_photos/2023_compiled/", site)))
-  
-  photo_folders <- list.files(path = "data/timelapse_photos", pattern = paste0(site, "_2023"), full.names = TRUE)%>%
+#to be compiled folder
+folders <- list.files(path = "data/timelapse_photos/to_be_compiled/", full.names = TRUE)%>%
   # include files that do not have WRONGDATES in the name
   str_subset("WRONGDATES", negate = TRUE)%>%
   str_subset("VIDEOS", negate = TRUE)
   
   #copy all the files to the compiled folder
-  map(photo_folders, compile_files)
-}
+  map(folders, compile_files)
+
 
 
 
