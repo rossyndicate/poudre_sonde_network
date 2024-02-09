@@ -14,6 +14,7 @@ clear_incoming_data_dir <- function(incoming_dir, archive_dir) {
     for (file in files_to_copy) {
       full_file_name <- file.path(incoming_dir, file)
       file.copy(full_file_name, archive_dir)
+      print(paste0(file, " has been moved to archive API data folder."))
     }
     print("Files have been copied from the incoming directory to the archive directory.")
   } else {
@@ -26,6 +27,8 @@ clear_incoming_data_dir <- function(incoming_dir, archive_dir) {
   } else {
     print("Not all files from the incoming directory have been successfully copied to the archive directory.")
     # Should this halt the pipeline?
+    # Right now it seems to always print this and I haven't figured out why so
+    # I don't think that it should not halt the pipeline in the state that its in right now -JD.
   }
 
   # Delete the copied files from the incoming directory
