@@ -29,6 +29,8 @@ package_installer <- function(x) {
 # map function using base lapply
 lapply(required_pkgs, package_installer)
 
+# load targets library
+library(targets)
 
 #!/usr/bin/env Rscript
 
@@ -38,5 +40,6 @@ lapply(required_pkgs, package_installer)
 # to learn about your options.
 
 targets::tar_make()
+
 # targets::tar_make_clustermq(workers = 2) # nolint
 # targets::tar_make_future(workers = 2) # nolint

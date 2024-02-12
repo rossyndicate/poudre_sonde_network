@@ -24,10 +24,11 @@ scratch/reporting/PWQN_overview.html
 # vs code
 .vscode/
 
-# targets
+# targets folder
 _targets/
 
 **/images/
 
 #Sam testing script
 scratch/sjs_scratch.Rmd
+

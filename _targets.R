@@ -4,6 +4,7 @@
 library(targets)
 library(tarchetypes)
 
+# git # what is this doing here?
 # Set target options:
 tar_option_set(
   packages = c("tidyverse")
@@ -15,8 +16,23 @@ tar_source(files = "src/qaqc/download_and_flag_fxns")
 tar_source(files = "src/mWater_collate")
 tar_source(files = "src/api_pull")
 
-# Pull in the API data
 list(
+  # Make sure directory is structured correctly ----
+  # For now we will use the data directory structure that we have been using, but
+  # this will need to be updated with the directory structure in the fc system.
+
+  ## Incoming API data and related API data archive folder ----
+  tar_target(
+    name = verify_incoming_data_dir,
+    command = {
+      check_incoming_api_dir(incoming_dir = "data/api/incoming_api_data/",
+                             archive_dir = "data/api/archive_api_data/")
+      },
+    cue = tar_cue(mode = "always"),
+    priority = 1
+  ),
+
+  # Pull in the API data ----
   # To access the API, you need credentials that must be formulated
   # like the example "src/api_pull/CopyYourCreds.yml" file. Contact Katie Willi
   # to request access.
@@ -58,7 +74,7 @@ list(
     name = incoming_data_csvs_upload, # this is going to have to append to the historical data
     command = walk2(.x = start_dates_df$site,
                     .y = start_dates_df$start_DT_round,
-                    ~api_puller(site = .x, start_dt = .y, end_dt = "2023-11-30 14:26:54 MST", # Sys.time(), # REPLACE TO Sys.time() ONCE PIPELINE INTEGRATED INTO FC
+                    ~api_puller(site = .x, start_dt = .y, end_dt = "2023-11-29 14:26:54 MST", # Sys.time(), # REPLACE TO Sys.time() ONCE PIPELINE INTEGRATED INTO FC
                                 api_token = hv_token, dump_dir = "data/api/incoming_api_data/")),
     packages = c("tidyverse", "HydroVuR", "httr2")
   ),
@@ -98,7 +114,10 @@ list(
   # to do (j): try to convert this into a tar_file_read() function
   tar_target(
     name = incoming_data_collated_csvs,
-    command =  munge_api_data(api_path = "data/api/incoming_api_data/"),
+    command =  {
+      incoming_data_csvs_upload
+      munge_api_data(api_path = "data/api/incoming_api_data/")
+      },
     packages = "tidyverse"
   ),
 
@@ -228,13 +247,11 @@ list(
   tar_target(
     name = write_flagged_data_RDS,
     command = saveRDS(update_historical_flag_data, "data/flagged/test_all_data_flagged.RDS")
-  )
+  ),
 
   # connect to FC system
 
   # update FC system
-
-  # clear out the incoming API data folder and move those files to an archive folder.
 
   #  append incoming data to the historical API data and remove data from incoming data folder ----
   # tar_target(
@@ -244,6 +261,16 @@ list(
   #     inc_dir = "data/api/incoming_api_data/"
   #   )
   # )
+
+  # clear out the incoming API data folder and move those files to an archive folder.
+  tar_target(
+    name = empty_incoming_data_dir,
+    command = {
+      write_flagged_data_RDS
+      clear_incoming_data_dir(incoming_dir = "data/api/incoming_api_data/",
+                              archive_dir = "data/api/archive_api_data/")
+    }
+  )
 )
 
 
