@@ -20,7 +20,10 @@ clear_incoming_data_dir <- function(incoming_dir, archive_dir) {
   } else {
     print("All files are already present in the archive directory. Nothing to copy.")
   }
+Sys.sleep(5)
 
+# refresh archive_files now that the incoming_files have been copied over
+archive_files <- list.files(archive_dir, full.names = FALSE)
   # Check if all files from incoming directory are now in the archive directory
   if (all(incoming_files %in% archive_files)) {
     print("All files in the incoming directory have been successfully copied to the archive directory.")
