@@ -9,25 +9,6 @@
 
 add_suspect_flag <- function(df) {
 
-  # cases that should result in 0 in flag_binary column:
-  # only "24hr anomaly"
-  # only "anomaly window"
-  # only "24hr anomaly" and "anomaly window"
-  # only "missing data"
-  # only "sonde not employed" and "missing data"
-  # only "missing data" and "anomaly window"
-  # only "missing data" and "24hr anomaly"
-  # only "sonde not employed", "missing data", and "anomaly window"
-  # only "site visit", "missing data", "24hr anomaly", and "anomaly window"
-  # only "sv window", "missing data", "24hr anomaly", and "anomaly window"
-  # flag_string <- "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window|
-  #                 missing data|sonde not employed;\\nmissing data|
-  #                 missing data;\\nanomaly window|missing data;\\n24hr anomaly|
-  #                 sonde not employed;\nmissing data;\nanomaly window|
-  #                 missing data;\n24hr anomaly;\nanomaly window|
-  #                 site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
-  #                 sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
-
   flag_string <- "sonde not employed|missing data|site visit|sv window"
 
   # Define a function to check if a given 3-hour window has >= 50% fails
@@ -46,3 +27,17 @@ add_suspect_flag <- function(df) {
   return(df_test)
 
 }
+
+# List of subsets of data
+
+
+test_that(desc = "'suspect data' flag is not added to the first ", code = {
+
+  temp_C <- F_to_C(50); # Runs the function
+
+  # Test that the result is the correct value
+  expect_that( object = temp_C, condition = equals(10) );
+
+  # Test that the result is numeric
+  expect_that( object = is.numeric(temp_C), condition = equals(TRUE) );
+})

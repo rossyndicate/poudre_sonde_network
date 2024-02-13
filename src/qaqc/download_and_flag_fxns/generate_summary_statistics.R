@@ -28,7 +28,7 @@ generate_summary_statistics <- function(site_param_df) {
       front1 = ifelse(is.na(front1), lead(mean, n = 1), front1),
       back1 = ifelse(is.na(back1), lag(mean, n = 1), back1),
       # Add the median for a point and 6 points behind it:
-      rollmed = ifelse(is.na(rollmed), roll_median(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollmed), # to go (j): check_na() function for when we append data
+      rollmed = ifelse(is.na(rollmed), roll_median(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollmed), # to do (j): check_na() function for when we append data
       # Add the mean for a point centered in a rolling mean of 7 points.
       rollavg = ifelse(is.na(rollavg), roll_mean(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollavg),
       # Add the standard deviation for a point centered in a rolling mean of 7 points.
