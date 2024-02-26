@@ -8,6 +8,8 @@
 #' add_large_anomaly_flags(df = all_data_flagged$`boxelder-Temperature`)
 
 library(testthat)
+library(tidyverse)
+library(zoo)
 
 add_suspect_flag <- function(df) {
 
