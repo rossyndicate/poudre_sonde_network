@@ -43,7 +43,7 @@ random_csv_files <- list.files(test_data_dir, pattern = "\\_rdm_6hr.csv$", full.
 random_data_list <- map(random_csv_files, read_csv)
 
 test_data_list <- list(head_data_list, tail_data_list, random_data_list)
-# Test the function ----
+# Test the function on real data ----
 
 ## test on a single row of data
 
@@ -256,3 +256,28 @@ no_flag_flag_pair_combos <- keep(flag_pair_combos, ~ !any(str_detect(.x$flag, "s
 
 ### pair combos with suspect data flag added
 flagged_flag_pair_combos <- keep(flag_pair_combos, ~ any(str_detect(.x$flag, "suspect data"), na.rm = T))
+
+### THIS FUNCTION IS FLAWED. ----
+
+# 1. Let's take this as an example:
+flagged_flag_pair_combos[["eq25_bottom...eq25_top"]] -> test_flagged_data
+## We can see that this function worked as expected here...
+
+## 2. But when we take this subset of data and treat it as the appended historical
+## flagged data for the next chunk of data we can see where the error is happening.
+subset_test_flagged_data <- slice_tail(test_flagged_data, n = 12)
+# 3. Bind this data with a df that has flag = NA
+bound_subset_test_flagged_data <- bind_rows(subset_test_flagged_data, leq50_0)
+# 4. Flag this new df
+flagged_bound_subset_test_flagged_data <- add_suspect_flag(bound_subset_test_flagged_data)
+View(flagged_bound_subset_test_flagged_data)
+
+# We can see here that the "suspect data" flag was counted as a flag, but we actually want to avoid this.
+# I think that the solution for this is pretty simple. We will source the updated function and repeat
+# step 4 with the updated function.
+source("test_env/new-add_suspect_flag.R")
+new_flagged_bound_subset_test_flagged_data <- new_add_suspect_flag(bound_subset_test_flagged_data)
+View(new_flagged_bound_subset_test_flagged_data)
+
+# Now we can see that the "suspect data" flag is not added on to the flag column
+# unnecessarily
