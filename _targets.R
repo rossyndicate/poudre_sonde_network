@@ -223,7 +223,7 @@ list(
       })
       # network check
       final_flag <- all_data_flagged %>%
-        map(~network_check(.)) # to do (j): I want to rename site_comp_test to network_check.
+        map(~network_check(.))
 
       all_data_flagged <- final_flag
     }
