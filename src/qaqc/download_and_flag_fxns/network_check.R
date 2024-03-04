@@ -43,7 +43,7 @@ network_check <- function(df) {
       select(DT_round, site_up = site, flag_up = flag) %>%
       data.table()},
     error = function(err) {
-      cat("No previous site.\n")})
+      cat("No upstream site.\n")})
 
   tryCatch({
     next_site <- paste0(sites_order[site_index+1],"-",parameter_name)
@@ -51,7 +51,7 @@ network_check <- function(df) {
       select(DT_round, site_down = site, flag_down = flag) %>%
       data.table()},
     error = function(err) {
-      cat("No next site.\n")})
+      cat("No downstream site.\n")})
 
 
   join <- df %>%
@@ -70,12 +70,14 @@ network_check <- function(df) {
   }
 
   df_test <- join %>%
-    mutate(flag_binary = ifelse(#grepl("slope|suspect", flag) &
-        (is.na(flag_up) | grepl("repeat|sonde not employed|missing data|site visit|sv window", flag_up)) &
-        (is.na(flag_down) | grepl("repeat|sonde not employed|missing data|site visit|sv window", flag_down)), 0, 1)) %>%
-    #arrange(timestamp) %>%
+    # No upstream/downstream flag = 0
+    mutate(flag_binary = ifelse(
+        (is.na(flag_up) | grepl("repeat|sonde not employed|missing data|site visit|sv window|sensor malfunction", flag_up)) &
+        (is.na(flag_down) | grepl("repeat|sonde not employed|missing data|site visit|sv window|sensor malfunction", flag_down)), 0, 1)) %>%
     mutate(overlapping_flag = zoo::rollapply(flag_binary, width = width_fun, FUN = check_2_hour_window_fail, fill = NA, align = "center")) %>%
-    mutate(cleaner_flag = ifelse(!is.na(flag) & !grepl("repeat|sonde not employed|missing data|site visit|sv window", flag) & overlapping_flag == TRUE, NA, flag)) %>%
+    # If there is a flag (flags associated with spikes in concentration or funkiness like that), and there is also a flag up/downstream at the same time (2 hour window) it is likely a real
+    # WQ event and should therefore not be considered "poor" data:
+    mutate(cleaner_flag = ifelse(!is.na(flag) & !grepl("repeat|sonde not employed|missing data|site visit|sv window|sensor malfunction", flag) & overlapping_flag == TRUE, NA, flag)) %>%
     select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag))
 
 
