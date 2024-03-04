@@ -27,7 +27,7 @@ combine_hist_inc_data <- function(incoming_data_list, historical_data_list) {
                           filter(DT_round >= ymd_hms(max(DT_round) - hours(24), tz = "MST")) %>%
                           # mark it as "historic"
                           mutate(historical = TRUE,
-                                 # ensure last_site_visit colum has proper DT:
+                                 # ensure last_site_visit column has proper DT:
                                  last_site_visit = force_tz(last_site_visit, tzone = "MST"))
                           # rename(cleaner_flag_old = cleaner_flag,
                           #        over_50_percent_fail_window_old = over_50_percent_fail_window,

@@ -31,10 +31,6 @@ add_malfunction_flag <- function(df){
     add_flag((year == "2022" & DT_round >= ymd_hms("2022-08-24 15:00:00", tz = "MST") & DT_round <= ymd_hms("2022-08-31 07:15:00", tz = "MST") & site == "timberline" & parameter == "Turbidity"), "sensor malfunction") %>%
     ### Sensor was incredibly dirty and in roots, likely unable to back-calibrate:
     add_flag((year == "2022" & DT_round >= ymd_hms("2022-09-05 11:00:00", tz = "MST") & DT_round <= ymd_hms("2022-09-14	13:15:00", tz = "MST") & site == "timberline" & parameter == "Turbidity"), "sensor malfunction") %>%
-    ### Wiper issue, maybe?
-    add_flag((year == "2022" & DT_round >= ymd_hms("2022-09-13 12:00:00", tz = "MST") & DT_round <= ymd_hms("2022-09-14 13:00:00", tz = "MST") & site == "timberline" & parameter == "Turbidity"), "sensor malfunction") %>%
-    ### Wiper issue, maybe?
-    add_flag((year == "2022" & DT_round >= ymd_hms("2022-09-13 12:00:00", tz = "MST") & DT_round <= ymd_hms("2022-09-14 13:00:00", tz = "MST") & site == "timberline" & parameter == "Turbidity"), "sensor malfunction") %>%
     ### Drift/gunk accumulation
     add_flag((year == "2022" & DT_round >= ymd_hms("2022-10-02 16:30:00", tz = "MST") & DT_round <= ymd_hms("2022-10-04 16:30:00", tz = "MST") & site == "timberline" & parameter == "Turbidity"), "sensor malfunction") %>%
     ### Drift/gunk accumulation
@@ -45,9 +41,9 @@ add_malfunction_flag <- function(df){
     add_flag((year == "2022" & DT_round >= ymd_hms("2022-11-01 08:30:00", tz = "MST") & DT_round <= ymd_hms("2022-11-08 09:30:00", tz = "MST") & site == "timberline" & parameter == "Specific Conductivity"), "sensor malfunction") %>%
     ### Broken Sp Conductivity sensor
     add_flag((year == "2022" & DT_round >= ymd_hms("2022-11-08 09:30:00", tz = "MST") & DT_round <= ymd_hms("2022-11-15 14:00:00", tz = "MST") & site == "timberline" & parameter == "Turbidity"), "sensor malfunction") %>%
-    ### Broken Sp Conductivity sensor
-    add_flag((year == "2023" & DT_round >= ymd_hms("2023-04-24 10:30:00", tz = "MST") & DT_round <= ymd_hms("2023-04-27 16:15:00", tz = "MST") & site == "timberline" & parameter == "Turbidity"), "sensor malfunction") %>%
     ## 2023
+    ### timberline biofouling, wiper issue
+    add_flag((year == "2023" & DT_round >= ymd_hms("2023-04-24 10:30:00", tz = "MST") & DT_round <= ymd_hms("2023-04-27 17:00:00", tz = "MST") & site == "timberline" & parameter %in% c("Actual Conductivity", "Specific Conductivity")), "sensor malfunction") %>%
     ### timberline biofouling, wiper issue
     add_flag((year == "2023" & DT_round >= ymd_hms("2023-04-24 15:00:00", tz = "MST") & DT_round <= ymd_hms("2023-04-27 17:00:00", tz = "MST") & site == "timberline" & parameter == "Turbidity"), "sensor malfunction") %>%
     ### wiper issue, affects cond sensor adds extra noise to data
