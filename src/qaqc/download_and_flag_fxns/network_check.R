@@ -76,8 +76,8 @@ network_check <- function(df) {
     #arrange(timestamp) %>%
     mutate(overlapping_flag = zoo::rollapply(flag_binary, width = width_fun, FUN = check_2_hour_window_fail, fill = NA, align = "center")) %>%
     mutate(cleaner_flag = ifelse(!is.na(flag) & !grepl("repeat|sonde not employed|missing data|site visit|sv window", flag) & overlapping_flag == TRUE, NA, flag)) %>%
-    select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag))
-
+    select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag)) %>%
+    mutate(mean_public = ifelse(is.na(flag), mean, NA)) #***
 
   # df_test <- join %>%
   #   mutate(flag_binary = ifelse(#grepl("slope|suspect", flag) &
