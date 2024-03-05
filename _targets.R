@@ -17,17 +17,15 @@ tar_source(files = "src/mWater_collate")
 tar_source(files = "src/api_pull")
 
 list(
-  # Make sure directory is structured correctly ----
-  # For now we will use the data directory structure that we have been using, but
-  # this will need to be updated with the directory structure in the fc system.
 
-  ## Incoming API data and related API data archive folder ----
+  # Confirm incoming_api_data folder is empty, which indicates the last
+  # iteration of the data pull + QAQC ran properly.
   tar_target(
     name = verify_incoming_data_dir,
     command = {
       check_incoming_api_dir(incoming_dir = "data/api/incoming_api_data/",
                              archive_dir = "data/api/archive_api_data/")
-      },
+    },
     cue = tar_cue(mode = "always"),
     priority = 1
   ),
@@ -62,7 +60,8 @@ list(
   ),
 
 
-  ## ... get the start dates per site based on that flagged data...
+  # Find the last DT that data was downloaded per each site. This will be the
+  # start DT for the API pull:
   tar_target(
     name = start_dates_df,
     command = get_start_dates_df(incoming_flagged_data_dfs = flagged_data_dfs),
@@ -74,12 +73,13 @@ list(
     name = incoming_data_csvs_upload, # this is going to have to append to the historical data
     command = walk2(.x = start_dates_df$site,
                     .y = start_dates_df$start_DT_round,
+                    # end_dt is hard-coded right now for testing purposes. This will be changed
+                    # to Sys.time() when actually implemented!
                     ~api_puller(site = .x, start_dt = .y, end_dt = "2023-11-29 14:26:54 MST", # Sys.time(), # REPLACE TO Sys.time() ONCE PIPELINE INTEGRATED INTO FC
                                 api_token = hv_token, dump_dir = "data/api/incoming_api_data/")),
     packages = c("tidyverse", "HydroVuR", "httr2")
   ),
 
-  # QAQC the data
 
   # load xlsx field notes
   tar_file_read(
@@ -96,7 +96,6 @@ list(
     packages = "tidyverse"
   ),
 
-
   # grab mWater field notes
   tar_target(
     name = mWater_field_notes,
@@ -110,20 +109,18 @@ list(
     command = rbind(old_tidy_field_notes, mWater_field_notes)
   ),
 
-  # load incoming API data
+  # Load incoming API data:
   # to do (j): try to convert this into a tar_file_read() function
   tar_target(
     name = incoming_data_collated_csvs,
     command =  {
       incoming_data_csvs_upload
       munge_api_data(api_path = "data/api/incoming_api_data/")
-      },
-    packages = "tidyverse"
+    },
+    packages = c("tidyverse", "data.table")
   ),
 
-  # format data
-
-  ## generate a site parameter combination list
+  # Generate a site parameter combination list to iterate over:
   tar_target(
     name = site_param_combos,
     command = {
@@ -145,28 +142,39 @@ list(
 
   ),
 
-  ## summarize the data for each site parameter combination
+  # Link field notes to data stream, average observations if finer resolution
+  # than 15 minutes (this is rare, but it does happen sometimes).
   # KATIE REQUEST: HERE IS WHERE WE SHOULD JOIN/CBIND BATTERY AND BARO DATA,
   # AND REMOVE FROM FUTURE STEPS
+  # tar_target(
+  #   name = all_data_summary_list, # to do (j): name this something else
+  #   command = {
+  #     # field_notes
+  #     map2(.x = site_param_combos$sites,
+  #          .y = site_param_combos$params,
+  #          ~summarize_site_param(site_arg = .x,
+  #                                parameter_arg = .y,
+  #                                api_data = incoming_data_collated_csvs,
+  #                                notes = field_notes)) %>% # to do (j): why do I need to call field_notes here? I don't think we should need to do that...
+  #       set_names(paste0(site_param_combos$sites, "-", site_param_combos$params)) %>%
+  #       keep(~ !is.null(.))
+  #   },
+  #   packages = c("tidyverse", "padr")
+  # ),
   tar_target(
     name = all_data_summary_list, # to do (j): name this something else
-    command = {
-      # field_notes
-      map2(.x = site_param_combos$sites,
-           .y = site_param_combos$params,
-           ~summarize_site_param(site_arg = .x,
-                                 parameter_arg = .y,
-                                 api_data = incoming_data_collated_csvs,
-                                 notes = field_notes)) %>% # to do (j): why do I need to call field_notes here? I don't think we should need to do that...
-        set_names(paste0(site_param_combos$sites, "-", site_param_combos$params)) %>%
-        keep(~ !is.null(.))
-    },
+    command = summarize_site_param(site_arg = site_param_combos$sites,
+                                   parameter_arg = site_param_combos$params,
+                                   api_data = incoming_data_collated_csvs,
+                                   notes = field_notes) %>% # to do (j): why do I need to call field_notes here? I don't think we should need to do that...
+      set_names(paste0(site_param_combos$sites, "-", site_param_combos$params)) %>%
+      keep(~ !is.null(.)),
+    pattern = map(site_param_combo), # look up other pattern options, might be other things you can do here
     packages = c("tidyverse", "padr")
   ),
 
-  # append to chunk of historical flagged data  ----
-
-  ## get the last 3 hours of the historically flagged data and append it to the incoming data
+  # Get the last 24 hours of the historically flagged data and append it to the incoming data.
+  # Necessary for some of the rolling statistics we develop for flagging.
   tar_target(
     name = combined_data, # API data chunk to process (to do (j): rename this)
     command = combine_hist_inc_data(incoming_data_list = all_data_summary_list,
@@ -174,17 +182,26 @@ list(
     packages = "tidyverse"
   ),
 
-  # generate summary statistics for each site parameter combination ----
+  # Generate summary statistics for each site parameter combination, such as
+  # rolling average, slope between observations, etc.
+  # tar_target(
+  #   name = all_data_summary_stats_list,
+  #   #command =   {
+  #   #all_data_summary_stats_list <-
+  #   command = combined_data %>% map(~generate_summary_statistics(.)),
+  #   #},
+  #   packages = c("tidyverse", "RcppRoll")
+  # ),
   tar_target(
     name = all_data_summary_stats_list,
     #command =   {
     #all_data_summary_stats_list <-
-    command = combined_data %>% map(~generate_summary_statistics(.)),
-    #},
+    command = generate_summary_statistics(combined_data),
+    pattern = map(combined_data),
     packages = c("tidyverse", "RcppRoll")
   ),
 
-  # read in look up table for thresholds ----
+  # Load in our static season-based thresholds:
   tar_file_read(
     name = threshold_lookup,
     "src/qaqc/seasonal_thresholds.csv",
@@ -192,6 +209,7 @@ list(
     packages = c("tidyverse")
   ),
 
+  # Load in the static sensor spec thresholds:
   tar_file_read(
     name = sensor_spec_ranges,
     "src/qaqc/sensor_spec_thresholds.yml",
@@ -199,7 +217,7 @@ list(
     packages = "yaml"
   ),
 
-  # flag data ----
+  # Flag the data using our pre-developed and static thresholds:
   tar_target(
     name = all_data_flagged,
     command = {
@@ -211,25 +229,37 @@ list(
       # first pass of flags
       all_data_flagged <- map(all_data_summary_stats_list, function(data) {
         data %>%
+          # sensor was handled by technician
           add_field_flag() %>%
+          # observation is outside sensor spec range
           add_spec_flag() %>%
+          # observation is outside seasonal 1-99 percentile range
           add_seasonal_flag() %>%
+          # no data
           add_na_flag() %>%
+          # repeating vale
           add_repeat_flag() %>%
+          # if >50% of data is flagged for any reason above in a rolling
+          # 3-hour window, flag all the data:
           add_suspect_flag() %>%
-          # we should also be incorporating the add_malfuntion_flag() here no?
-          mutate(mean_public = ifelse(is.na(flag), mean, NA)) #%>%
-        #mutate(historical_flagged_data_1 = TRUE)
+          # flag for known instances of sensor malfunction:
+          add_malfunction_flag() %>%
+          # store censored, clean data in new column
+          mutate(mean_public = ifelse(is.na(flag), mean, NA))
       })
-      # network check
+
+      # Network check. If certain flags (like a spike in concentrations, super high
+      # values) are also occurring up-/downstream at the same time, unflag it
+      # since it is likely real
       final_flag <- all_data_flagged %>%
         map(~network_check(.))
 
       all_data_flagged <- final_flag
-    }
-  ),
+  }
+),
 
-  # update the historically flagged data ----
+# update the historically flagged data by appending the new data with the
+# old:
   tar_target(
     name = update_historical_flag_data,
     command = {
@@ -265,11 +295,9 @@ list(
   # clear out the incoming API data folder and move those files to an archive folder.
   tar_target(
     name = empty_incoming_data_dir,
-    command = {
-      write_flagged_data_RDS
-      clear_incoming_data_dir(incoming_dir = "data/api/incoming_api_data/",
-                              archive_dir = "data/api/archive_api_data/")
-    }
+    command = clear_incoming_data_dir(incoming_dir = "data/api/incoming_api_data/",
+                              archive_dir = "data/api/archive_api_data/",
+                              require = write_flagged_data_RDS)
   )
 )
 

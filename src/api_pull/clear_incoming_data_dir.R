@@ -1,4 +1,4 @@
-clear_incoming_data_dir <- function(incoming_dir, archive_dir) {
+clear_incoming_data_dir <- function(incoming_dir, archive_dir, require = NULL) {
   # Check if the previous step in the targets pipeline ran
   # (This check can be omitted if not needed)
 
