@@ -264,8 +264,8 @@ list(
   # update the historically flagged data ---- #***
 
 
-# update the historically flagged data by appending the new data with the
-# old:
+  # update the historically flagged data by appending the new data with the
+  # old:
   tar_target(
     name = update_historical_flag_data,
     command = {
@@ -289,7 +289,7 @@ list(
 
   # update FC system
 
-  #  append incoming data to the historical API data and remove data from incoming data folder ----
+  #  append incoming data to the historical API data and remove data from incoming data folder ---- #***
   # tar_target(
   #   append_inc_hist_api_data,
   #   append_historical_api_data(
