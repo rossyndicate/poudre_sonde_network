@@ -16,17 +16,15 @@ tar_source(files = "src/mWater_collate")
 tar_source(files = "src/api_pull")
 
 list(
-  # Make sure directory is structured correctly ----
-  # For now we will use the data directory structure that we have been using, but
-  # this will need to be updated with the directory structure in the fc system.
 
-  ## Incoming API data and related API data archive folder ----
+  # Confirm incoming_api_data folder is empty, which indicates the last
+  # iteration of the data pull + QAQC ran properly.
   tar_target(
     name = verify_incoming_data_dir,
     command = {
       check_incoming_api_dir(incoming_dir = "data/api/incoming_api_data/",
                              archive_dir = "data/api/archive_api_data/")
-      },
+    },
     cue = tar_cue(mode = "always"),
     priority = 1
   ),
@@ -60,7 +58,8 @@ list(
     read = readRDS(!!.x)
   ),
 
-
+  # Find the last DT that data was downloaded per each site. This will be the
+  # start DT for the API pull:
   ## ... get the start dates per site based on that flagged data... #***
   tar_target(
     name = start_dates_df,
@@ -87,7 +86,6 @@ list(
     packages = c("tidyverse", "HydroVuR", "httr2")
   ),
 
-  # QAQC the data
 
   # load xlsx field notes
   tar_file_read(
@@ -104,7 +102,6 @@ list(
     packages = "tidyverse"
   ),
 
-
   # grab mWater field notes
   tar_target(
     name = mWater_field_notes,
@@ -118,7 +115,7 @@ list(
     command = rbind(old_tidy_field_notes, mWater_field_notes)
   ),
 
-  # load incoming API data
+  # Load incoming API data:
   # to do (j): try to convert this into a tar_file_read() function
   tar_target(
     name = incoming_data_collated_csvs,
@@ -127,9 +124,7 @@ list(
     packages = "tidyverse"
   ),
 
-  # format data
-
-  ## generate a site parameter combination list
+  # Generate a site parameter combination list to iterate over:
   tar_target(
     name = site_param_combos,
     command = {
@@ -151,9 +146,25 @@ list(
 
   ),
 
-  ## summarize the data for each site parameter combination
+  # Link field notes to data stream, average observations if finer resolution
+  # than 15 minutes (this is rare, but it does happen sometimes).
   # KATIE REQUEST: HERE IS WHERE WE SHOULD JOIN/CBIND BATTERY AND BARO DATA,
   # AND REMOVE FROM FUTURE STEPS
+  # tar_target(
+  #   name = all_data_summary_list, # to do (j): name this something else
+  #   command = {
+  #     # field_notes
+  #     map2(.x = site_param_combos$sites,
+  #          .y = site_param_combos$params,
+  #          ~summarize_site_param(site_arg = .x,
+  #                                parameter_arg = .y,
+  #                                api_data = incoming_data_collated_csvs,
+  #                                notes = field_notes)) %>% # to do (j): why do I need to call field_notes here? I don't think we should need to do that...
+  #       set_names(paste0(site_param_combos$sites, "-", site_param_combos$params)) %>%
+  #       keep(~ !is.null(.))
+  #   },
+  #   packages = c("tidyverse", "padr")
+  # ),
   tar_target(
     name = all_data_summary_list,
     command = {
@@ -162,7 +173,7 @@ list(
                                                     api_data = incoming_data_collated_csvs,
                                                     notes = field_notes)
       },
-    pattern = map(site_param_combos),
+    pattern = map(site_param_combos), # look up other pattern options, might be other things you can do here
     iteration = "list",
     packages = c("tidyverse", "padr")
   ),
@@ -177,9 +188,8 @@ list(
     packages = c("tidyverse")
   ),
 
-  # append to chunk of historical flagged data  ----
-
-  ## get the last 3 hours of the historically flagged data and append it to the incoming data
+  # Get the last 24 hours of the historically flagged data and append it to the incoming data.
+  # Necessary for some of the rolling statistics we develop for flagging.
   tar_target(
     name = combined_data, # API data chunk to process (to do (j): rename this)
     command = combine_hist_inc_data(incoming_data_list = summarized_incoming_data,
@@ -188,7 +198,8 @@ list(
     iteration = "list"
   ),
 
-  # generate summary statistics for each site parameter combination ----
+  # Generate summary statistics for each site parameter combination, such as
+  # rolling average, slope between observations, etc.
   tar_target(
     name = all_data_summary_stats_list,
     command = {
@@ -201,6 +212,7 @@ list(
   ),
 
   # read in look up tables for thresholds ----
+  # Load in our static season-based thresholds:
   tar_file_read(
     name = threshold_lookup,
     "src/qaqc/seasonal_thresholds.csv",
@@ -208,6 +220,7 @@ list(
     packages = c("tidyverse")
   ),
 
+  # Load in the static sensor spec thresholds:
   tar_file_read(
     name = sensor_spec_ranges,
     "src/qaqc/sensor_spec_thresholds.yml",
@@ -215,7 +228,7 @@ list(
     packages = "yaml"
   ),
 
-  # flag data ----
+  # Flag the data using our pre-developed and static thresholds:
   tar_target(
     name = all_data_flagged,
     command = {
@@ -249,6 +262,10 @@ list(
   ),
 
   # update the historically flagged data ---- #***
+
+
+# update the historically flagged data by appending the new data with the
+# old:
   tar_target(
     name = update_historical_flag_data,
     command = {
@@ -291,8 +308,3 @@ list(
     }
   )
 )
-
-
-
-
-

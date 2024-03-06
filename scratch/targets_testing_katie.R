@@ -15,6 +15,9 @@ tar_source(files = "src/qaqc/download_and_flag_fxns")
 tar_source(files = "src/mWater_collate")
 tar_source(files = "src/api_pull")
 
+check_incoming_api_dir(incoming_dir = "data/api/incoming_api_data/",
+                       archive_dir = "data/api/archive_api_data/")
+
 library(yaml)
 hv_creds <- read_yaml("src/api_pull/credentials.yml")
 
@@ -29,11 +32,11 @@ start_dates_df <- get_start_dates_df(incoming_flagged_data_dfs = flagged_data_df
 library(httr2);library(HydroVuR)
 incoming_data_csvs_upload <-  walk2(.x = start_dates_df$site,
                                     .y = start_dates_df$start_DT_round,
-                                    ~api_puller(site = .x, start_dt = .y, end_dt = "2023-11-30 14:26:54 MST",
+                                    ~api_puller(site = .x, start_dt = .y, end_dt = "2023-11-28 15:00:00 MST",
                                                 api_token = hv_token, dump_dir = "data/api/incoming_api_data/"))
 library(readxl)
 old_raw_field_notes <- read_excel("data/sensor_field_notes.xlsx")
-
+api_puller()
 old_tidy_field_notes <- clean_field_notes(old_raw_field_notes)
 
 mWater_field_notes <- grab_mWater_sensor_notes()
@@ -41,7 +44,7 @@ mWater_field_notes <- grab_mWater_sensor_notes()
 field_notes <- rbind(old_tidy_field_notes, mWater_field_notes)
 
 saveRDS(field_notes, 'data/clean_field_notes.RDS')
-
+library(data)
 incoming_data_collated_csvs <- munge_api_data(api_path = "data/api/incoming_api_data/")
 
 # as a single target:
@@ -92,7 +95,8 @@ all_data_flagged <- map(all_data_summary_stats_list, function(data) {
     add_na_flag() %>%
     add_repeat_flag() %>%
     add_suspect_flag() %>%
-    # we should also be incorporating the add_malfuntion_flag() here no?
+    add_sensor_malfunction() %>%
+    # we should also be incorporating the add_malfunction_flag() here no?
     mutate(mean_public = ifelse(is.na(flag), mean, NA))
 })
 

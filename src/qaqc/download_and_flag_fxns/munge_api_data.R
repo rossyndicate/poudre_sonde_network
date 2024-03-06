@@ -7,7 +7,7 @@
 munge_api_data <- function(api_path, require = NULL) {
 
   api_data <- list.files(path = api_path, full.names = TRUE, pattern = "*.csv") %>%
-    map_dfr(~data.table::fread(.) %>% select(-id)) %>%
+    map_dfr(~fread(.) %>% select(-id)) %>%
     # remove overlapping API-pull data
     distinct() %>%
     # remove VuLink data

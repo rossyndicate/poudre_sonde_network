@@ -25,9 +25,9 @@ api_puller <- function(site, start_dt, end_dt = Sys.time(), api_token, dump_dir)
   # reduce overlapping data
 
   # tz weirdness
-  utc_start_date <- format(as.POSIXct(format(start_dt + hours(7), tz = "MST"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
+  utc_start_date <- format(as.POSIXct(start_dt, tz = "UTC") + hours(7), format = "%Y-%m-%d %H:%M:%S")
 
-  utc_end_date <- format(as.POSIXct(format(end_dt, tz = "UTC"), tz = "UTC"), format = "%Y-%m-%d %H:%M:%S")
+  utc_end_date <-   format(as.POSIXct(end_dt, tz = "UTC") + hours(7), format = "%Y-%m-%d %H:%M:%S")
 
   timezone = "UTC"
 
