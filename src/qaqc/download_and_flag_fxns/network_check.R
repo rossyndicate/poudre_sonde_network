@@ -78,8 +78,8 @@ network_check <- function(df) {
     # If there is a flag (flags associated with spikes in concentration or funkiness like that), and there is also a flag up/downstream at the same time (2 hour window) it is likely a real
     # WQ event and should therefore not be considered "poor" data:
     mutate(cleaner_flag = ifelse(!is.na(flag) & !grepl("repeat|sonde not employed|missing data|site visit|sv window|sensor malfunction", flag) & overlapping_flag == TRUE, NA, flag)) %>%
-    select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag))
-
+    select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag)) %>%
+    mutate(mean_public = ifelse(is.na(flag), mean, NA)) #***
 
   # df_test <- join %>%
   #   mutate(flag_binary = ifelse(#grepl("slope|suspect", flag) &

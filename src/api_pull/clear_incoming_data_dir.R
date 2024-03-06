@@ -1,6 +1,6 @@
 clear_incoming_data_dir <- function(incoming_dir, archive_dir, require = NULL) {
   # Check if the previous step in the targets pipeline ran
-  # (This check can be omitted if not needed)
+  # this is done via the require arg
 
   # List files in the incoming and archive directories
   incoming_files <- list.files(incoming_dir, full.names = FALSE)
@@ -42,4 +42,10 @@ archive_files <- list.files(archive_dir, full.names = FALSE)
     }
     print("Copied files have been removed from the incoming directory.")
   }
+
+  # Delete any files in the incoming directory
+  for (file in list.files(incoming_dir, full.names = TRUE)) {
+    file.remove(file)
+  }
+  print("All files removed from incoming directory.")
 }

@@ -4,7 +4,7 @@
 # @examples
 # munge_api_data(api_path = "data/api/")
 
-munge_api_data <- function(api_path) {
+munge_api_data <- function(api_path, require = NULL) {
 
   api_data <- list.files(path = api_path, full.names = TRUE, pattern = "*.csv") %>%
     map_dfr(~fread(.) %>% select(-id)) %>%

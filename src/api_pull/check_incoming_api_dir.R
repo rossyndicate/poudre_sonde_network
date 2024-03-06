@@ -6,7 +6,7 @@ check_incoming_api_dir <- function(incoming_dir, archive_dir) {
       print(paste0(incoming_dir, " exists and is empty."))
       print("Incoming API data directory is configured properly.")
     } else {
-      print(paste0(incoming_dir, " is not empty..."))
+      print(paste0(incoming_dir, " exists but is not empty..."))
       print("Please ensure previous workflow ran properly...")
       stop("Pipeline halted due to non-empty incoming directory.")
     }
