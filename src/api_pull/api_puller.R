@@ -59,15 +59,7 @@ api_puller <- function(site, start_dt, end_dt = Sys.time(), api_token, dump_dir)
     ## Save your data
 
     write_csv(one_df,
-              paste0(dump_dir, "/", site, "_", lubridate::as_date(end_dt), ".csv"))
-
-    # return(one_df)
+              paste0(dump_dir, "/", site, "_", str_replace(str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".csv"))
   }
 
 }
-
-
-# delete this when done
-# test_api_puller <- api_puller(site = "archery", start_dt = "2023-05-22 11:30:00", dump_dir = "scratch/scratch_data/") #, dump_dir = "data/api/incoming_api_data/")
-
-

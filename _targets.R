@@ -121,7 +121,7 @@ list(
     name = incoming_data_collated_csvs,
     command = munge_api_data(api_path = "data/api/incoming_api_data/",
                              require = incoming_data_csvs_upload),
-    packages = "tidyverse"
+    packages = c("tidyverse", "data.table")
   ),
 
   # Generate a site parameter combination list to iterate over:
