@@ -51,7 +51,7 @@ list(
 
   # Download new data from API based on current QAQC data frame timestamps
 
-  ## read in the historically flagged data... #***
+  ## read in the historically flagged data...
   tar_file_read(
     name = flagged_data_dfs, # this data is from the RMD files. eventually it will be from this pipeline.
     "data/flagged/all_data_flagged.RDS",
@@ -60,24 +60,19 @@ list(
 
   # Find the last DT that data was downloaded per each site. This will be the
   # start DT for the API pull:
-  ## ... get the start dates per site based on that flagged data... #***
+  ## ... get the start dates per site based on that flagged data...
   tar_target(
     name = start_dates_df,
-    command = get_start_dates_df(incoming_flagged_data_dfs = flagged_data_dfs),
+    command = get_start_dates_df(incoming_historically_flagged_data_list = flagged_data_dfs),
     packages = "tidyverse"
   ),
 
   # ... using those start dates, download new API data
   tar_target(
-    name = incoming_data_csvs_upload, # this is going to have to append to the historical data #***
+    name = incoming_data_csvs_upload, # this is going to have to append to the historical data
     command = {
-      # walk2(.x = start_dates_df$site,
-      #       .y = start_dates_df$start_DT_round,
-      #       ~api_puller(site = .x, start_dt = .y, end_dt = "2023-11-29 14:26:54 MST", # Sys.time(), # REPLACE TO Sys.time() ONCE PIPELINE INTEGRATED INTO FC
-      #                   api_token = hv_token, dump_dir = "data/api/incoming_api_data/"))
-
       api_puller(site = start_dates_df$site,
-                 start_dt = start_dates_df$start_DT_round,
+                 start_dt = start_dates_df$DT_round,
                  end_dt = "2023-11-29 14:26:54 MST", # Sys.time(), # REPLACE TO Sys.time() ONCE PIPELINE INTEGRATED INTO FC
                  api_token = hv_token,
                  dump_dir = "data/api/incoming_api_data/")
@@ -116,7 +111,6 @@ list(
   ),
 
   # Load incoming API data:
-  # to do (j): try to convert this into a tar_file_read() function
   tar_target(
     name = incoming_data_collated_csvs,
     command = munge_api_data(api_path = "data/api/incoming_api_data/",
@@ -150,21 +144,6 @@ list(
   # than 15 minutes (this is rare, but it does happen sometimes).
   # KATIE REQUEST: HERE IS WHERE WE SHOULD JOIN/CBIND BATTERY AND BARO DATA,
   # AND REMOVE FROM FUTURE STEPS
-  # tar_target(
-  #   name = all_data_summary_list, # to do (j): name this something else
-  #   command = {
-  #     # field_notes
-  #     map2(.x = site_param_combos$sites,
-  #          .y = site_param_combos$params,
-  #          ~summarize_site_param(site_arg = .x,
-  #                                parameter_arg = .y,
-  #                                api_data = incoming_data_collated_csvs,
-  #                                notes = field_notes)) %>% # to do (j): why do I need to call field_notes here? I don't think we should need to do that...
-  #       set_names(paste0(site_param_combos$sites, "-", site_param_combos$params)) %>%
-  #       keep(~ !is.null(.))
-  #   },
-  #   packages = c("tidyverse", "padr")
-  # ),
   tar_target(
     name = all_data_summary_list,
     command = {
@@ -178,6 +157,7 @@ list(
     packages = c("tidyverse", "padr")
   ),
 
+  # Set the names of the indexes of the summarized incoming data
   tar_target(
     name = summarized_incoming_data,
     command = {
@@ -203,7 +183,6 @@ list(
   tar_target(
     name = all_data_summary_stats_list,
     command = {
-      # combined_data %>% map(~generate_summary_statistics(.))
       all_data_summary_stats_list <- generate_summary_statistics(combined_data)
       },
     pattern = map(combined_data),
@@ -261,6 +240,16 @@ list(
     packages = c("tidyverse")
   ),
 
+  # Set the names of the indexes of the network checked flagged data
+  tar_target(
+    name = indexed_checked_flagged_data,
+    command = {
+      indexed_checked_flagged_data <- set_names(checked_flagged_data, names(combined_data))
+    },
+    iteration = "list",
+    packages = c("tidyverse")
+    ),
+
   # update the historically flagged data ---- #***
 
 
@@ -270,7 +259,7 @@ list(
     name = update_historical_flag_data,
     command = {
       update_historical_flag_data <- update_historical_flag_list(
-        new_flagged_data = checked_flagged_data,
+        new_flagged_data = indexed_checked_flagged_data,
         historical_flagged_data = flagged_data_dfs
       )
     }

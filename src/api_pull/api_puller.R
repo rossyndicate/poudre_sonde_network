@@ -29,6 +29,11 @@ api_puller <- function(site, start_dt, end_dt = Sys.time(), api_token, dump_dir)
 
   utc_end_date <-   format(as.POSIXct(end_dt, tz = "UTC") + hours(7), format = "%Y-%m-%d %H:%M:%S")
 
+  # doing this fixes the mismatch in date times during the combined_data step - jd
+  # utc_start_date <- format(as.POSIXct(start_dt, tz = "UTC") + hours(0), format = "%Y-%m-%d %H:%M:%S")
+  #
+  # utc_end_date <-   format(as.POSIXct(end_dt, tz = "UTC") + hours(0), format = "%Y-%m-%d %H:%M:%S")
+
   timezone = "UTC"
 
   # Map over the location ids

@@ -1,11 +1,22 @@
-# Summarize site parameter data from the API and field notes data frames.
+#' @title Summarize site parameter data from the API and field notes data frames.
+#'
+#' @description
+#' A short description...
+#'
 #' @param site_arg A site name.
+#'
 #' @param parameter_arg A parameter name.
+#'
 #' @param api_data A dataframe with the munged API data.
-#' @return A dataframe with summary statistics for a given site parameter data frame.
+#'
+#' @param notes The munged field notes
+#'
+#' @return
+#' A dataframe with summary statistics for a given site parameter data frame.
+#'
 #' @examples
-# summarize_site_param(site_arg = "archery", parameter_arg = "Actual Conductivity", api_data = api_data)
-# summarize_site_param(site_arg = "boxelder", parameter_arg = "Temperature", api_data = api_data)
+# summarize_site_param(site_arg = "archery", parameter_arg = "Actual Conductivity", api_data = incoming_data_collated_csvs)
+# summarize_site_param(site_arg = "boxelder", parameter_arg = "Temperature", api_data = incoming_data_collated_csvs)
 
 summarize_site_param <- function(site_arg, parameter_arg, api_data, notes) {
 
@@ -32,7 +43,10 @@ summarize_site_param <- function(site_arg, parameter_arg, api_data, notes) {
              site = site_arg,
              parameter = parameter_arg,
              flag = NA) %>% # maybe we don't want to do this here
-      left_join(filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, DT_join, site, visit_comments, sensor_malfunction, cals_performed)),
+      left_join(filter(dplyr::select(site_field_notes, sonde_employed,
+                                     last_site_visit, DT_join, site,
+                                     visit_comments, sensor_malfunction,
+                                     cals_performed)),
                 by = c('DT_join', 'site')) %>%
       mutate(DT_round = as_datetime(DT_join, tz = "MST"))
   },

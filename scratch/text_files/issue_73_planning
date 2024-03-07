@@ -1,27 +1,19 @@
-After reviewing the targets workflow here are the targets where historically
-flagged data (HFD) is called and/or interacted with in some capacity:
+scratch planning file -jd
+
+I think that most of the workflow is working properly, the issues are with
+update_historical_flag_list()
+
+Reviewed:
 1 flagged_data_dfs
   - where the HFD is loaded into the workflow
 2 start_dates_df
   - where the HFD is used to determine the start dates for the api pull
 3 combined_data
   - where the HFD is appended to the incoming data
-4 update_historical_flag_data
+4 update_historical_flag_data (PROBLEM)
   - where the new flagged data (NFD) (the combined data that has gone through the
     flagging process again) gets joined to the HFD via an antijoin so the subset
     gets updated
-5 append_inc_hist_api_data
-  - where the updated NFD gets appended to the HFD??
-
-Here are targets that I think may need to interact with HFD at some point in the
-workflow
+  - problem caused by DT in `api_puller()`
 - incoming_data_csvs_upload
   - this is the data that has to get appended to a 3hr subset of the HFD
-
-Plan:
-1 review the workflow and determine what happens at each of these steps
-  - the best way to do this is to go into the functions in those targets and
-    write the documentation for those functions.
-2 How many times in theory is data getting flagged? We should determine this
-  so that we can create tracking columns.
-  -

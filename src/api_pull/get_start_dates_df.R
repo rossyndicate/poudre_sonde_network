@@ -1,22 +1,30 @@
-# to do (j): document this function
-get_start_dates_df <- function(incoming_flagged_data_dfs) {
+#' @title Get the start dates for the HydroVu API pull from the historically
+#' flagged data
+#'
+#' @description
+#' This function finds the max datetime in the temperature data
+#' frames for each site's historically flagged data. We use temperature because
+#' it is always being tracked in the sensors and thus is the most accurate
+#' representation of the last API pull for a given sensor.
+#'
+#' @param incoming_historically_flagged_data_list This is the output from
+#' `flagged_data_dfs` and is the historically flagged data.
+#'
+#' @returns
+#' A data frame that has the sites and their corresponding starting
+#' date-times' for the HydroVu API pull. This data frame will then get passed into
+#' `incoming_data_csvs_upload`.
 
-  DT_finder <- function(df){
+get_start_dates_df <- function(incoming_historically_flagged_data_list) {
 
-    df %>%
-      select(DT_round, site, parameter) %>%
-      filter(DT_round == max(DT_round))
+  temperature_subset <- grep("Temperature", names(incoming_historically_flagged_data_list))
 
-  }
-
-  start_dates_df <- map_dfr(incoming_flagged_data_dfs, DT_finder) %>%
-    group_by(site) %>%
-    # use something that is always monitored:
-    filter(parameter == "Temperature") %>%
-    filter(DT_round == min(DT_round)) %>%
-    distinct(site, .keep_all = TRUE) %>%
-    select(site,
-           start_DT_round = DT_round)
+  start_dates_df <- map_dfr(incoming_historically_flagged_data_list[temperature_subset],
+                            function(temperature_df){
+                              temperature_df %>%
+                                select(DT_round, site) %>%
+                                filter(DT_round == max(DT_round))
+                              })
 
   return(start_dates_df)
 
