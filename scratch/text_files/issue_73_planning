@@ -1,0 +1,19 @@
+scratch planning file -jd
+
+I think that most of the workflow is working properly, the issues are with
+update_historical_flag_list()
+
+Reviewed:
+1 flagged_data_dfs
+  - where the HFD is loaded into the workflow
+2 start_dates_df
+  - where the HFD is used to determine the start dates for the api pull
+3 combined_data
+  - where the HFD is appended to the incoming data
+4 update_historical_flag_data (PROBLEM)
+  - where the new flagged data (NFD) (the combined data that has gone through the
+    flagging process again) gets joined to the HFD via an antijoin so the subset
+    gets updated
+  - problem caused by DT in `api_puller()`
+- incoming_data_csvs_upload
+  - this is the data that has to get appended to a 3hr subset of the HFD
