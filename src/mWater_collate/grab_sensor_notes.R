@@ -1,9 +1,5 @@
 grab_mWater_sensor_notes <- function(){
 
-  #source clean mwater script for all notes cleaned
-
-  #source("src/mWater_collate/clean_mwater_notes.R")
-
   # Sensor Notes
 
   # These are the notes that will be added to the QAQC workflow notes Most of the code in this chunk is to get the df to

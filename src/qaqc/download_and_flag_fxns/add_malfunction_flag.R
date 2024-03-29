@@ -1,5 +1,21 @@
-# KW's field notes flags
-#finding instances in HydroVu and in the field notes where we identified issues with certain site-parameters.
+#' @title Add malfunction flags to a data frame based on field notes and HydroVu.
+#'
+#' @description
+#' Intermediary function until a more automated solution is found. This function
+#' adds the 'sensor malfunction' flag to a data frame by hard coding the dates,
+#' sites, and parameters that members of the lab know contain erroneous data due
+#' to sensor malfunctions. Note that this flag is used in two instances: first
+#' when removing erroneous data from our statistics calculations and again during
+#' the actual flagging step in the QAQC pipeline.
+#'
+#' @param df A data frame with a `flag` column.
+#'
+#' @return A data frame with a `flag` column that has been updated with the
+#' 'sensor malfunction' flag.
+#'
+#' @examples
+#' add_range_flags(df = all_data_flagged$`archery-Actual Conductivity`)
+#' add_range_flags(df = all_data_flagged$`boxelder-Temperature`)
 
 add_malfunction_flag <- function(df){
 
