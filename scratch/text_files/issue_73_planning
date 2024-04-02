@@ -17,3 +17,16 @@ Reviewed:
   - problem caused by DT in `api_puller()`
 - incoming_data_csvs_upload
   - this is the data that has to get appended to a 3hr subset of the HFD
+
+The issue is with DT now. Review these assumptions:
+1. Historic data: always in standard time.
+2. API pull: always in UTC.
+3. Old field notes: always in standard time (never in DST)
+4. mWater field notes: I don't know yet
+
+3 & 4 get binded together first and then they get binded to 2, finally all of this
+gets binded to 1
+
+Let's check what is happening the DT in the order that they come in and then
+let's check what is happening to DT during each of the binding steps
+

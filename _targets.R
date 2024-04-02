@@ -24,9 +24,10 @@ list(
     command = {
       check_incoming_api_dir(incoming_dir = "data/api/incoming_api_data/",
                              archive_dir = "data/api/archive_api_data/")
-    },
-    cue = tar_cue(mode = "always"),
-    priority = 1
+    }
+    # , # commenting this out to test require in API_puller(this is a silent output)
+    # cue = tar_cue(mode = "always"),
+    # priority = 1
   ),
 
   # Pull in the API data ----
@@ -75,7 +76,8 @@ list(
                  start_dt = start_dates_df$DT_round,
                  end_dt = "2023-11-29 14:26:54 MST", # Sys.time(), # REPLACE TO Sys.time() ONCE PIPELINE INTEGRATED INTO FC
                  api_token = hv_token,
-                 dump_dir = "data/api/incoming_api_data/")
+                 dump_dir = "data/api/incoming_api_data/",
+                 require = verify_incoming_data_dir)
       },
     pattern = map(start_dates_df),
     packages = c("tidyverse", "HydroVuR", "httr2")
