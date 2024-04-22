@@ -1,0 +1,13 @@
+parameter,mix,max
+Actual Conductivity,0,350000
+Baro,300,1100
+Battery Level,0,100
+Chl-a Fluorescence,0,100
+Depth,0,30
+DO,0,50
+FDOM Fluorescence,0,100
+ORP,-1.4,1.4
+pH,0,14
+Specific Conductivity,0,350000
+Temperature,-5,50
+Turbidity,0,4000
