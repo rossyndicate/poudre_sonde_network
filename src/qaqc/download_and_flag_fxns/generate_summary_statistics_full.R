@@ -7,47 +7,34 @@
 
 generate_summary_statistics_full <- function(site_param_df) {
 
-  # # create seasons table
-  # winter_baseflow <- c(12,1,2,3,4)
-  # snowmelt <- c(5,6,NA,NA,NA)
-  # monsoon <- c(7,8,9,NA,NA)
-  # fall_baseflow <- c(10,11,NA,NA,NA)
-  #
-  # seasons <- cbind(winter_baseflow, snowmelt, monsoon, fall_baseflow) %>%
-  #   as_tibble() %>%
-  #   pivot_longer(cols = names(.), values_to = "month", names_to = "season") %>% drop_na()
-
-
   summary_stats_df <- site_param_df %>%
     # ... so that we can get the proper leading/lagging values across our entire timeseries:
-    mutate(
+    dplyr::mutate(
       # Add the next value and previous value for mean.
-      front1 = lead(mean, n = 1), #ifelse(is.na(front1), lead(mean, n = 1), front1),
-      back1 = lag(mean, n = 1), #ifelse(is.na(back1), lag(mean, n = 1), back1),
-      # Add the median for a point centered in a rolling median of 7 points.
-      rollmed = roll_median(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), #ifelse(is.na(rollmed), roll_median(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollmed), # to go (j): check_na() function for when we append data
-      # Add the mean for a point centered in a rolling mean of 7 points.
-      rollavg = roll_mean(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), #ifelse(is.na(rollavg), roll_mean(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollavg),
-      # Add the standard deviation for a point centered in a rolling mean of 7 points.
-      rollsd = roll_sd(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), #ifelse(is.na(rollsd), roll_sd(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollsd),
-      # Determine the slope of a point in relation to the point ahead and behind.
-      # katie working on these (j)
+      front1 = dplyr::lead(mean, n = 1),
+      back1 = dplyr::lag(mean, n = 1),
+      # Add the rolling 7-point median (using itself + data of the past).
+      rollmed = RcppRoll::roll_median(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), #ifelse(is.na(rollmed), roll_median(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollmed), # to go (j): check_na() function for when we append data
+      # Add the rolling 7-point mean (using itself + data of the past).
+      rollavg = RcppRoll::roll_mean(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), #ifelse(is.na(rollavg), roll_mean(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollavg),
+      # Add the rolling 7-point standard deviation (using itself + data of the past).
+      rollsd = RcppRoll::roll_sd(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), #ifelse(is.na(rollsd), roll_sd(mean, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollsd),
+      # Determine the slope of a point in relation to the point ahead and behind
       slope_ahead = (front1 - mean)/15,
       slope_behind = (mean - back1)/15,
-      rollslope = roll_mean(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_), #ifelse(is.na(rollslope), roll_mean(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollslope),
-      # Add the standard deviation for points centered in a rolling slope of 7 points.
-      # rollsdslope = roll_sd(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_),
-      #KRW Comment: add monthly sd. add monthly avg. add 10th and 90th quantiles.
-      # add some summary info for future us
-      month = month(DT_round),
-      year = year(DT_round),
-      y_m = paste(year, '-', month),
-      season = case_when(month %in% c(12,1,2,3,4) ~ "winter_baseflow",
-                         month %in% c(5,6) ~ "snowmelt",
-                         month %in% c(7,8,9) ~ "monsoon",
-                         month %in% c(10,11) ~ "fall_baseflow",
-                         TRUE ~ NA)
-      )
+      # Get the rolling 7-point slope (using itself + data of the past).
+      rollslope = RcppRoll::roll_mean(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_), #ifelse(is.na(rollslope), roll_mean(slope_behind, n = 7, align = 'right', na.rm = F, fill = NA_real_), rollslope),
+      # add some summary info for future steps
+      month = lubridate::month(DT_round),
+      year = lubridate::year(DT_round),
+      y_m = paste0(year, '-', month),
+      # Define our seasons:
+      season = dplyr::case_when(month %in% c(12, 1, 2, 3, 4) ~ "winter_baseflow",
+                                month %in% c(5, 6) ~ "snowmelt",
+                                month %in% c(7, 8, 9) ~ "monsoon",
+                                month %in% c(10, 11) ~ "fall_baseflow",
+                                TRUE ~ NA)
+    )
 
   return(summary_stats_df)
 
