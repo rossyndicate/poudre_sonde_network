@@ -9,26 +9,7 @@
 
 add_suspect_flag_full <- function(df) {
 
-  # cases that should result in 0 in flag_binary column:
-  # only "24hr anomaly"
-  # only "anomaly window"
-  # only "24hr anomaly" and "anomaly window"
-  # only "missing data"
-  # only "sonde not employed" and "missing data"
-  # only "missing data" and "anomaly window"
-  # only "missing data" and "24hr anomaly"
-  # only "sonde not employed", "missing data", and "anomaly window"
-  # only "site visit", "missing data", "24hr anomaly", and "anomaly window"
-  # only "sv window", "missing data", "24hr anomaly", and "anomaly window"
-  # flag_string <- "^(24hr anomaly|anomaly window|24hr anomaly;\\nanomaly window|
-  #                 missing data|sonde not employed;\\nmissing data|
-  #                 missing data;\\nanomaly window|missing data;\\n24hr anomaly|
-  #                 sonde not employed;\nmissing data;\nanomaly window|
-  #                 missing data;\n24hr anomaly;\nanomaly window|
-  #                 site visit;\nmissing data;\n24hr anomaly;\nanomaly window|
-  #                 sv window;\nmissing data;\n24hr anomaly;\nanomaly window)$"
-
-  flag_string <- "sonde not employed|missing data|site visit|sv window"
+  flag_string <- "sonde not employed|missing data|site visit|sv window|suspect data"
 
   # Define a function to check if a given 3-hour window has >= 50% fails
   check_3_hour_window_fail <- function(x) {
@@ -36,9 +17,9 @@ add_suspect_flag_full <- function(df) {
   }
 
   df_test <- df %>%
-    mutate(flag_binary = ifelse((is.na(flag) | grepl(flag_string, flag)), 0, 1)) %>%
+    dplyr::mutate(flag_binary = ifelse((is.na(flag) | grepl(flag_string, flag)), 0, 1)) %>%
     #arrange(timestamp) %>%
-    mutate(over_50_percent_fail_window = zoo::rollapply(flag_binary, width = 12, FUN = check_3_hour_window_fail, fill = NA, align = "right")) %>%
+    dplyr::mutate(over_50_percent_fail_window = zoo::rollapply(flag_binary, width = 12, FUN = check_3_hour_window_fail, fill = NA, align = "right")) %>%
     add_flag(over_50_percent_fail_window == TRUE & !grepl("suspect data", flag), "suspect data") # is this flagging the correct data?
 
   return(df_test)

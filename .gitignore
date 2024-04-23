@@ -18,6 +18,7 @@ src/api_pull/credentials.yml
 */requirements.txt
 # untracking field note api
 src/mWater_collate/mWater_API.yml
+src/api_pull/mWater_API.yml
 *.png
 # reporting
 scratch/reporting/PWQN_overview.html
