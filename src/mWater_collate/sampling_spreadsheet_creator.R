@@ -64,8 +64,12 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
 
  if (all_dates == TRUE) {
 
+   sampling_notes_output <- sampling_notes%>%
+     # select only the needed columns, saved in the correct order and fix column names
+     select(site_code = site, Date = date, SampleType = sample_collected, time_mst = time,chla_volume_ml,  do_mgl, cond_ms_cm, temp_c, visit_comments)
+
    # write to csv
-   write_csv(x = sampling_notes, file = paste0("data/sampling_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))
+   write_csv(x = sampling_notes_output, file = paste0("data/sampling_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))
  }else{
    #grab desired date
    date_oi_clean <- as.Date(date_oi, tz = "America/Denver")
@@ -76,7 +80,7 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
             #create SiteDescr column for RMRS sheet
             SiteDescr = paste0(site, "_",format(date, "%m%d%y")))%>%
      # select only the needed columns, saved in the correct order and fix column names
-     select(Site = site_label_rmrs ,SiteDescr, SiteLabel = site, Date, SampleType = sample_collected, q_cfs,
+     select(Site = site ,SiteDescr, SiteLabel = site_label_rmrs , Date, SampleType = sample_collected, q_cfs,
             time, do_mgl, cond_ms_cm, temp_c, notes = visit_comments  )
    # write to csv
    write_csv(x = samples_of_day, file = paste0("data/sampling_notes/samples_of_",date_oi,".csv" ))
