@@ -12,7 +12,7 @@ library(tarchetypes)
 # source("src/mWater_collate/grab_sensor_notes.R")
 
 tar_source(files = "src/qaqc/download_and_flag_fxns")
-tar_source(files = "src/mWater_collate")
+#tar_source(files = "src/mWater_collate")
 tar_source(files = "src/api_pull")
 
 check_incoming_api_dir(incoming_dir = "data/api/incoming_api_data/",
@@ -27,13 +27,14 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
 
 flagged_data_dfs<- readRDS("data/flagged/all_data_flagged.RDS")
 
-start_dates_df <- get_start_dates_df(incoming_flagged_data_dfs = flagged_data_dfs)
+start_dates_df <- get_start_dates_df(incoming_historically_flagged_data_list = flagged_data_dfs)
 
 library(httr2);library(HydroVuR)
 incoming_data_csvs_upload <-  walk2(.x = start_dates_df$site,
-                                    .y = start_dates_df$start_DT_round,
+                                    .y = start_dates_df$DT_round,
                                     ~api_puller(site = .x, start_dt = .y, end_dt = "2023-11-28 15:00:00 MST",
-                                                api_token = hv_token, dump_dir = "data/api/incoming_api_data/"))
+                                                api_token = hv_token, dump_dir = "data/api/incoming_api_data/",
+                                                require = NULL))
 library(readxl)
 old_raw_field_notes <- read_excel("data/sensor_field_notes.xlsx")
 api_puller()

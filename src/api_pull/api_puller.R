@@ -8,8 +8,8 @@ api_puller <- function(site, start_dt, end_dt = Sys.time(), api_token, dump_dir,
   options(scipen = 999)
 
   site_loc <- locs %>%
-    mutate(name = tolower(name)) %>%
-    filter(grepl(site, name, ignore.case = TRUE))
+    dplyr::mutate(name = tolower(name)) %>%
+    dplyr::filter(grepl(site, name, ignore.case = TRUE))
 
   site_loc_list <- site_loc$id
 
@@ -30,18 +30,18 @@ api_puller <- function(site, start_dt, end_dt = Sys.time(), api_token, dump_dir,
   # utc_end_date <-   format(as.POSIXct(end_dt, tz = "UTC") + hours(7), format = "%Y-%m-%d %H:%M:%S")
 
   # doing this fixes the mismatch in date times during the combined_data step - jd
-  utc_start_date <- format(as.POSIXct(start_dt, tz = "UTC") + hours(0), format = "%Y-%m-%d %H:%M:%S")
+  utc_start_date <- format(as.POSIXct(start_dt, tz = "UTC") + lubridate::hours(0), format = "%Y-%m-%d %H:%M:%S")
 
-  utc_end_date <-   format(as.POSIXct(end_dt, tz = "UTC") + hours(0), format = "%Y-%m-%d %H:%M:%S")
+  utc_end_date <-   format(as.POSIXct(end_dt, tz = "UTC") + lubridate::hours(0), format = "%Y-%m-%d %H:%M:%S")
 
   timezone = "UTC"
 
   # Map over the location ids
-  alldata <- site_loc_list %>% map(~hv_data_id(.,
-                            start_time = utc_start_date,
-                            end_time = utc_end_date,
-                            token = api_token,
-                            tz = timezone))
+  alldata <- site_loc_list %>% purrr::map(~hv_data_id(.,
+                                                      start_time = utc_start_date,
+                                                      end_time = utc_end_date,
+                                                      token = api_token,
+                                                      tz = timezone))
 
   # grab only locations with data (stored as a data frame) / drop 404 errors
   filtered <- purrr::keep(alldata, is.data.frame)
@@ -53,18 +53,18 @@ api_puller <- function(site, start_dt, end_dt = Sys.time(), api_token, dump_dir,
   } else {
 
     # bind lists together (now that all are dataframes, we can just collate quickly)
-    one_df <- bind_rows(filtered) %>%
-      rename(id = Location,
-             parameter = Parameter,
-             units = Units) %>%
-      left_join(., site_loc, by = "id") %>%
-      mutate(site = tolower(site)) %>%
-      select(site, id, name, timestamp, parameter, value, units)
+    one_df <- dplyr::bind_rows(filtered) %>%
+      dplyr::rename(id = Location,
+                    parameter = Parameter,
+                    units = Units) %>%
+      dplyr::left_join(., site_loc, by = "id") %>%
+      dplyr::mutate(site = tolower(site)) %>%
+      dplyr::select(site, id, name, timestamp, parameter, value, units)
 
     ## Save your data
 
-    write_csv(one_df,
-              paste0(dump_dir, "/", site, "_", str_replace(str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".csv"))
+    readr::write_csv(one_df,
+                     paste0(dump_dir, "/", site, "_", stringr::str_replace(stringr::str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".csv"))
   }
 
 }
