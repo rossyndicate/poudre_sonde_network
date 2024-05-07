@@ -9,5 +9,3 @@ grab_confirmed_mWater_malfunctions <- function(field_notes){
     write_csv(malfunction_records, "data/mWater_malfunciton_records.csv")
 
   }
-
-}

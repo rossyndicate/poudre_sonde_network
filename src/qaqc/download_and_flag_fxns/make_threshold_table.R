@@ -1,3 +1,18 @@
+#' @title Generate Threshold Table for QAQC
+#' 
+#' @description
+#' A function designed to generate a threshold table for QAQC. This table
+#' contains the thresholds for the mean, slope_behind, and standard deviation
+#' of the mean for each site and season.
+#' 
+#' @param df A data frame with a `flag` column.
+#' 
+#' @return A data frame with the thresholds for the mean, slope_behind, and
+#' standard deviation of the mean for each site and season.
+#' 
+#' @examples
+#' make_threshold_table(df = all_data_flagged$`archery-Actual Conductivity`)
+
 make_threshold_table <- function(df){
 
   slope_down <- df %>%

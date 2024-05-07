@@ -1,11 +1,18 @@
 #' @title Summarize site parameter data from the API and field notes data frames.
+#' 
 #' @description
-#' A short description...
+#' A function that summarizes site parameter data from the API and field notes data frames.
+#' 
 #' @param site_arg A site name.
+#' 
 #' @param parameter_arg A parameter name.
+#' 
 #' @param api_data A dataframe with the munged API data.
+#' 
 #' @param notes The munged field notes
-#' @return A dataframe with summary statistics for a given site parameter data frame.
+#' 
+#' @return A dataframe with summary statistics and field notes for a given site parameter data frame.
+#' 
 #' @examples
 # summarize_site_param(site_arg = "archery", parameter_arg = "Actual Conductivity", api_data = incoming_data_collated_csvs)
 # summarize_site_param(site_arg = "boxelder", parameter_arg = "Temperature", api_data = incoming_data_collated_csvs)

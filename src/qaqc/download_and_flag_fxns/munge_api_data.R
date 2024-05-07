@@ -1,9 +1,16 @@
-#' Munge API data for QAQC workflow
+#' @title Munge API data for QAQC workflow
+#' 
+#' @description
+#' A function designed to munge the raw API data for the QAQC workflow.
+#' 
 #' @param api_path Path where the raw API data lives.
+#' 
+#' @param require An upstream dependency (i.e., alternative to `{necessary object}`).
+#' 
 #' @return A dataframe with the munged API data.
-#' @require An upstream dependency (i.e., alternative to `{necessary object}`).
+#' 
 #' @examples
-# munge_api_data(api_path = "data/api/")
+# munge_api_data(api_path = "data/api/incoming/")
 
 munge_api_data <- function(api_path, require = NULL) {
 
