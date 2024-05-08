@@ -139,7 +139,17 @@ list(
       site_param_combos <- crossing(sites, params)
     },
     packages = "tidyverse"
+  ),
 
+  # Generate a list of site-metadate dataframes to join to all_data_summary_list
+  tar_target(
+    name = site_metaparams_list,
+    command = {
+      site_metaparams_list <- generate_site_metaparam(api_data = incoming_data_collated_csvs,
+                                                      require = c(incoming_data_collated_csvs, site_param_combos))
+    },
+    iteration = "list",
+    packages = c("tidyverse")
   ),
 
   # Link field notes to data stream, average observations if finer resolution
@@ -149,10 +159,12 @@ list(
   tar_target(
     name = all_data_summary_list,
     command = {
+      site_metaparams_list <<- site_metaparams_list
       all_data_summary_list <- summarize_site_param(site_arg = site_param_combos$sites,
                                                     parameter_arg = site_param_combos$params,
                                                     api_data = incoming_data_collated_csvs,
-                                                    notes = field_notes)
+                                                    notes = field_notes,
+                                                    require = site_metaparams_list)
       },
     pattern = map(site_param_combos), # look up other pattern options, might be other things you can do here
     iteration = "list",
@@ -170,8 +182,9 @@ list(
     packages = c("tidyverse")
   ),
 
-  # Get the last 24 hours of the historically flagged data and append it to the incoming data.
-  # Necessary for some of the rolling statistics we develop for flagging.
+  # Get the last 24 hours of the historically flagged data and append it to the
+  # incoming data. Necessary for some of the rolling statistics we develop for
+  # flagging.
   tar_target(
     name = combined_data, # API data chunk to process (to do (j): rename this)
     command = combine_hist_inc_data(incoming_data_list = summarized_incoming_data,
