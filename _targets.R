@@ -30,7 +30,7 @@ list(
     # priority = 1
   ),
 
-  # Pull in the API data ----
+  # Pull in the HydroVu API data ----
   # To access the API, you need credentials that must be formulated
   # like the example "src/api_pull/CopyYourCreds.yml" file. Contact Katie Willi
   # to request access.
@@ -83,6 +83,7 @@ list(
     packages = c("tidyverse", "HydroVuR", "httr2")
   ),
 
+  # Pull in mWater API data ----
 
   # load xlsx field notes
   tar_file_read(
@@ -99,17 +100,31 @@ list(
     packages = "tidyverse"
   ),
 
+  # load mWater field notes
+  tar_target(
+    name = mWater_notes_cleaned,
+    command = clean_mwater_notes(),
+    packages = c("tidyverse", "yaml")
+  ),
+
   # grab mWater field notes
   tar_target(
-    name = mWater_field_notes,
-    command = grab_mWater_sensor_notes(),
+    name = mWater_sensor_notes,
+    command = grab_mwater_sensor_notes(mwater_api_data = mWater_notes_cleaned),
+    packages = "tidyverse"
+  ),
+
+  # grab mWater malfunction records
+  tar_target(
+    name = mWater_malfunction_records,
+    command = grab_mwater_malfunction_records(mwater_api_data = mWater_notes_cleaned),
     packages = "tidyverse"
   ),
 
   # bind .xlsx and mWater notes save to field notes for downstream use
   tar_target(
     name = field_notes,
-    command = rbind(old_tidy_field_notes, mWater_field_notes)
+    command = rbind(old_tidy_field_notes, mWater_sensor_notes)
   ),
 
   # Load incoming API data:
@@ -230,6 +245,8 @@ list(
       sensor_spec_ranges <<- sensor_spec_ranges # to do (j): again, why do we need to call these objects here?
       # set threshold lookup as global variable
       threshold_lookup <<- threshold_lookup
+      # set sensor malfunction records as global variable
+      mWater_malfunction_records <<- mWater_malfunction_records
 
       # first pass of flags
       all_data_flagged <- flag_all_data(data = all_data_summary_stats_list,
