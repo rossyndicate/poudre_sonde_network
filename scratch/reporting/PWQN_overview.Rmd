@@ -5,6 +5,7 @@ output:
   html_document:
     toc: true
     toc_float: true
+    toc_collapsed: true
 ---
 
 ```{r setup, include=FALSE}
@@ -32,23 +33,23 @@ Currently we have three ongoing projects in the Cache la Poudre River Watershed 
 
 The PWQN is a collection of river monitoring sites strategically located throughout and directly upstream of the City of Fort Collins. This monitoring partnership with the City of Fort Collins was spurred by the 2018 fish kill throughout the city, whose source was never determined. With a network of sensors deployed, we can better track changes in water quality like those experienced in 2018 and understand how the river is influenced by its myriad urban and agricultural inputs. The PWQN currently exists as nine sites along the Cache la Poudre River from the canyon mouth to Windsor, as well as two tributaries to the Poudre River.
 
-## Reservoir Study
+## Upper Poudre Decision Support Network
 
 ![](images/juan_ptrr_handheld_probe.jpg){width="399"}
 
-The 2020 Cameron Peak wildfire (CPF) was the largest wildfire in Colorado history at over 200,000 acres. The CPF burned a large proportion of the Cache La Poudre watershed, in particular various high elevation reservoirs. These reservoirs provide valuable drinking and agriculutural water to users in the City of Fort Collins, Greeley, Thornton and Northern Water. In collaboration with the Rocky Mountain Research Station (USFS), we are sampling various reservoir, tributary, and mainstem sites of the Cache La Poudre watershed. This field campaign allows us to analyze trends in water quality focusing on nutrients and other key constituents mobilized post-fire. The goal of this project is to understand how these nutrients affect algal growth in reservoirs and how those changes are felt downstream. Using this field data, we are working to create a system that will predict algal blooms before they occur using a combination of in-stream sensors, remote sensing, and field sampling.
+The 2020 Cameron Peak wildfire (CPF) was the largest wildfire in Colorado history at over 200,000 acres. The CPF burned a large proportion of the Cache La Poudre watershed, in particular various high elevation reservoirs. These reservoirs provide valuable drinking and agricultural water to users in the City of Fort Collins, Greeley, Thornton and Northern Water. In collaboration with the Rocky Mountain Research Station (USFS), we focused for the first three years of sampling on various reservoir, tributary, and mainstem sites of the Cache La Poudre watershed. This field campaign allows us to analyze trends in water quality focusing on nutrients and other key constituents mobilized post-fire. This next phase of work will be dedicated to building out a near-real-time decision making support system for stakeholder users. 2024 will serve as the first year with a trial operational decision support system for stakeholder partners to use.
 
 ## CU Collaboration
 
 ![](images/PXL_20230901_195306806.jpg){width="260"}
 
-This collaboration is hoping to assess the usefulness of water quality sensors on being able to quantify the impact of watershed restoration as a means to reduce water treatment burdens. They have installed a few sites on their own but primarily have piggybacked on our existing network and have tasked us with maintaining these sites.
+This collaboration is hoping to assess the usefulness of water quality sensors on being able to quantify the impact of watershed restoration as a means to reduce water treatment burdens. In particular, we hope to understand how high frequency sensors like these can be correlated with harder to measure constituents in grab samples. They are particularly focused on wildfire affected areas, urban drainages and agricultural inputs.
 
 # Map of All Sites
 
 ```{r functions_read_in_data, include=FALSE}
 # Create a path to the dataset using here()
-dataset_path <- here("data/context_data", "sonde_location_metadata.csv")
+dataset_path <- here("data/metadata", "sonde_location_metadata.csv")
 
 
 sonde_sites <-readr::read_csv(dataset_path)%>%
@@ -62,7 +63,7 @@ sonde_sites <-readr::read_csv(dataset_path)%>%
 
 
 
-sonde_sites$Site <- factor(sonde_sites$Site , levels = c("JOEI", "CBRI", "CHD", "PFAL", "SFM", "PBD", "Tamasag", "Legacy", "Lincoln","Timberline","Prospect","Boxelder", "Archery","River Bluffs", "BoxCreek", "SpringCreek"  )) 
+sonde_sites$Site <- factor(sonde_sites$Site , levels = c("JOEI", "CBRI", "CHD", "PFAL","LBEA", "PENN",  "SFM", "PBD", "Tamasag", "Legacy", "Lincoln","Timberline","Prospect","Boxelder", "Archery","River Bluffs", "BoxCreek", "SpringCreek"  )) 
 
 
 get_site_map <- function(site_selected){
@@ -115,7 +116,7 @@ map <-mapview(
   zcol = "Site",
   col.regions = brewer.pal(6, "Set2"),
   legend = TRUE, 
-  layer.name = "Reservior Study Sites"
+  layer.name = "Upper System Sites"
 )+ 
   mapview(
   filter(sonde_sites, Project == "PWQN"),
@@ -126,7 +127,7 @@ map <-mapview(
 )+mapview(
   filter(sonde_sites, Project == "CU"),
   zcol = "Site",
-  col.regions = c("green1", "green4"),
+  col.regions = c("green1","green2","green4", "green3"),
   legend = TRUE, 
   layer.name = "CU Study Sites"
 )
@@ -137,19 +138,19 @@ map
 
 # Technician SOP/Important notes
 
-Use this link to access our standard operations procedures doc: [Link](https://colostate-my.sharepoint.com/:w:/g/personal/mrvr_colostate_edu/EUvCdkvXF9xEhwyWT-GhOQUBaYr2Iq)
+Use this link to access our standard operations procedures doc: [Link](https://colostate-my.sharepoint.com/:w:/g/personal/mrvr_colostate_edu/EUvCdkvXF9xEhwyWT-GhOQUBaYr2IqofXv5g2ZBZh5Od1Q?e=C23Azd)
 
 In Situ Technical support number: 970-498-1500
 
 mWater survey for field notes: [Link](https://formlink.mwater.co/#/6840b0611e8f4b2ca0a4d538a3f32775/4a1552a987a542aea22e3cb3c324501d?branding=mwater)
 
-# Site Specfic Info
+# Site Specific Info
 
-This section is broken down by project: Reservoir Study, PWQN and CU/Virridy Collaboration
+This section is broken down by project: Reservoir Study, PWQN and CU Collaboration
 
-## Reservoir Study
+## Upper Poudre Decision Support System
 
-This is also typically known as the Upper Poudre Project or Canyon Work
+This is also typically known as the Upper Poudre Project or Canyon Work or Cameron Peak Fire (CPF)
 
 ### JOEI: Joe Wright Inflow
 
@@ -257,9 +258,9 @@ generate_site_table("Legacy")
 
 ### Lincoln
 
-![](images/lincoln_20230713_frombridge.jpg){width="487"}
+![](images/lincoln_20240319_newhousings_close.jpg){width="571"}
 
-This site is upstream of Dry Creek on the CLP, it is also upstream of the Lincoln St Outflow. This site also measures the impact of storm drainage in Old Town. It also measures the impact of the White Water Park.
+This site is upstream of Dry Creek on the CLP, it is also upstream of the Lincoln St Outflow. This site also measures the impact of storm drainage in Old Town. It also measures the impact of the White Water Park. This ste is colocated with the USGS streamflow guage (06752260)
 
 ```{r Lincoln, echo=FALSE}
 # Generate the map and table for "Lincoln"
@@ -309,7 +310,7 @@ generate_site_table("Boxelder")
 
 ![](images/archery_20231003_promo.jpg)
 
-This site measures the impact of Boxelder Creek and Sanitation on the CLP.
+This site measures the impact of Boxelder Creek and Sanitation on the CLP. This site includes a sonde from the CU collaboration.
 
 ```{r Archery, echo=FALSE}
 # Generate the map and table for "Archery"
@@ -329,7 +330,7 @@ get_site_map("River Bluffs")
 generate_site_table("River Bluffs")
 ```
 
-## CU/Virridy Collaboration
+## CU Collaboration
 
 This collaboration is hoping to assess the usefulness of water quality sensors on being able to quantify the impact of watershed restoration as a means to reduce water treatment burdens.
 
@@ -349,10 +350,34 @@ generate_site_table("BoxCreek")
 
 ### Spring Creek
 
+![](images/springcreek_20240327_housing1.jpg){width="379"}
+
 This site measures the effectiveness of urban storm drainage on a tributary to the CLP.
 
 ```{r SpringCreek, echo=FALSE}
 # Generate the map and table for "SpringCreek"
 get_site_map("SpringCreek")
 generate_site_table("SpringCreek")
+```
+
+### Pennock Creek
+
+This site will represent the unburned control for the CU project's assessment of water quality sensors' effectiveness at measuring burn effects.
+
+```{r PENN, echo=FALSE}
+# Generate the map and table for "PENN"
+get_site_map("PENN")
+generate_site_table("PENN")
+```
+
+### Little Beaver Creek
+
+![](images/LBEA_20221006__upstream.jpg){width="281"}
+
+This site will represent the burned control for the CU project's assessment of water quality sensors' effectiveness at measuring burn effects. This site is also heavily studied by other CSU and RMRS projects.
+
+```{r LBEA, echo=FALSE}
+# Generate the map and table for "LBEA"
+get_site_map("LBEA")
+generate_site_table("LBEA")
 ```

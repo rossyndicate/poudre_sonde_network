@@ -28,12 +28,13 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
     mutate(site_code = tolower(site_code))
 
   # create df of all water samples and save DT, handheld probe and chla volume data
-  sampling_notes <- all_notes_cleaned%>%
+  sampling_notes <- clean_mwater_notes()%>%
     filter(grepl("Sampling",visit_type))%>%
     mutate(all_pics_taken = case_when(!is.na(downstream_pic)&!is.na(upstream_pic)&!is.na(clarity)&!is.na(filter_pic) ~ TRUE, TRUE ~ FALSE),
            #correct names if it is in our upper sites (acronyms)
-           site = ifelse(site %in% upper_sites$site_code, toupper(site), site))%>%
-    select(site,crew, DT_round, date, time = start_time_mst, sample_collected, chla_volume_ml, vol_filtered_blank_dup, do_mgl, cond_ms_cm, temp_c, visit_comments, all_pics_taken)
+           site = ifelse(site %in% upper_sites$site_code, toupper(site), site),
+           DT_round = round_date(start_DT, "15 minutes"))%>%
+    select(site,crew, DT_round, date, time = start_time_mst, sample_collected, chla_volume_ml, vol_filtered_blank_dup, do_mgl, cond_ms_cm, temp_c, visit_comments, all_pics_taken, q_cfs)
 
   # Distinguish BLANK and DUPLICATE values
   blanks_dups <- sampling_notes %>%
@@ -63,8 +64,12 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
 
  if (all_dates == TRUE) {
 
+   sampling_notes_output <- sampling_notes%>%
+     # select only the needed columns, saved in the correct order and fix column names
+     select(site_code = site, Date = date, SampleType = sample_collected, time_mst = time,chla_volume_ml,  do_mgl, cond_ms_cm, temp_c, visit_comments)
+
    # write to csv
-   write_csv(x = sampling_notes, file = paste0("data/sampling_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))
+   write_csv(x = sampling_notes_output, file = paste0("data/sampling_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))
  }else{
    #grab desired date
    date_oi_clean <- as.Date(date_oi, tz = "America/Denver")
@@ -75,11 +80,10 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
             #create SiteDescr column for RMRS sheet
             SiteDescr = paste0(site, "_",format(date, "%m%d%y")))%>%
      # select only the needed columns, saved in the correct order and fix column names
-     select(Site = site_label_rmrs ,SiteDescr, SiteLabel = site, Date, SampleType = sample_collected,
+     select(Site = site ,SiteDescr, SiteLabel = site_label_rmrs , Date, SampleType = sample_collected, q_cfs,
             time, do_mgl, cond_ms_cm, temp_c, notes = visit_comments  )
    # write to csv
    write_csv(x = samples_of_day, file = paste0("data/sampling_notes/samples_of_",date_oi,".csv" ))
  }
 }
-
 

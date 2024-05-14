@@ -23,26 +23,42 @@ files_missing <- function(){
     #this is to help match with user input
     mutate(site_code = tolower(site_code))
 
+  field_season <- year(Sys.Date())
+
   #grab cal reports from folder
-  cal_reports_simple <- str_extract(list.files(path = "data/calibration_reports/"), ".*_\\d{8}" )
-  logs_simple <- str_extract(list.files(path = "data/sensor_data/2023", recursive = TRUE), "\\w+_\\d{8}_(vulink|troll)")
+  cal_reports_simple <- str_extract(list.files(path = "data/calibration_reports/"), ".*_\\d{8}" )%>%tolower()
+  logs_simple <- str_extract(list.files(path = paste0("data/sensor_data/", field_season), recursive = TRUE), "\\w+_\\d{8}_(vulink|troll)")%>%tolower()
+
+
+
 
   #grab sensor notes that have logs or cal reports that should be  downloaded
   sensor_files <- all_notes_cleaned%>%
+    filter(year(DT_round) == field_season)%>%
     filter(grepl("Sensor",visit_type, ignore.case = TRUE))%>%
     filter(cal_report_collected|log_downloaded)%>%
     select(site, crew, start_DT, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
     mutate(
-      #correct names if it is in our upper sites (acronyms)
-      site = ifelse(site %in% upper_sites$site_code, toupper(site), site),
+      #make all site names lower
+      site = tolower(site),
       # Create basis for calibration report name
       # this will be used to check for calibration report in data files and then b
-      cal_report_name = case_when(cal_report_collected == TRUE ~ paste0(tolower(site), "_", format(start_DT, "%Y%m%d")),
+      cal_report_name = case_when(cal_report_collected == TRUE ~ paste0(site, "_", format(start_DT, "%Y%m%d")),
                                   cal_report_collected == NA ~ NA),
       log1_mmdd = case_when(nchar(as.character(log1_mmdd)) == 3 ~ paste0("0",log1_mmdd),
                             TRUE ~ as.character(log1_mmdd)),
-      log1_type = tolower(log1_type),
-      log2_type = tolower(log2_type),
+      log1_type = case_when( grepl("aquatroll", log1_type,ignore.case = TRUE) ~  "troll",
+                             grepl("at", log1_type,ignore.case = TRUE) ~  "troll",
+                             grepl("aqua troll", log1_type,ignore.case = TRUE) ~  "troll",
+                             grepl("vulink", log1_type,ignore.case = TRUE) ~  "vulink",
+                             grepl("vu link", log1_type,ignore.case = TRUE) ~  "vulink",
+                             TRUE ~ tolower(log1_type)),
+      log2_type = case_when( grepl("aquatroll", log2_type,ignore.case = TRUE) ~  "troll",
+                             grepl("at", log2_type,ignore.case = TRUE) ~  "troll",
+                             grepl("aqua troll", log2_type,ignore.case = TRUE) ~  "troll",
+                             grepl("vulink", log2_type,ignore.case = TRUE) ~  "vulink",
+                             grepl("vu link", log2_type,ignore.case = TRUE) ~  "vulink",
+                             TRUE ~ tolower(log2_type)),
       log2_mmdd = case_when(nchar(as.character(log2_mmdd)) == 3 ~ paste0("0",log2_mmdd),
                             TRUE ~ as.character(log2_mmdd)),
       log1_user_error = case_when( is.na(log_downloaded)~ FALSE,
@@ -60,11 +76,24 @@ files_missing <- function(){
       log2_name = case_when(!(is.na(log2_mmdd) | is.na(log2_type)) ~ paste0(site,"_",year(start_DT),log2_mmdd,
                                                                             "_", format(start_DT, "%Y%m%d"), "_", log2_type),
                             (is.na(log2_mmdd) | is.na(log2_type))  ~ NA),
+      log_missing1 = case_when(
+        is.na(log_downloaded)| log_downloaded == FALSE ~ FALSE,
+        is.na(log1_name) ~ FALSE,
+        log1_name %nin% logs_simple ~ TRUE,
+        TRUE ~ FALSE
+      ),
+      log_missing2 = case_when(
+        is.na(log_downloaded)| log_downloaded == FALSE ~ FALSE,
+        is.na(log2_name) ~ FALSE,
+        log2_name %nin% logs_simple ~ TRUE,
+        TRUE ~ FALSE
+      ),
       log_missing = case_when(
-        log1_name %nin% logs_simple | log2_name %nin% logs_simple ~ TRUE,
+        log_missing1 | log_missing2 ~ TRUE,
         TRUE ~ FALSE
       ),
       cal_missing = case_when(
+        is.na(cal_report_collected) ~ FALSE,
         cal_report_name %nin% cal_reports_simple ~ TRUE,
         TRUE ~ FALSE
       )
@@ -88,3 +117,4 @@ files_missing <- function(){
   cat("\nFile Check Complete")
 
 }
+
