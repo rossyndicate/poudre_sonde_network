@@ -1,4 +1,4 @@
-grab_mwater_sensor_notes <- function(mwater_api_data){
+grab_mWater_sensor_notes <- function(mWater_api_data){
 
   # Sensor Notes
 
@@ -6,7 +6,7 @@ grab_mwater_sensor_notes <- function(mwater_api_data){
   # match the one in the QAQC workflow It can be saved as a CSV or pulled directly into QAQC workflow
   # grab only notes where technician is interacting with sensor on site (excludes sensor malfunction notes)
 
-  mWater_field_notes <- mwater_api_data %>%
+  mWater_field_notes <- mWater_api_data %>%
     filter(grepl("Sensor",visit_type, ignore.case = TRUE) & !grepl("Sensor malfunction",visit_type, ignore.case = TRUE)) %>%
     # determining sonde employed status based on sensor_change
     mutate(sonde_employed = case_when(is.na(sensor_change)  ~ NA,

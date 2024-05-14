@@ -17,7 +17,7 @@
 
 add_realistic_flag <- function(df){
 
-  sensor_realistic_ranges <- read_yaml("src/qaqc/sensor_real_thresholds.yml")
+  sensor_realistic_ranges <- read_yaml("data/qaqc/sensor_real_thresholds.yml")
 
   # make this a non yaml solution and add it to the threshold table
   # get the parameter from the parameter column in the df of interest

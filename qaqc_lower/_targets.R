@@ -11,9 +11,7 @@ tar_option_set(
 
 # Run the R scripts in the R/ folder with your custom functions
 # 'files` = the file and directory path to look for R scripts to run
-tar_source(files = "src/qaqc/download_and_flag_fxns")
-tar_source(files = "src/mWater_collate")
-tar_source(files = "src/api_pull")
+tar_source(files = "src/")
 
 list(
 
@@ -22,8 +20,8 @@ list(
   tar_target(
     name = verify_incoming_data_dir,
     command = {
-      check_incoming_api_dir(incoming_dir = "data/api/incoming_api_data/",
-                             archive_dir = "data/api/archive_api_data/")
+      check_incoming_api_dir(incoming_dir = "data/incoming_api_data/",
+                             archive_dir = "data/archive_api_data/")
     }
     # , # commenting this out to test require in API_puller(this is a silent output)
     # cue = tar_cue(mode = "always"),
@@ -32,11 +30,11 @@ list(
 
   # Pull in the HydroVu API data ----
   # To access the API, you need credentials that must be formulated
-  # like the example "src/api_pull/CopyYourCreds.yml" file. Contact Katie Willi
+  # like the example "creds/HydroVuCredsTemplate.yml" file. Contact Katie Willi
   # to request access.
   tar_file_read(
     name = hv_creds,
-    "src/api_pull/credentials.yml",
+    "creds/HydroVuCreds.yml",
     read = read_yaml(!!.x),
     packages = "yaml"
   ),
@@ -83,48 +81,48 @@ list(
     packages = c("tidyverse", "HydroVuR", "httr2")
   ),
 
-  # Pull in mWater API data ----
+  # Pull in field notes data ----
 
   # load xlsx field notes
-  tar_file_read(
-    name = old_raw_field_notes,
-    "data/sensor_field_notes.xlsx",
-    read = read_excel(!!.x),
-    packages = "readxl"
-  ),
+  # tar_file_read(
+  #   name = old_raw_field_notes,
+  #   "data/sensor_field_notes.xlsx",
+  #   read = read_excel(!!.x),
+  #   packages = "readxl"
+  # ),
 
-  # clean xlsx field notes
+  # clean old xlsx field notes
   tar_target(
-    name = old_tidy_field_notes,
-    command = clean_field_notes(old_raw_field_notes),
+    name = old_field_notes,
+    command = load_old_field_notes(filepath = "data/sensor_field_notes.xlsx"),
     packages = "tidyverse"
   ),
 
   # load mWater field notes
   tar_target(
-    name = mWater_notes_cleaned,
-    command = clean_mwater_notes(),
+    name = all_mWater_notes,
+    command = load_mWater_notes(),
     packages = c("tidyverse", "yaml")
   ),
 
   # grab mWater field notes
   tar_target(
     name = mWater_sensor_notes,
-    command = grab_mwater_sensor_notes(mwater_api_data = mWater_notes_cleaned),
+    command = grab_mWater_sensor_notes(mWater_api_data = all_mWater_notes),
     packages = "tidyverse"
   ),
 
   # grab mWater malfunction records
   tar_target(
     name = mWater_malfunction_records,
-    command = grab_mwater_malfunction_records(mwater_api_data = mWater_notes_cleaned),
+    command = grab_mWater_malfunction_notes(mWater_api_data = all_mWater_notes),
     packages = "tidyverse"
   ),
 
   # bind .xlsx and mWater notes save to field notes for downstream use
   tar_target(
     name = field_notes,
-    command = rbind(old_tidy_field_notes, mWater_sensor_notes)
+    command = rbind(old_field_notes, mWater_sensor_notes)
   ),
 
   # Load incoming API data:
@@ -169,8 +167,7 @@ list(
 
   # Link field notes to data stream, average observations if finer resolution
   # than 15 minutes (this is rare, but it does happen sometimes).
-  # KATIE REQUEST: HERE IS WHERE WE SHOULD JOIN/CBIND BATTERY AND BARO DATA,
-  # AND REMOVE FROM FUTURE STEPS
+
   tar_target(
     name = all_data_summary_list,
     command = {
@@ -224,7 +221,7 @@ list(
   # Load in our static season-based thresholds:
   tar_file_read(
     name = threshold_lookup,
-    "src/qaqc/seasonal_thresholds.csv",
+    "data/qaqc/seasonal_thresholds.csv",
     read = read_csv(!!.x),
     packages = c("tidyverse")
   ),
@@ -232,7 +229,7 @@ list(
   # Load in the static sensor spec thresholds:
   tar_file_read(
     name = sensor_spec_ranges,
-    "src/qaqc/sensor_spec_thresholds.yml",
+    "data/qaqc/sensor_spec_thresholds.yml",
     read = read_yaml(!!.x),
     packages = "yaml"
   ),

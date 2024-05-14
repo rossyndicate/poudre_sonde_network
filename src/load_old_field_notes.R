@@ -1,22 +1,25 @@
-#' @title Clean field notes
-#' 
+#' @title Load and tidy old field notes
+#'
 #' @description
-#' A function that cleans the field notes excel file. This function adds datetime
+#' A function that uploads and cleans the field notes excel file. This function adds datetime
 #' columns to the field notes dataframe and filters out field notes where the sensor
 #' was not handled.
-#' 
-#' @param raw_field_notes A dataframe with the raw field notes.
-#' 
+#'
+#' @param filepath A file path to the raw field notes.
+#'
 #' @return A dataframe with the field notes.
-#' 
+#'
 #' @examples
-#' clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
+#' clean_old_field_notes(filepath = "data/sensor_field_notes.xlsx")
 
-clean_field_notes <- function(raw_field_notes){
+load_old_field_notes <- function(filepath){
 
-  field_notes <- raw_field_notes%>%
-    mutate(start_DT = ymd_hm(paste(date, start_time_mst), tz = "MST"))%>%
-    mutate(#start_DT = with_tz(start_DT, tzone = "MST"),
+  raw_field_notes <- readxl::read_excel(filepath)
+
+  field_notes <- raw_field_notes %>%
+    mutate(start_DT = ymd_hm(paste(date, start_time_mst), tz = "MST")) %>%
+    mutate(
+      #start_DT = with_tz(start_DT, tzone = "MST"),
       DT_round = floor_date(start_DT, "15 minutes"),
       DT_join = as.character(DT_round),
       site = tolower(site),
@@ -35,4 +38,3 @@ clean_field_notes <- function(raw_field_notes){
   return(field_notes)
 
 }
-

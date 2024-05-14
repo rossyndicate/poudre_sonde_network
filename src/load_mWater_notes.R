@@ -1,4 +1,4 @@
-clean_mwater_notes <- function(){
+load_mWater_notes <- function(){
 
   `%nin%` = Negate(`%in%`)
 
@@ -6,7 +6,7 @@ clean_mwater_notes <- function(){
 
   # Grab API url from yml
   # Contact Sam Struthers if you need access
-  creds = yaml::read_yaml("src/mWater_collate/mWater_API.yml")
+  creds = yaml::read_yaml("creds/mWaterCreds.yml")
   api_url = as.character(creds["url"])
 
   # Read in from API and tidy for downstream use
@@ -17,7 +17,7 @@ clean_mwater_notes <- function(){
   # Add rounded date time
 
 
-  all_notes_cleaned <- read_csv(url(api_url),show_col_types = FALSE) %>%
+  all_notes_cleaned <- read_csv(url(api_url), show_col_types = FALSE) %>%
     mutate(
       # start and end dt comes in as UTC -> to MST
       start_DT = with_tz(parse_date_time(start_dt, orders = c("%Y%m%d %H:%M:%S", "%m%d%y %H:%M", "%m%d%Y %H:%M", "%b%d%y %H:%M" )), tz = "MST"),

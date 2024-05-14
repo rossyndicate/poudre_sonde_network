@@ -26,9 +26,9 @@ library(magick)
 
 
 source("scratch/reporting/grab_raw_data.R")
-source("src/timelapse/get_tl_photo_filenames.R")
-source("src/timelapse/basic_plot.R")
-source("src/timelapse/photo_plotter.R")
+source("src/get_tl_photo_filenames.R")
+source("src/basic_plot.R")
+source("src/photo_plotter.R")
 
 ```
 

@@ -10,7 +10,9 @@
 
 download_pictures <- function(){
   #source to grab all notes cleaned
-  source("src/mWater_collate/clean_mwater_notes.R")
+  source("src/load_mWater_notes.R")
+
+  all_notes_cleaned <- load_mWater_notes()
   # Find all the downloaded pictures
   all_file_names <- tolower(list.files(path = "data/field_pics/", recursive = TRUE))
   #grab notes

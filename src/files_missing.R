@@ -12,7 +12,7 @@ files_missing <- function(){
   `%nin%` = Negate(`%in%`)
   # #source clean mwater script for all notes cleaned
   #
-  # source("src/mWater_collate/clean_mwater_notes.R")
+  # source("src/mWater_collate/load_mWater_notes.R")
 
   #grab context metadata
   site_meta <- read_csv("data/metadata/water_sampling_sites.csv",show_col_types = FALSE)%>%
