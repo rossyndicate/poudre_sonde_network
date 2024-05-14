@@ -30,7 +30,7 @@ list(
     # priority = 1
   ),
 
-  # Pull in the API data ----
+  # Pull in the HydroVu API data ----
   # To access the API, you need credentials that must be formulated
   # like the example "src/api_pull/CopyYourCreds.yml" file. Contact Katie Willi
   # to request access.
@@ -83,6 +83,7 @@ list(
     packages = c("tidyverse", "HydroVuR", "httr2")
   ),
 
+  # Pull in mWater API data ----
 
   # load xlsx field notes
   tar_file_read(
@@ -99,17 +100,31 @@ list(
     packages = "tidyverse"
   ),
 
+  # load mWater field notes
+  tar_target(
+    name = mWater_notes_cleaned,
+    command = clean_mwater_notes(),
+    packages = c("tidyverse", "yaml")
+  ),
+
   # grab mWater field notes
   tar_target(
-    name = mWater_field_notes,
-    command = grab_mWater_sensor_notes(),
+    name = mWater_sensor_notes,
+    command = grab_mwater_sensor_notes(mwater_api_data = mWater_notes_cleaned),
+    packages = "tidyverse"
+  ),
+
+  # grab mWater malfunction records
+  tar_target(
+    name = mWater_malfunction_records,
+    command = grab_mwater_malfunction_records(mwater_api_data = mWater_notes_cleaned),
     packages = "tidyverse"
   ),
 
   # bind .xlsx and mWater notes save to field notes for downstream use
   tar_target(
     name = field_notes,
-    command = rbind(old_tidy_field_notes, mWater_field_notes)
+    command = rbind(old_tidy_field_notes, mWater_sensor_notes)
   ),
 
   # Load incoming API data:
@@ -139,7 +154,17 @@ list(
       site_param_combos <- crossing(sites, params)
     },
     packages = "tidyverse"
+  ),
 
+  # Generate a list of site-metadate dataframes to join to all_data_summary_list
+  tar_target(
+    name = site_metaparams_list,
+    command = {
+      site_metaparams_list <- generate_site_metaparam(api_data = incoming_data_collated_csvs,
+                                                      require = c(incoming_data_collated_csvs, site_param_combos))
+    },
+    iteration = "list",
+    packages = c("tidyverse")
   ),
 
   # Link field notes to data stream, average observations if finer resolution
@@ -149,10 +174,12 @@ list(
   tar_target(
     name = all_data_summary_list,
     command = {
+      site_metaparams_list <<- site_metaparams_list
       all_data_summary_list <- summarize_site_param(site_arg = site_param_combos$sites,
                                                     parameter_arg = site_param_combos$params,
                                                     api_data = incoming_data_collated_csvs,
-                                                    notes = field_notes)
+                                                    notes = field_notes,
+                                                    require = site_metaparams_list)
       },
     pattern = map(site_param_combos), # look up other pattern options, might be other things you can do here
     iteration = "list",
@@ -170,8 +197,9 @@ list(
     packages = c("tidyverse")
   ),
 
-  # Get the last 24 hours of the historically flagged data and append it to the incoming data.
-  # Necessary for some of the rolling statistics we develop for flagging.
+  # Get the last 24 hours of the historically flagged data and append it to the
+  # incoming data. Necessary for some of the rolling statistics we develop for
+  # flagging.
   tar_target(
     name = combined_data, # API data chunk to process (to do (j): rename this)
     command = combine_hist_inc_data(incoming_data_list = summarized_incoming_data,
@@ -217,6 +245,8 @@ list(
       sensor_spec_ranges <<- sensor_spec_ranges # to do (j): again, why do we need to call these objects here?
       # set threshold lookup as global variable
       threshold_lookup <<- threshold_lookup
+      # set sensor malfunction records as global variable
+      mWater_malfunction_records <<- mWater_malfunction_records
 
       # first pass of flags
       all_data_flagged <- flag_all_data(data = all_data_summary_stats_list,

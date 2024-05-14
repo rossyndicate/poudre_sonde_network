@@ -277,7 +277,28 @@ View(flagged_bound_subset_test_flagged_data)
 # We can see here that the "suspect data" flag was counted as a flag, but we actually want to avoid this.
 # I think that the solution for this is pretty simple. We will source the updated function and repeat
 # step 4 with the updated function.
-source("test_env/new-add_suspect_flag.R")
+
+new_add_suspect_flag <- function(df) {
+
+  flag_string <- "sonde not employed|missing data|site visit|sv window|suspect data" # include the flag added by this function
+
+  # Define a function to check if a given 3-hour window has >= 50% fails
+  check_3_hour_window_fail <- function(x) {
+    sum(x) / length(x) >= 0.5
+  }
+
+  df_test <- df %>%
+    mutate(flag_binary = ifelse((is.na(flag) | grepl(flag_string, flag)), 0, 1)) %>%
+    #arrange(timestamp) %>%
+    mutate(over_50_percent_fail_window = ifelse(is.na(over_50_percent_fail_window),
+                                                zoo::rollapply(flag_binary, width = 12, FUN = check_3_hour_window_fail, fill = NA, align = "right"),
+                                                over_50_percent_fail_window)) %>%
+    add_flag(over_50_percent_fail_window == TRUE & !grepl("suspect data", flag), "suspect data") # is this flagging the correct data?
+
+  return(df_test)
+
+}
+
 new_flagged_bound_subset_test_flagged_data <- new_add_suspect_flag(bound_subset_test_flagged_data)
 View(new_flagged_bound_subset_test_flagged_data)
 

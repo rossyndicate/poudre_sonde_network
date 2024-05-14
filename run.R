@@ -16,7 +16,7 @@ required_pkgs <- c("data.table",
                    "profvis",
                    "janitor")
 
-# helper function to install all necessary pacakges
+# helper function to install all necessary packages
 package_installer <- function(x) {
   if (x %in% installed.packages()) {
     print(paste0("{", x ,"} package is already installed."))

@@ -1,3 +1,18 @@
+#' @title Update Historical Flag List
+#' 
+#' @description
+#' A function that updates the historical flag list with new flagged data.
+#' 
+#' @param new_flagged_data A list of data frames that have been flagged.
+#' 
+#' @param historical_flagged_data A list of data frames that have been flagged.
+#' 
+#' @return A list of data frames that have been updated with new flagged data.
+#' 
+#' @examples
+#' update_historical_flag_list(new_flagged_data = all_data_flagged$`archery-Actual Conductivity`, historical_flagged_data = all_data_flagged$`archery-Actual Conductivity`)
+#' update_historical_flag_list(new_flagged_data = all_data_flagged$`boxelder-Temperature`, historical_flagged_data = all_data_flagged$`boxelder-Temperature`)
+
 update_historical_flag_list <- function(new_flagged_data, historical_flagged_data){
 
   # Get the matching index names

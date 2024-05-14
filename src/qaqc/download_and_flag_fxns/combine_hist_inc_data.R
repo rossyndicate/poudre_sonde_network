@@ -1,6 +1,18 @@
-# combines subset of historically flagged data and creates historical columns
-# historical columns should be a part of the historically flagged data, but it is
-# not at this point
+#' @title Combine historical and incoming data
+#' 
+#' @description
+#' A function that combines the subset of historically flagged data and creates historical columns.
+#' NOTE: historical columns should be a part of the historically flagged data, but it is not at this point.
+#' 
+#' @param incoming_data_list A list of dataframes with the incoming data.
+#' 
+#' @param historical_data_list A list of dataframes with the historical data.
+#' 
+#' @return A list of dataframes with the combined historical and incoming data.
+#' 
+#' @examples
+#' combine_hist_inc_data(incoming_data_list = incoming_data_list, historical_data_list = historical_data_list)
+
 combine_hist_inc_data <- function(incoming_data_list, historical_data_list) {
 
   # Get the matching index names

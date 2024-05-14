@@ -1,3 +1,16 @@
+#' @title Network Check
+#'
+#' @description
+#' This function performs a network check on a given data frame, flagging potential 
+#' issues in the data based on upstream and downstream sites.
+#'
+#' @param df A site-parameter data frame that has gone through the initial flagging
+#' process.
+#' 
+#' @return A modified data frame flags that have been altered based on the network check.
+#' 
+#' @examples
+#' network_check(df = all_data_flagged$`archery-Actual Conductivity`)
 
 network_check <- function(df) {
 

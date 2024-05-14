@@ -1,9 +1,16 @@
-# Clean field notes
-# Pulling in field notes and adding relevant datetime columns
-# @param field_note_path Path to the field notes excel file.
-# @return A dataframe with the field notes.
-# @examples
-# clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
+#' @title Clean field notes
+#' 
+#' @description
+#' A function that cleans the field notes excel file. This function adds datetime
+#' columns to the field notes dataframe and filters out field notes where the sensor
+#' was not handled.
+#' 
+#' @param raw_field_notes A dataframe with the raw field notes.
+#' 
+#' @return A dataframe with the field notes.
+#' 
+#' @examples
+#' clean_field_notes(field_note_path = "data/sensor_field_notes.xlsx")
 
 clean_field_notes <- function(raw_field_notes){
 
