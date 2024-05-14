@@ -1,11 +1,7 @@
-grab_mwater_malfunction_records <- function(mwater_api_data){
-
-  #source clean mWater script for all notes cleaned
-
-  source("src/mWater_collate/clean_mwater_notes.R")
+grab_mWater_malfunction_notes <- function(mWater_api_data){
 
   # Grab notes about sensor malfunction
-  malfunction_records <- mwater_api_data %>%
+  malfunction_records <- mWater_api_data %>%
     filter(grepl("Sensor malfunction", visit_type, ignore.case = TRUE)) %>%
     select(start_DT, site, crew, which_sensor_malfunction, malfunction_end_dt, notes = visit_comments)
 

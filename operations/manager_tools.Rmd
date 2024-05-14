@@ -17,11 +17,11 @@ This function looks at the user inputs for calibration report collect and logs c
 
 ```{r}
 #source clean mwater script for all notes cleaned
-source("src/mWater_collate/clean_mwater_notes.R")
-all_notes_cleaned <- clean_mwater_notes()
+source("src/load_mWater_notes.R")
+all_notes_cleaned <- load_mWater_notes()
 
 
-source("src/mWater_collate/files_missing.R")
+source("src/files_missing.R")
 files_missing()
 
 ```
@@ -36,7 +36,7 @@ Goal:
 
 ```{r}
 #source function
-source("src/mWater_collate/sampling_spreadsheet_creator.R")
+source("src/sampling_spreadsheet_creator.R")
 # To get the RMRS style data for a specfic date of sampling, 
 # Input the date of interest in sampling_spreadsheet_creator
 
@@ -61,15 +61,13 @@ Goal:
 -   Only download photos which have not yet been downloaded
 
 ```{r}
-source("src/mWater_collate/download_pictures.R")
+source("src/download_pictures.R")
   
 #RUN TO DOWNLOAD NEW PICTURES
 # It takes about 2-5 minutes to download ~25-50 photos
 # Sometimes the request to mWater time out, just re run the function below if that happens
 
 download_pictures()
-        
-
 ```
 
 # Remove extra objects not needed in QAQC pipeline

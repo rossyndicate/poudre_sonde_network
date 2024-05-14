@@ -16,7 +16,7 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
 
   #source clean mwater script for all notes cleaned
 
-  source("src/mWater_collate/clean_mwater_notes.R")
+  source("src/load_mWater_notes.R")
 
   #pull in site meta data
   site_meta <- read_csv("data/metadata/water_sampling_sites.csv",show_col_types = FALSE)%>%
@@ -28,7 +28,7 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
     mutate(site_code = tolower(site_code))
 
   # create df of all water samples and save DT, handheld probe and chla volume data
-  sampling_notes <- clean_mwater_notes()%>%
+  sampling_notes <- load_mWater_notes()%>%
     filter(grepl("Sampling",visit_type))%>%
     mutate(all_pics_taken = case_when(!is.na(downstream_pic)&!is.na(upstream_pic)&!is.na(clarity)&!is.na(filter_pic) ~ TRUE, TRUE ~ FALSE),
            #correct names if it is in our upper sites (acronyms)
