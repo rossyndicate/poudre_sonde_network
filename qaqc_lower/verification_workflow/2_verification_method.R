@@ -32,5 +32,8 @@ for (i in weekly_plot_objects) {
 # Quit toggle
 QUIT <- FALSE
 
+# check data
+# updated_df <- readRDS(paste0(intermediary_path, site_param_name))
+
 # clean the directories
 clean_directories()
