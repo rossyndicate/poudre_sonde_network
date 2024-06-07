@@ -34,7 +34,7 @@ get_working_data_decision()
 ```{r set site and parameter variables}
 # Set the site and parameter to verify
 site <- "legacy"
-parameter <- "pH"
+parameter <- "DO"
 ```
 
 ```{r set the site-param df to update}

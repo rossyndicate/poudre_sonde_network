@@ -356,14 +356,14 @@ verify_flag_data <- function(df_list_arg,
       altered_df_list <- altered_df_list %>%
         mutate(mean_verified = if_else(grepl(non_removable_flags, flag, ignore.case = TRUE), NA, mean_verified),
                is_verified = TRUE,
-               verification_status = "PASS")
+               verification_status = ifelse(grepl(non_removable_flags, flag, ignore.case = TRUE), "PASS", verification_status))
     } else if (is.list(altered_df_list)) {
       altered_df_list <- map(altered_df_list, function(df) {
         if(!is.null(df)) {
           df %>%
             mutate(mean_verified = if_else(grepl(non_removable_flags, flag, ignore.case = TRUE), NA, mean_verified),
                    is_verified = TRUE,
-                   verification_status = "PASS")
+                   verification_status = ifelse(grepl(non_removable_flags, flag, ignore.case = TRUE), "PASS", verification_status))
         }
       })
     }
