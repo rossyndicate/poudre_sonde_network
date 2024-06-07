@@ -1,0 +1,69 @@
+```{r set up}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries, functions, and all flagged data}
+# Load necessary libraries
+library(tidyverse)
+library(ggpubr)
+
+# set data directory paths
+all_path <- "data/verification/all_data_directory/"
+pre_verification_path <- "data/verification/pre_verification_directory/"
+intermediary_path <- "data/verification/intermediary_directory/"
+verified_path <- "data/verification/verified_directory/"
+
+# set function directory paths
+fxn_path <- "src/"
+
+# Source functions
+invisible(map(
+  list.files(fxn_path, pattern = "*.R", full.names = TRUE),
+  ~ source(.x, echo = FALSE)
+))
+  
+# Load all flagged data
+all_data <- set_names(map(list.files(all_path, full.names = TRUE), readRDS), list.files(all_path))
+```
+
+```{r working data selection}
+# Prompt user to select data for verification
+get_working_data_decision()
+```
+
+```{r set site and parameter variables}
+# Set the site and parameter to verify
+site <- "legacy"
+parameter <- "DO"
+```
+
+```{r set the site-param df to update}
+# Initialize the site-parameter dataframe to be updated
+site_param_name <- paste0(site, "-", parameter)
+
+tryCatch({
+  updated_site_param_df <- working_data[[site_param_name]]
+}, error = function(e) {
+  error_message <- paste0("Error: '", site_param_name, "' not found in the data.\n",
+                          "Please check the spelling of the site or parameter and make sure the data exists.")
+  stop(error_message, call. = FALSE)
+})
+
+# Save the updated site-parameter dataframe to the intermediary directory
+save_intermediary_dir(updated_df = updated_site_param_df, df_name = site_param_name)
+```
+
+```{r generate the initial weekly plot objects, warning=FALSE}
+# Generate initial weekly plot objects
+weekly_plot_objects <- generate_initial_weekly_plots(
+  all_df_list = all_data,
+  pending_df_list = working_data, 
+  site_arg = site,
+  parameter_arg = parameter,
+  flag_arg = NULL
+)
+QUIT <- FALSE
+
+# Subset weekly plot objects (for testing)
+# weekly_plot_objects <- tail(weekly_plot_objects, 4)
+```
