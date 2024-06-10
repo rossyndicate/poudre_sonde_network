@@ -3,8 +3,8 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
   site_param <- paste0(site_arg, "-", parameter_arg)
 
   site_flag_dates <- pending_df_list[[site_param]] %>%
-    group_by(week) %>%
-    filter(any(verification_status == "SKIP") | (!is_verified)) %>%
+    group_by(y_w) %>%
+    filter(any(verification_status == "SKIP") | any(!is_verified)) %>%
     ungroup()
 
   if (!is.null(site_flag_dates)){
@@ -27,6 +27,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
     #   slice(1)
 
     if (nrow(site_flag_dates >0)) {
+
       if (is.null(flag_arg)) {
         # This for loop generates an overlayed plot of weekly data for the site of
         # interest sandwiched by the site above and below it for each day that was

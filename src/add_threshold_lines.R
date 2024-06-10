@@ -49,7 +49,6 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
     site_data <- filter(plot_data, site == site_arg)
 
     if (!all(is.na(site_data$mean))) {
-
         # Lower bound
         if ( # !is.infinite(min(site_data$mean, na.rm = TRUE)) &
             (min(site_data$mean, na.rm = TRUE) <= seasonal_threshold_s1_quantiles[1] | min(site_data$mean, na.rm = TRUE) <= seasonal_threshold_s2_quantiles[1])) {
@@ -217,18 +216,9 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
                          color = "Sensor Max",
                          linetype = "Sensor"))
       }
-
-      # plot <- plot +
-      #   scale_color_manual(name = "Thresholds",
-      #                      values = c("Seasonal Min" = "blue", "Seasonal Max" = "blue",
-      #                                 "Real Min" = "green", "Real Max" = "green",
-      #                                 "Sensor Min" = "red", "Sensor Max" = "red")) +
-      #   scale_linetype_manual(name = "Thresholds",
-      #                         values = c("Seasonal Min" = "dashed", "Seasonal Max" = "dashed",
-      #                                    "Real" = "dashed"))
-
       return(plot)
     }
     return(plot)
   }
+  return(plot)
 }
