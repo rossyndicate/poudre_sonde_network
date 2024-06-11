@@ -52,9 +52,9 @@ verify_subdaily <- function(daily_verification_decision_arg,
       }
 
       # update the specific row in df_daily_data based on the index
-      row_index <- which(daily_plot_data_arg$DT_join == day_dt)
+      j_index <- which(daily_plot_data_arg$DT_join == day_dt)
 
-      altered_row <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[row_index, ])
+      altered_row <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[j_index, ])
 
       daily_plot_data_arg <- daily_plot_data_arg %>%
         mutate(
