@@ -53,7 +53,15 @@ verify_subdaily <- function(daily_verification_decision_arg,
 
       # update the specific row in df_daily_data based on the index
       row_index <- which(daily_plot_data_arg$DT_join == day_dt)
-      daily_plot_data_arg[row_index, ] <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[row_index, ])
+
+      altered_row <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[row_index, ])
+
+      daily_plot_data_arg <- daily_plot_data_arg %>%
+        mutate(
+          mean_verified = if_else(row_number() == j_index, altered_row$mean_verified, mean_verified),
+          is_verified = if_else(row_number() == j_index, altered_row$is_verified, is_verified),
+          verification_status = if_else(row_number() == j_index, altered_row$verification_status, verification_status)
+        )
     }
     # inform the user that they are done verifying which ever df
     cat("Finished verifying: ", as.character(min(daily_plot_data_arg$DT_round)), " data.\n")
@@ -97,7 +105,14 @@ verify_subdaily <- function(daily_verification_decision_arg,
 
         j_index <- which((daily_plot_data_arg$DT_join) == j)
 
-        daily_plot_data_arg[j_index, ] <- alter_verification_column(non_inspect_verification_decision, daily_plot_data_arg[j_index, ])
+        altered_row <- alter_verification_column(non_inspect_verification_decision, daily_plot_data_arg[j_index, ])
+
+        daily_plot_data_arg <- daily_plot_data_arg %>%
+          mutate(
+            mean_verified = if_else(row_number() == j_index, altered_row$mean_verified, mean_verified),
+            is_verified = if_else(row_number() == j_index, altered_row$is_verified, is_verified),
+            verification_status = if_else(row_number() == j_index, altered_row$verification_status, verification_status)
+          )
 
         # some sort of print statement to show what happened to the non-target dts
       }
@@ -152,7 +167,14 @@ verify_subdaily <- function(daily_verification_decision_arg,
 
       # update the specific row in df_daily_data based on the index
       # row_index <- which(as.character(daily_plot_data_arg$DT_round) == day_dt)
-      daily_plot_data_arg[j_index, ] <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[j_index, ])
+      altered_row <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[j_index, ])
+
+      daily_plot_data_arg <- daily_plot_data_arg %>%
+        mutate(
+          mean_verified = if_else(row_number() == j_index, altered_row$mean_verified, mean_verified),
+          is_verified = if_else(row_number() == j_index, altered_row$is_verified, is_verified),
+          verification_status = if_else(row_number() == j_index, altered_row$verification_status, verification_status)
+        )
     }
     # inform the user that they are done verifying which ever df
     cat("Finished verifying: ", as.character(min(daily_plot_data_arg$DT_round)), " data.\n")
@@ -160,6 +182,7 @@ verify_subdaily <- function(daily_verification_decision_arg,
     # altered_df_list_arg[[i]] <- daily_plot_data_arg # make sure that this is the updated data frame
 
   }
+
   # inspect flagged
   if (daily_verification_decision_arg == "INSPECT FLAGGED") {
 
@@ -197,8 +220,14 @@ verify_subdaily <- function(daily_verification_decision_arg,
 
         j_index <- which((daily_plot_data_arg$DT_join) == j)
 
-        daily_plot_data_arg[j_index, ] <- alter_verification_column(non_inspect_verification_decision, daily_plot_data_arg[j_index, ])
+        altered_row <- alter_verification_column(non_inspect_verification_decision, daily_plot_data_arg[j_index, ])
 
+        daily_plot_data_arg <- daily_plot_data_arg %>%
+          mutate(
+            mean_verified = if_else(row_number() == j_index, altered_row$mean_verified, mean_verified),
+            is_verified = if_else(row_number() == j_index, altered_row$is_verified, is_verified),
+            verification_status = if_else(row_number() == j_index, altered_row$verification_status, verification_status)
+            )
         # some sort of print statement to show what happened to the non-target dts
       }
     }
@@ -252,15 +281,23 @@ verify_subdaily <- function(daily_verification_decision_arg,
       }
 
       # update the specific row in df_daily_data based on the index
-      # row_index <- which(as.character(daily_plot_data_arg$DT_round) == day_dt)
-      daily_plot_data_arg[j_index, ] <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[j_index, ])
+      altered_row <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[j_index, ])
+
+      daily_plot_data_arg <- daily_plot_data_arg %>%
+        mutate(
+          mean_verified = if_else(row_number() == j_index, altered_row$mean_verified, mean_verified),
+          is_verified = if_else(row_number() == j_index, altered_row$is_verified, is_verified),
+          verification_status = if_else(row_number() == j_index, altered_row$verification_status, verification_status)
+        )
+
     }
     # inform the user that they are done verifying which ever df
     cat("Finished verifying: ", as.character(min(daily_plot_data_arg$DT_round)), " data.\n")
 
   }
+
   # inspect some
-  if (daily_verification_decision_arg == "INSPECT SOME") { # asdf
+  if (daily_verification_decision_arg == "INSPECT SOME") {
 
     # get which dts to inspect
     dt_intervals_to_inspect <- get_dt_inspection_decisions(daily_plot_data = daily_plot_data_arg)
@@ -290,12 +327,25 @@ verify_subdaily <- function(daily_verification_decision_arg,
       }
 
       for (j in non_dts_to_inspect) {
-        j <- format(as.POSIXct(j, tz = "MST"), "%Y-%m-%d %H:%M:%S")
+        j_time <- format(as.POSIXct(j, tz = "MST"), "%H:%M:%S")
+        j <- if_else(
+          j_time == "00:00:00",
+          format(as.POSIXct(j, tz = "MST"), "%Y-%m-%d"),
+          format(as.POSIXct(j, tz = "MST"), "%Y-%m-%d %H:%M:%S")
+        )
 
-        j_index <- which((daily_plot_data_arg$DT_round) == j)
+        j_index <- which((daily_plot_data_arg$DT_join) == j)
 
-        daily_plot_data_arg[j_index, ] <- alter_verification_column(non_inspect_verification_decision, daily_plot_data_arg[j_index, ])
+        # daily_plot_data_arg[j_index, ] <- alter_verification_column(non_inspect_verification_decision, daily_plot_data_arg[j_index, ])
 
+        altered_row <- alter_verification_column(non_inspect_verification_decision, daily_plot_data_arg[j_index, ])
+
+        daily_plot_data_arg <- daily_plot_data_arg %>%
+          mutate(
+            mean_verified = if_else(row_number() == j_index, altered_row$mean_verified, mean_verified),
+            is_verified = if_else(row_number() == j_index, altered_row$is_verified, is_verified),
+            verification_status = if_else(row_number() == j_index, altered_row$verification_status, verification_status)
+          )
         # some sort of print statement to show what happened to the non-target dts
       }
     }
@@ -353,7 +403,16 @@ verify_subdaily <- function(daily_verification_decision_arg,
 
         # update the specific row in df_daily_data based on the index
         # row_index <- which(as.character(daily_plot_data_arg$DT_round) == day_dt)
-        daily_plot_data_arg[k_index, ] <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[k_index, ])
+        # daily_plot_data_arg[k_index, ] <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[k_index, ])
+
+        altered_row <- alter_verification_column(dt_verification_decision, daily_plot_data_arg[k_index, ])
+
+        daily_plot_data_arg <- daily_plot_data_arg %>%
+          mutate(
+            mean_verified = if_else(row_number() == k_index, altered_row$mean_verified, mean_verified),
+            is_verified = if_else(row_number() == k_index, altered_row$is_verified, is_verified),
+            verification_status = if_else(row_number() == k_index, altered_row$verification_status, verification_status)
+          )
       }
     }
     # inform the user that they are done verifying which ever df
