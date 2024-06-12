@@ -1,3 +1,4 @@
+# fix_plots <- list(weekly_plot_objects$`legacy-Temperature 2023-06-04`)
 for (i in weekly_plot_objects) {
 
   if(QUIT){
@@ -16,8 +17,11 @@ for (i in weekly_plot_objects) {
     update <- bind_rows(update)
 
     # update site param df
-    matching_rows <- updated_site_param_df$DT_join %in% update$DT_join
-    updated_site_param_df[matching_rows, ] <- update[update$DT_join %in% updated_site_param_df$DT_join, ]
+    updated_site_param_df <- updated_site_param_df %>%
+      mutate(
+        mean_verified = as.double(mean_verified),
+        verification_status = as.character(verification_status)) %>%
+      rows_update(update, by = "DT_join")
 
     # update the saved data in the intermediary dir
     saveRDS(object = updated_site_param_df, file = paste0(intermediary_path, site_param_name))
