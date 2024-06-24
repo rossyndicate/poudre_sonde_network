@@ -37,7 +37,7 @@ files_missing <- function(){
     filter(year(DT_round) == field_season)%>%
     filter(grepl("Sensor",visit_type, ignore.case = TRUE))%>%
     filter(cal_report_collected|log_downloaded)%>%
-    select(site, crew, start_DT, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
+    select(site, crew, start_DT,end_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd)%>%
     mutate(
       #make all site names lower
       site = tolower(site),
@@ -45,6 +45,8 @@ files_missing <- function(){
       # this will be used to check for calibration report in data files and then b
       cal_report_name = case_when(cal_report_collected == TRUE ~ paste0(site, "_", format(start_DT, "%Y%m%d")),
                                   cal_report_collected == NA ~ NA),
+      full_cal_name = case_when(cal_report_collected == TRUE ~ paste0(site, "_", format(end_dt, "%Y%m%d_%H%M_mst")),
+                                cal_report_collected == NA ~ NA),
       log1_mmdd = case_when(nchar(as.character(log1_mmdd)) == 3 ~ paste0("0",log1_mmdd),
                             TRUE ~ as.character(log1_mmdd)),
       log1_type = case_when( grepl("aquatroll", log1_type,ignore.case = TRUE) ~  "troll",
@@ -95,21 +97,21 @@ files_missing <- function(){
       cal_missing = case_when(
         is.na(cal_report_collected) ~ FALSE,
         cal_report_name %nin% cal_reports_simple ~ TRUE,
-        TRUE ~ FALSE
+        TRUE ~ FALSE)
       )
-    )
+
 
 
   for (i in 1:nrow(sensor_files)) {
 
     #if log missing print out missing logs or cal reports
     if(sensor_files$log_missing[i]){
-      cat("\nLog Missing: ", sensor_files$log1_name[i], " or ", sensor_files$log2_name[i], "\nContact: ", sensor_files$crew[i], "\n")
+      cat("\nLog Missing: ", sensor_files$log1_name[i], " and/or ", sensor_files$log2_name[i], "\nContact: ", sensor_files$crew[i], "\n")
 
     }
     #if log missing print out missing logs or cal reports
     if(sensor_files$cal_missing[i]){
-      cat("\nCal Missing: ", sensor_files$cal_report_name[i]," \nContact: ", sensor_files$crew[i], "\n")
+      cat("\nCal Missing: ", sensor_files$full_cal_name[i]," \nContact: ", sensor_files$crew[i], "\n")
     }
 
 
