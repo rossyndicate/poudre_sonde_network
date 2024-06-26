@@ -5,14 +5,23 @@ generate_daily_plot <- function(plot_data_arg, df_list_arg, site_arg, parameter_
   start_date <- min(plot_data_arg$DT_round)
   end_date <- max(plot_data_arg$DT_round)
 
-  site_vector <- c("tamasag",
-                   "legacy",
-                   "lincoln",
-                   "timberline",
-                   "prospect",
-                   "boxelder",
-                   "archery",
-                   "river bluffs")
+  site_vector <-  c("joei",
+                    "cbri",
+                    "chd",
+                    "pfal",
+                    "pbd",
+                    "sfm",
+                    "lbea",
+                    "penn",
+                    NA,
+                    "timberline",
+                    "timberline virridy",
+                    "springcreek",
+                    "prospect",
+                    "prospect virridy",
+                    "archery",
+                    "archery virridy",
+                    "boxcreek")
 
   # determining the index for the site of interest.
   site_index <- which(site_vector == site_arg)

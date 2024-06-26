@@ -10,14 +10,24 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
   if (!is.null(site_flag_dates)){
     # vector of sites in the order that they are in spatially ----
     # some sites have some funkiness going on (not all of the sites are present in the final plot)
-    sites_order <- c("tamasag", # rist
-                     "legacy",
-                     "lincoln",
+    sites_order <- c("joei",
+                     "cbri",
+                     "chd",
+                     "pfal",
+                     "pbd",
+                     "sfm",
+                     "lbea",
+                     "penn",
+                     NA,
                      "timberline",
+                     "timberline virridy",
+                     "springcreek",
                      "prospect",
-                     "boxelder", # elc
+                     "prospect virridy",
                      "archery",
-                     "river bluffs")
+                     "archery virridy",
+                     "boxcreek")
+
     # determining the index for the site of interest.
     site_index <- which(sites_order == site_arg)
 
@@ -77,8 +87,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
             keep(~ !is.null(.)) %>%
             # remove empty dfs from the list
             keep(~ nrow(.)>0) %>%
-            bind_rows() %>%
-            arrange(weekday)
+            bind_rows()
 
           # Create a sequence of dates for the vertical lines
           start_date <- floor_date(min(week_plot_data$DT_round), "day")
@@ -111,12 +120,11 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
             theme_bw() +
             scale_x_datetime(date_breaks = "1 day",
                              date_labels = "%b %d",
-                             minor_breaks = date_seq,
-                             sec.axis = sec_axis(~ ., breaks = date_seq, labels = unique(week_plot_data$weekday))) +
+                             minor_breaks = date_seq) +
             theme(legend.position = 'bottom',
                   panel.grid.major = element_blank(),
                   panel.grid.minor = element_blank()) +
-            # annotate("text", x = date_seq, y = min(week_plot_data$mean, na.rm = TRUE) - 1, label = unique(week_plot_data$weekday), hjust = 0) +
+            annotate("text", x = date_seq, y = min(week_plot_data$mean, na.rm = TRUE) - 1, label = unique(week_plot_data$weekday), hjust = 0) +
             guides(color = guide_legend(nrow = 4, byrow = TRUE))
 
           plot_list[[paste(site_param, as.character(flag_day))]] <- week_plot

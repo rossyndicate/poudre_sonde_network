@@ -8,14 +8,23 @@ generate_supplemental_weekly_plot <- function(daily_plot_data_arg, df_list_arg, 
   week_plot_data <- site_param_df %>%
     filter(DT_round %within% interval(start_date, end_date))
 
-  site_vector <- c("tamasag",
-                    "legacy",
-                    "lincoln",
-                    "timberline",
-                    "prospect",
-                    "boxelder",
-                    "archery",
-                    "river bluffs")
+  site_vector <- c("joei",
+                   "cbri",
+                   "chd",
+                   "pfal",
+                   "pbd",
+                   "sfm",
+                   "lbea",
+                   "penn",
+                   NA,
+                   "timberline",
+                   "timberline virridy",
+                   "springcreek",
+                   "prospect",
+                   "prospect virridy",
+                   "archery",
+                   "archery virridy",
+                   "boxcreek")
 
   # determining the index for the site of interest.
   site_index <- which(site_vector == site_arg)
@@ -62,7 +71,7 @@ generate_supplemental_weekly_plot <- function(daily_plot_data_arg, df_list_arg, 
     geom_line(data = filter(week_plot_data, (site != unique(daily_plot_data_arg$site))),
               aes(x=DT_round, y=mean, color=site)) +
     geom_rect(data = daily_plot_data_arg, aes(xmin = min(DT_round), xmax = max(DT_round),
-                                        ymin = -Inf, ymax = Inf),
+                                              ymin = -Inf, ymax = Inf),
               fill = "grey",
               alpha = 0.01,
               color = NA) +
