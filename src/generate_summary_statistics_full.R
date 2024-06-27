@@ -1,7 +1,7 @@
 #' @title Generate Summary Statistics
 #'
 #' @description
-#' A function that generates summary statistics for a given site parameter data frame. 
+#' A function that generates summary statistics for a given site parameter data frame.
 #' The generated statistics include:
 #'   - The next value and previous value for the mean.
 #'   - The rolling 7-point median of the mean.
@@ -13,9 +13,9 @@
 #'   - The year-month combination.
 #'
 #' @param site_param_df A data frame with a `mean` column retrieved from HydroVu API.
-#' 
+#'
 #' @return A data frame with summary statistics for a given site parameter data frame.
-#' 
+#'
 #' @examples
 #' generate_summary_statistics(site_param_df = all_data_flagged$`archery-Actual Conductivity`)
 #' generate_summary_statistics(site_param_df = all_data_flagged$`boxelder-Temperature`)
