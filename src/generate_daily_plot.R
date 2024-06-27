@@ -25,6 +25,7 @@ generate_daily_plot <- function(plot_data_arg, df_list_arg, site_arg, parameter_
                       "lbea",
                       "penn",
                       NA,
+                      "lincoln",
                       "timberline",
                       "timberline virridy",
                       "springcreek",

@@ -30,6 +30,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
                         "lbea",
                         "penn",
                         NA,
+                        "lincoln",
                         "timberline",
                         "timberline virridy",
                         "springcreek",

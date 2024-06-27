@@ -59,8 +59,9 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
 # all_older_data <- try(munge_api_data(api_path = "data/api/virridy/", network = "virridy") %>%
 #   dplyr::filter(lubridate::year(DT_round) >= 2023))
 
-incoming_data_csvs_upload <- api_puller(site = "Timberline", #c("JOEI", "CBRI", "CHD", "PFAL", "PBD", "SFM",
-                                                 #"LBEA", "PENN", "BoxCreek", "Timberline", "Prospect", "SpringCreek", "Archery"),
+incoming_data_csvs_upload <- api_puller(site = c("JOEI", "CBRI", "CHD", "PFAL", "PBD", "SFM",
+                                                 "LBEA", "PENN", "BoxCreek", "Lincoln",
+                                                 "Timberline", "Prospect", "SpringCreek", "Archery"),
                                         start_dt = "2023-01-01 01:00:00 MDT",
                                         end_dt = Sys.time(), 
                                         api_token = hv_token,
@@ -98,7 +99,7 @@ params <- c(# "Battery Level",
   "Specific Conductivity",
   "Temperature",
   "Turbidity",
-  "FDOM")
+  "FDOM Fluorescence")
 
 # Constructing a df to iterate over each site-parameter combination
 site_param_combos <- tidyr::crossing(sites, params)
@@ -216,19 +217,19 @@ intersensor_checks <- all_data_flagged %>%
 final_flag <- intersensor_checks %>%
   map(~add_suspect_flag_full(.)) %>%
   map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes)) %>%
-  map(~network_check(.)) %>%
+  map(~network_check(df = ., network = "virridy")) %>%
   bind_rows() %>%
   # Clean up the flag column to avoid redundant flagging info:
   mutate(final_cleaned_flag = ifelse(is.na(auto_cleaned_flag), NA,
-                                     ifelse(grepl("site visit|sv window", auto_cleaned_flag), str_remove_all(auto_cleaned_flag, "(DO interference|repeated value|drift|missing data|sonde not employed|outside of seasonal range|slope violation|outside of sensor specification range|outside of sensor realistic range|frozen|sonde unsubmerged|suspect data)"),
-                                            ifelse(grepl("sensor malfunction", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sensor malfunction",
-                                                   ifelse(grepl("sonde burial", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sonde burial",
-                                                          ifelse(grepl("sensor biofouling", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sensor biofouling",
+                              ifelse(grepl("site visit|sv window", auto_cleaned_flag), str_remove_all(auto_cleaned_flag, "(DO interference|repeated value|drift|missing data|sonde not employed|outside of seasonal range|slope violation|outside of sensor specification range|outside of sensor realistic range|frozen|sonde unsubmerged|suspect data)"),
+                              ifelse(grepl("sensor malfunction", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sensor malfunction",
+                              ifelse(grepl("sonde burial", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sonde burial",
+                              ifelse(grepl("sensor biofouling", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sensor biofouling",
                                                                  auto_cleaned_flag))))),
          wo_sensor_mal = str_remove_all(final_cleaned_flag, "(sensor malfunction|sonde burial|sensor biofouling)")) %>%
   # after all that, remove lonely "suspect" flags. That is, suspects that are totally isolated after removing flags through the network check:
   mutate(final_cleaned_flag = ifelse(is.na(final_cleaned_flag), NA,
-                                     ifelse(final_cleaned_flag == "suspect data" & is.na(lag(final_cleaned_flag, 1)) & is.na(lead(final_cleaned_flag, 1)), NA, final_cleaned_flag)))
+                              ifelse(final_cleaned_flag == "suspect data" & is.na(lag(final_cleaned_flag, 1)) & is.na(lead(final_cleaned_flag, 1)), NA, final_cleaned_flag)))
 
 # Function to remove ";" or "; " at the end of a string
 remove_trailing_semicolon <- function(text) {
