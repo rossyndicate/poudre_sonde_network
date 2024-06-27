@@ -10,23 +10,36 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
   if (!is.null(site_flag_dates)){
     # vector of sites in the order that they are in spatially ----
     # some sites have some funkiness going on (not all of the sites are present in the final plot)
-    sites_order <- c("joei",
-                     "cbri",
-                     "chd",
-                     "pfal",
-                     "pbd",
-                     "sfm",
-                     "lbea",
-                     "penn",
-                     NA,
+    #default is lower network
+    sites_order <- c("tamasag", # rist
+                     "legacy",
+                     "lincoln",
                      "timberline",
-                     "timberline virridy",
-                     "springcreek",
                      "prospect",
-                     "prospect virridy",
+                     "boxelder", # elc
                      "archery",
-                     "archery virridy",
-                     "boxcreek")
+                     "river bluffs")
+
+    if(network == "virridy"){
+      sites_order <-  c("joei",
+                        "cbri",
+                        "chd",
+                        "pfal",
+                        "pbd",
+                        "sfm",
+                        "lbea",
+                        "penn",
+                        NA,
+                        "timberline",
+                        "timberline virridy",
+                        "springcreek",
+                        "prospect",
+                        "prospect virridy",
+                        "archery",
+                        "archery virridy",
+                        "boxcreek")
+    }
+
 
     # determining the index for the site of interest.
     site_index <- which(sites_order == site_arg)

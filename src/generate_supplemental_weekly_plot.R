@@ -8,23 +8,35 @@ generate_supplemental_weekly_plot <- function(daily_plot_data_arg, df_list_arg, 
   week_plot_data <- site_param_df %>%
     filter(DT_round %within% interval(start_date, end_date))
 
-  site_vector <- c("joei",
-                   "cbri",
-                   "chd",
-                   "pfal",
-                   "pbd",
-                   "sfm",
-                   "lbea",
-                   "penn",
-                   NA,
+  #default is lower network
+  site_vector <- c("tamasag", # rist
+                   "legacy",
+                   "lincoln",
                    "timberline",
-                   "timberline virridy",
-                   "springcreek",
                    "prospect",
-                   "prospect virridy",
+                   "boxelder", # elc
                    "archery",
-                   "archery virridy",
-                   "boxcreek")
+                   "river bluffs")
+
+  if(network == "virridy"){
+    site_vector <-  c("joei",
+                      "cbri",
+                      "chd",
+                      "pfal",
+                      "pbd",
+                      "sfm",
+                      "lbea",
+                      "penn",
+                      NA,
+                      "timberline",
+                      "timberline virridy",
+                      "springcreek",
+                      "prospect",
+                      "prospect virridy",
+                      "archery",
+                      "archery virridy",
+                      "boxcreek")
+  }
 
   # determining the index for the site of interest.
   site_index <- which(site_vector == site_arg)

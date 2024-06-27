@@ -32,9 +32,10 @@ get_working_data_decision()
 ```
 
 ```{r set site and parameter variables}
+network <- "csu"
 # Set the site and parameter to verify
-site <- "legacy"
-parameter <- "Temperature"
+site <- "tamasag"
+parameter <- "DO"
 ```
 
 ```{r set the site-param df to update}
