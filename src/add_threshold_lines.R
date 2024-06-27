@@ -5,7 +5,7 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
     filter(parameter == parameter_arg)
   sensor_thresholds <- read_csv("data/qaqc/sensor_spec_thresholds.csv", show_col_types = FALSE) %>%
     filter(parameter == parameter_arg)
-  seasonal_thresholds <- bind_rows(read_csv('data/qaqc/seasonal_thresholds.csv'), read_csv('data/qaqc/seasonal_thresholds_virridy.csv')) %>%
+  seasonal_thresholds <- bind_rows(read_csv('data/qaqc/seasonal_thresholds.csv', show_col_type = FALSE), read_csv('data/qaqc/seasonal_thresholds_virridy.csv', show_col_types = FALSE)) %>%
     distinct(site, parameter, season, .keep_all = TRUE) %>%
     #read_csv("data/qaqc/seasonal_thresholds_virridy.csv", show_col_types = FALSE) %>%
     filter(parameter == parameter_arg,
