@@ -126,7 +126,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
             labs(x = "Day",
                  y = "Mean")
 
-          if(!all(is.na(week_plot_data$mean))){
+         
           week_plot <- add_threshold_lines(plot = week_plot,
                                            plot_data = week_plot_data,
                                            site_arg = site_arg,
