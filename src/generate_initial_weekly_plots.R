@@ -126,17 +126,19 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
             labs(x = "Day",
                  y = "Mean")
 
+          if(!all(is.na(week_plot_data$mean))){
           week_plot <- add_threshold_lines(plot = week_plot,
                                            plot_data = week_plot_data,
                                            site_arg = site_arg,
                                            parameter_arg = parameter_arg)
+          }
 
           week_plot <- week_plot +
             theme_bw() +
             scale_x_datetime(date_breaks = "1 day",
                              date_labels = "%b %d",
                              minor_breaks = date_seq,
-                             sec.axis = sec_axis(~., breaks = date_seq, labels = unique(week_plot_data$weekday))) +
+                             sec.axis = sec_axis(~., breaks = date_seq, labels = 1:length(date_seq))) + #unique(week_plot_data$weekday))) +
             theme(legend.position = 'bottom',
                   panel.grid.major = element_blank(),
                   panel.grid.minor = element_blank()) +
