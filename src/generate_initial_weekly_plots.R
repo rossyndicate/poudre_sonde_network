@@ -131,7 +131,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
                                            plot_data = week_plot_data,
                                            site_arg = site_arg,
                                            parameter_arg = parameter_arg)
-          }
+ 
 
           week_plot <- week_plot +
             theme_bw() +
