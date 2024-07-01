@@ -162,7 +162,7 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
       return(plot)
     }
 
-  } else if (length(unique_seasons == 1)){
+  } else if (length(unique_seasons) == 1){
 
     site_data <- filter(plot_data, site == site_arg)
 
