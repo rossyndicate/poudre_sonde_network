@@ -207,7 +207,7 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
       if (min(site_data$mean, na.rm = TRUE) <= sensor_thresholds_quantiles[1]) {
         plot <- plot +
           geom_hline(aes(yintercept = sensor_thresholds$mix,
-                     color = "Sensor Mine",
+                     color = "Sensor Min",
                      linetype = "Sensor"))
       }
       if (max(site_data$mean, na.rm = TRUE) >= sensor_thresholds_quantiles[2]) {

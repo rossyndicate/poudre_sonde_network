@@ -116,7 +116,6 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
             theme(legend.position = 'bottom',
                   panel.grid.major = element_blank(),
                   panel.grid.minor = element_blank()) +
-            # annotate("text", x = date_seq, y = min(week_plot_data$mean, na.rm = TRUE) - 1, label = unique(week_plot_data$weekday), hjust = 0) +
             guides(color = guide_legend(nrow = 4, byrow = TRUE))
 
           plot_list[[paste(site_param, as.character(flag_day))]] <- week_plot
