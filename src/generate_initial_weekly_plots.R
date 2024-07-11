@@ -59,7 +59,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
         plot_list <- list()
 
         grouped_data <- site_flag_dates %>%
-          group_by(week, year) %>% # group_by(week, month, year) %>%
+          group_by(y_w) %>% #group_by(week, year) %>% # group_by(week, month, year) %>%
           group_split()
 
         for(i in 1:length(grouped_data)) {
@@ -102,7 +102,8 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
             # remove empty dfs from the list
             keep(~ nrow(.)>0) %>%
             bind_rows() %>%
-            arrange(weekday)
+            arrange(day)
+          # arrange(weekday)
 
           # Create a sequence of dates for the vertical lines
           start_date <- floor_date(min(week_plot_data$DT_round), "day")
@@ -120,18 +121,17 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
             geom_line(data = filter(week_plot_data, (site != site_arg)),
                       aes(x=DT_round, y=mean, color=site)) +
             geom_vline(xintercept = vline_dates, color = "black") +
-
             ggtitle(paste0(str_to_title(site_arg), " ", parameter_arg, " (", format(flag_day, "%B %d, %Y"), ")")) +
             theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
             labs(x = "Day",
                  y = "Mean")
 
-         
+          #if(!all(is.na(week_plot_data$mean))){
           week_plot <- add_threshold_lines(plot = week_plot,
                                            plot_data = week_plot_data,
                                            site_arg = site_arg,
                                            parameter_arg = parameter_arg)
- 
+          # }
 
           week_plot <- week_plot +
             theme_bw() +
@@ -148,6 +148,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
           sorted_plot_names <- names(plot_list)[order(names(plot_list))]
 
           plot_list <- plot_list[sorted_plot_names]
+
         }
       }
       # ---- not null ----

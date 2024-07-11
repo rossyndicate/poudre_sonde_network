@@ -122,7 +122,7 @@ plotter <- function(site_name = "boxelder",
     geom_line(data = filter(site_df, parameter == "Specific Conductivity"), aes(DT_round, mean), color = "black", cex = 0.8) +
     geom_point(data = filter(site_df, parameter == "Specific Conductivity" & grepl("site visit|sv window", final_cleaned_flag)), aes(DT_round, mean), color = "#E70870", cex = 1.5) +
     theme_bw() +
-    ylim(min = min(filter(site_df, parameter == "Specific Conductivity")$mean) - 1, max = max(filter(site_df, parameter == "DO")$mean) + 1) +
+    ylim(min = min(filter(site_df, parameter == "Specific Conductivity")$mean) - 1, max = max(filter(site_df, parameter == "Specific Conductivity")$mean) + 1) +
     ylab("SpC uS/cm") + xlab("") + ggtitle("")
 
   do <- ggplot() +
@@ -187,32 +187,32 @@ plotter <- function(site_name = "boxelder",
 
   if(parameter %in% c("pH", "ph")){
     plot <- ggarrange(depth, temp, ph, rain,
-                      ncol = 2, nrow = 2)
+                      ncol = 1, nrow = 4)
   }
 
   if(parameter %in% c("orp", "ORP")){
     plot <- ggarrange(depth, temp, orp, rain,
-                       ncol = 2, nrow = 2)
+                       ncol = 1, nrow = 4)
   }
 
   if(parameter %in% c("do","DO")){
     plot <- ggarrange(depth, temp, do, rain,
-                       ncol = 2, nrow = 2)
+                      ncol = 1, nrow = 4)
   }
 
   if(parameter %in% c("turbidity", "turb", "Turb", "Turbidity")){
     plot <- ggarrange(depth, temp, turb, rain,
-                      ncol = 2, nrow = 2)
+                      ncol = 1, nrow = 4)
   }
 
   if(parameter %in% c("Specific Conductivity", "conductivity", "specific conductivity", "sc", "spc", "SC","SpC")){
     plot <- ggarrange(depth, temp, spc, rain,
-                      ncol = 2, nrow = 2)
+                      ncol = 1, nrow = 4)
   }
 
   if(parameter %in% c("chla", "Chla", "chl-a", "chlorophyll a", "Chl-a Fluorescence")){
     plot <- ggarrange(depth, temp, chla, rain,
-                      ncol = 2, nrow = 2)
+                      ncol = 1, nrow = 4)
   }
 
   return(plot)
