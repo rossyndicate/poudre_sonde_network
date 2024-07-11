@@ -10,6 +10,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
   if (!is.null(site_flag_dates)){
     # vector of sites in the order that they are in spatially ----
     # some sites have some funkiness going on (not all of the sites are present in the final plot)
+    #default is lower network
     sites_order <- c("tamasag", # rist
                      "legacy",
                      "lincoln",
@@ -18,6 +19,29 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
                      "boxelder", # elc
                      "archery",
                      "river bluffs")
+
+    if(network == "virridy"){
+      sites_order <-  c("joei",
+                        "cbri",
+                        "chd",
+                        "pfal",
+                        "pbd",
+                        "sfm",
+                        "lbea",
+                        "penn",
+                        NA,
+                        "lincoln",
+                        "timberline",
+                        "timberline virridy",
+                        "springcreek",
+                        "prospect",
+                        "prospect virridy",
+                        "archery",
+                        "archery virridy",
+                        "boxcreek")
+    }
+
+
     # determining the index for the site of interest.
     site_index <- which(sites_order == site_arg)
 
@@ -102,17 +126,19 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
             labs(x = "Day",
                  y = "Mean")
 
+         
           week_plot <- add_threshold_lines(plot = week_plot,
                                            plot_data = week_plot_data,
                                            site_arg = site_arg,
                                            parameter_arg = parameter_arg)
+ 
 
           week_plot <- week_plot +
             theme_bw() +
             scale_x_datetime(date_breaks = "1 day",
                              date_labels = "%b %d",
                              minor_breaks = date_seq,
-                             sec.axis = sec_axis(~ ., breaks = date_seq, labels = unique(week_plot_data$weekday))) +
+                             sec.axis = sec_axis(~., breaks = date_seq, labels = unique(week_plot_data$weekday))) +
             theme(legend.position = 'bottom',
                   panel.grid.major = element_blank(),
                   panel.grid.minor = element_blank()) +

@@ -14,7 +14,7 @@ summarize_site_param_full <- function(site_arg, parameter_arg, api_data, notes =
 
   # filter deployment records for the full join
   site_field_notes <- notes %>%
-    dplyr::filter(site == site_arg)
+    filter(grepl(paste(unlist(str_split(site_arg, " ")), collapse = "|"), site, ignore.case = TRUE))
 
   # filtering the data and generating results
   summary <- tryCatch({
@@ -39,13 +39,14 @@ summarize_site_param_full <- function(site_arg, parameter_arg, api_data, notes =
                     parameter = parameter_arg,
                     flag = NA) %>% # add "flag" column for future processing
       # join our tidied data frame with our field notes data:
-      dplyr::left_join(dplyr::filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, DT_join, site, visit_comments, sensor_malfunction, cals_performed)),
-                       by = c('DT_join', 'site')) %>%
+      dplyr::left_join(dplyr::filter(dplyr::select(site_field_notes, sonde_employed, last_site_visit, DT_join, visit_comments, sensor_malfunction, cals_performed)),
+                       by = c('DT_join')) %>%
       # make sure DT_join is still correct:
       dplyr::mutate(DT_round = lubridate::as_datetime(DT_join, tz = "MST")) %>%
       # Use fill() to determine when sonde was in the field, and when the last site visit was
       # Necessary step for FULL dataset only (this step occurs in combine_hist_inc_data.R for auto)
-      tidyr::fill(c(sonde_employed, last_site_visit, sensor_malfunction))
+      tidyr::fill(c(sonde_employed, last_site_visit, sensor_malfunction)) %>%
+      dplyr::mutate(sonde_employed = ifelse(is.na(sonde_employed), 0, sonde_employed))
   },
 
   error = function(err) {

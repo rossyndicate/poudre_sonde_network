@@ -5,7 +5,9 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
     filter(parameter == parameter_arg)
   sensor_thresholds <- read_csv("data/qaqc/sensor_spec_thresholds.csv", show_col_types = FALSE) %>%
     filter(parameter == parameter_arg)
-  seasonal_thresholds <- read_csv("data/qaqc/seasonal_thresholds.csv", show_col_types = FALSE) %>%
+  seasonal_thresholds <- bind_rows(read_csv('data/qaqc/seasonal_thresholds.csv', show_col_type = FALSE), read_csv('data/qaqc/seasonal_thresholds_virridy.csv', show_col_types = FALSE)) %>%
+    distinct(site, parameter, season, .keep_all = TRUE) %>%
+    #read_csv("data/qaqc/seasonal_thresholds_virridy.csv", show_col_types = FALSE) %>%
     filter(parameter == parameter_arg,
            site == site_arg)
 
@@ -160,7 +162,7 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
       return(plot)
     }
 
-  } else if (length(unique_seasons == 1)){
+  } else if (length(unique_seasons) == 1){
 
     site_data <- filter(plot_data, site == site_arg)
 
@@ -172,13 +174,13 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
       # seasonal thresholds
       seasonal_thresholds_quantiles <- unname(quantile(c(seasonal_thresholds$t_mean01, seasonal_thresholds$t_mean99), c(0.1, 0.9)))
 
-      if (min(site_data$mean, na.rm = TRUE) <= seasonal_thresholds_quantiles[1]) {
+      if ((min(site_data$mean, na.rm = TRUE) <= seasonal_thresholds_quantiles[1]) == TRUE){
         plot <- plot +
           geom_hline(aes(yintercept = seasonal_thresholds$t_mean01,
                          color = "Seasonal Min",
                          linetype = "Seasonal"))
       }
-      if (max(site_data$mean, na.rm = TRUE) >= seasonal_thresholds_quantiles[2]) {
+      if ((max(site_data$mean, na.rm = TRUE) >= seasonal_thresholds_quantiles[2]) == TRUE) {
         plot <- plot +
           geom_hline(aes(yintercept = seasonal_thresholds$t_mean99,
                          color = "Seasonal Max",
