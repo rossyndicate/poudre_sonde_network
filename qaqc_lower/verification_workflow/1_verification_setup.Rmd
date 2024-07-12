@@ -34,8 +34,8 @@ get_working_data_decision()
 ```{r set site and parameter variables}
 network <- "csu"
 # Set the site and parameter to verify
-site <- "tamasag"
-parameter <- "DO"
+site <- "boxelder"
+parameter <- "pH"
 ```
 
 ```{r set the site-param df to update}
@@ -44,11 +44,11 @@ site_param_name <- paste0(site, "-", parameter)
 
 tryCatch({
   updated_site_param_df <- working_data[[site_param_name]]
-}, error = function(e) {
-  error_message <- paste0("Error: '", site_param_name, "' not found in the data.\n",
+    }, error = function(e) {
+      error_message <- paste0("Error: '", site_param_name, "' not found in the data.\n",
                           "Please check the spelling of the site or parameter and make sure the data exists.")
-  stop(error_message, call. = FALSE)
-})
+      stop(error_message, call. = FALSE)
+  })
 
 # Save the updated site-parameter dataframe to the intermediary directory
 save_intermediary_dir(updated_df = updated_site_param_df, df_name = site_param_name)

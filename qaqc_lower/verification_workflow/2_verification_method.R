@@ -1,4 +1,3 @@
-# fix_plots <- list(weekly_plot_objects$`legacy-Temperature 2023-06-04`)
 for (i in weekly_plot_objects) {
 
   if(QUIT){
@@ -6,15 +5,25 @@ for (i in weekly_plot_objects) {
   }
 
   update <- verify_flag_data(
-                df_list_arg = all_data,
-                site_arg = site,
-                parameter_arg = parameter,
-                flag_arg = NULL,
-                weekly_plot_object = i
-                )
+    df_list_arg = all_data,
+    site_arg = site,
+    parameter_arg = parameter,
+    flag_arg = NULL,
+    weekly_plot_object = i
+  )
 
   if (!is.null(update)){
-    update <- bind_rows(update)
+
+    if(is_tibble(update)) {
+      update <- bind_rows(update)
+    } else {
+      update <-  update %>%
+        # remove NULL values from the list
+        keep(~ !is.null(.)) %>%
+        # remove empty dfs from the list
+        keep(~ nrow(.)>0) %>%
+        bind_rows(.)
+    }
 
     # update site param df
     updated_site_param_df <- updated_site_param_df %>%
@@ -30,7 +39,7 @@ for (i in weekly_plot_objects) {
     gc()
   } else {
     next
-    }
+  }
 }
 
 # Quit toggle
