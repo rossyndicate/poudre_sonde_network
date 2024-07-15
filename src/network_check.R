@@ -1,18 +1,18 @@
 #' @title Network Check
 #'
 #' @description
-#' This function performs a network check on a given data frame, flagging potential 
+#' This function performs a network check on a given data frame, flagging potential
 #' issues in the data based on upstream and downstream sites.
 #'
 #' @param df A site-parameter data frame that has gone through the initial flagging
 #' process.
-#' 
+#' @param network Whether the network check is happening across the Virridy sites or CSU sites.
 #' @return A modified data frame flags that have been altered based on the network check.
-#' 
+#'
 #' @examples
 #' network_check(df = all_data_flagged$`archery-Actual Conductivity`)
 
-network_check <- function(df) {
+network_check <- function(df, network = "csu") {
 
   df <- df
 
@@ -23,6 +23,7 @@ network_check <- function(df) {
 
   # vector of sites in the order that they are in spatially
   # some sites have some funkiness going on
+
   sites_order <- c("tamasag", # rist
                    "legacy",
                    "lincoln",
@@ -35,14 +36,80 @@ network_check <- function(df) {
   width_fun = ifelse(site_name == "tamasag", 17, # 2 hours before/after
               ifelse(site_name == "legacy", 17,
               ifelse(site_name == "lincoln", 17,
-              ifelse(site_name =="timberline", 17,
-              ifelse(site_name ==  "prospect", 17,
+              ifelse(site_name == "timberline", 17,
+              ifelse(site_name == "prospect", 17,
               ifelse(site_name == "boxelder", 17,
-              ifelse(site_name ==   "archery", 17,
+              ifelse(site_name == "archery", 17,
               ifelse(site_name == "river bluffs", 17, NA))))))))
 
+  if(network %in% c("virridy", "Virridy")){
+
+    sites_order <-  c("joei",
+                      "cbri",
+                      "chd",
+                      "pfal",
+                      "pbd",
+                      "tamasag",
+                      "legacy",
+                      "lincoln",
+                      "timberline",
+                      #"springcreek",
+                      "prospect",
+                      "boxelder",
+                      #boxcreek,"
+                      "archery",
+                      "river bluffs")
+
+    width_fun = ifelse(site_name == "joei", 17, # 2 hours before/after
+                ifelse(site_name == "cbri", 17,
+                ifelse(site_name == "chd", 17,
+                ifelse(site_name == "pfal", 17,
+                ifelse(site_name == "pbd", 17,
+                ifelse(site_name == "sfm", 17,
+                ifelse(site_name == "lbea", 17,
+                ifelse(site_name == "penn", 17,
+                ifelse(site_name == "tamasag", 17,
+                ifelse(site_name == "legacy", 17,
+                ifelse(site_name == "lincoln", 17,
+                ifelse(site_name == "timberline", 17,
+                ifelse(site_name == "timberline virridy", 17,
+                ifelse(site_name == "springcreek", 17,
+                ifelse(site_name == "prospect", 17,
+                ifelse(site_name == "prospect virridy", 17,
+                ifelse(site_name == "boxelder", 17,
+                ifelse(site_name == "boxcreek", 17,
+                ifelse(site_name == "archery", 17,
+                ifelse(site_name == "archery virridy", 17,
+                ifelse(site_name == "river bluffs", 17, NA)))))))))))))))))))))
+
+    if(site_name %in% c("penn", "sfm", "lbea")){
+
+      sites_order <- c("penn",
+        "sfm",
+        "lbea")
+
+    }
+
+    if(site_name == "springcreek"){
+
+      sites_order <- c("timberline virridy",
+                       "springcreek",
+                       "prospect virridy")
+
+    }
+
+    if(site_name == "boxcreek"){
+
+      sites_order <- c("boxelder virridy",
+                       "boxcreek",
+                       "archery virridy")
+
+    }
+
+  }
+
   # determining the index for the site of interest.
-  site_index <- which(sites_order == site_name)
+  site_index <- which(sites_order == sites_order[grep(gsub(" virridy", "", site_name), sites_order, ignore.case = TRUE)])
 
   # Generating df name to pull from df_list list
   site_param <- paste0(site_name, "-", parameter_name)
@@ -52,7 +119,7 @@ network_check <- function(df) {
 
   tryCatch({
     previous_site <- paste0(sites_order[site_index-1],"-",parameter_name)
-    prev_site_df <- all_data_flagged[[previous_site]] %>%
+    prev_site_df <- intersensor_checks[[previous_site]] %>%
       select(DT_round, site_up = site, flag_up = flag) %>%
       data.table()},
     error = function(err) {
@@ -60,7 +127,7 @@ network_check <- function(df) {
 
   tryCatch({
     next_site <- paste0(sites_order[site_index+1],"-",parameter_name)
-    next_site_df <- all_data_flagged[[next_site]] %>%
+    next_site_df <- intersensor_checks[[next_site]] %>%
       select(DT_round, site_down = site, flag_down = flag) %>%
       data.table()},
     error = function(err) {
@@ -85,14 +152,13 @@ network_check <- function(df) {
   df_test <- join %>%
     # No upstream/downstream flag = 0
     mutate(flag_binary = ifelse(
-        (is.na(flag_up) | grepl("repeat|sonde not employed|missing data|site visit|sv window|sensor malfunction", flag_up)) &
-        (is.na(flag_down) | grepl("repeat|sonde not employed|missing data|site visit|sv window|sensor malfunction", flag_down)), 0, 1)) %>%
+      (is.na(flag_up) | grepl("drift|DO interference|repeat|sonde not employed|frozen|unsubmerged|missing data|site visit|sv window|sensor malfunction|sonde burial|sensor biofouling|improper level cal|sonde moved", flag_up)) &
+        (is.na(flag_down) | grepl("drift|DO interference|repeat|sonde not employed|frozen|unsubmerged|missing data|site visit|sv window|sensor malfunction|sonde burial|sensor biofouling|improper level cal|sonde moved", flag_down)), 0, 1)) %>%
     mutate(overlapping_flag = zoo::rollapply(flag_binary, width = width_fun, FUN = check_2_hour_window_fail, fill = NA, align = "center")) %>%
     # If there is a flag (flags associated with spikes in concentration or funkiness like that), and there is also a flag up/downstream at the same time (2 hour window) it is likely a real
     # WQ event and should therefore not be considered "poor" data:
-    mutate(cleaner_flag = ifelse(!is.na(flag) & !grepl("repeat|sonde not employed|missing data|site visit|sv window|sensor malfunction", flag) & overlapping_flag == TRUE, NA, flag)) %>%
-    select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag)) %>%
-    mutate(mean_public = ifelse(is.na(flag), mean, NA)) #***
+    mutate(auto_cleaned_flag = ifelse(!is.na(flag) & !grepl("drift|DO interference|repeat|sonde not employed|frozen|unsubmerged|missing data|site visit|sv window|sensor malfunction|sonde burial|sensor biofouling|improper level cal|sonde moved", flag) & overlapping_flag == TRUE, NA, flag)) %>%
+    select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag))
 
   # df_test <- join %>%
   #   mutate(flag_binary = ifelse(#grepl("slope|suspect", flag) &
