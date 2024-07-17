@@ -3,15 +3,15 @@ library(tidyverse)
 ```
 
 ```{r}
-# set directory paths
-all_path <- "data/virridy_verification/all_data_directory/"
-pre_verification_path <- "data/virridy_verification/pre_verification_directory/"
-intermediary_path <- "data/virridy_verification/intermediary_directory/"
-verified_path <- "data/virridy_verification/verified_directory/"
+# set data directory paths
+all_path <- here("data", "virridy_verification", "all_data_directory")
+pre_verification_path <- here("data", "virridy_verification", "pre_verification_directory")
+intermediary_path <- here("data", "virridy_verification", "intermediary_directory")
+verified_path <- here("data", "virridy_verification", "verified_directory")
 ```
 
 ```{r}
-flagged_data <- readRDS("data/virridy_verification/all_data_flagged_complete.RDS")
+flagged_data <- readRDS(here("data","virridy_verification","all_data_flagged_complete.RDS"))
 
 pre_processed_data <- map(.x = flagged_data, \(x)
   x %>% 

@@ -6,12 +6,13 @@ knitr::opts_chunk$set(echo = TRUE)
 # Load necessary libraries
 library(tidyverse)
 library(ggpubr)
+library(here)
 
 # set data directory paths
-all_path <- "data/virridy_verification/all_data_directory/"
-pre_verification_path <- "data/virridy_verification/pre_verification_directory/"
-intermediary_path <- "data/virridy_verification/intermediary_directory/"
-verified_path <- "data/virridy_verification/verified_directory/"
+all_path <- here("data", "virridy_verification", "all_data_directory")
+pre_verification_path <- here("data", "virridy_verification", "pre_verification_directory")
+intermediary_path <- here("data", "virridy_verification", "intermediary_directory")
+verified_path <- here("data", "virridy_verification", "verified_directory")
 
 # set function directory paths
 fxn_path <- "src/"

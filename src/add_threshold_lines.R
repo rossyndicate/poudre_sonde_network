@@ -1,17 +1,16 @@
 add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
 
-  # pull in threshold data (i don't like that I do this everytime the function is run)
-  real_thresholds <- read_csv("data/qaqc/realistic_thresholds.csv", show_col_types = FALSE) %>%
+  # pull in threshold data
+  real_thresholds <- read_csv(here("data", "qaqc", "realistic_thresholds.csv"), show_col_types = FALSE) %>%
     filter(parameter == parameter_arg)
-  sensor_thresholds <- yaml::read_yaml("data/qaqc/sensor_spec_thresholds.yml")[[parameter_arg]]%>% #filter for parameter_arg
-    #turn into tibble with min/max
+
+  sensor_thresholds <- yaml::read_yaml(here("data", "qaqc", "sensor_spec_thresholds.yml"))[[parameter_arg]] %>%
     bind_rows()
 
-  seasonal_thresholds <- read_csv('data/qaqc/seasonal_thresholds_virridy.csv', show_col_types = FALSE) %>%
+  seasonal_thresholds <- read_csv(here('data', 'qaqc', 'seasonal_thresholds_virridy.csv'), show_col_types = FALSE) %>%
     #to do: Check to make sure seasonal thresholds csv is not necessary
-    #bind_rows(read_csv('data/qaqc/seasonal_thresholds.csv', show_col_type = FALSE),
+    #bind_rows(read_csv(here('data', 'qaqc', 'seasonal_thresholds.csv'), show_col_type = FALSE),
     distinct(site, parameter, season, .keep_all = TRUE) %>%
-    #read_csv("data/qaqc/seasonal_thresholds_virridy.csv", show_col_types = FALSE) %>%
     filter(parameter == parameter_arg,
            site == site_arg)
 
