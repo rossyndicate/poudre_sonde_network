@@ -17,7 +17,7 @@ for (i in weekly_plot_objects) {
     if(is_tibble(update)) {
       update <- bind_rows(update)
     } else {
-      if (length(update) != 49) { # 49 is because sometimes dfs decompose into lists... idk why -jd
+      if (length(update) != 51) { # 46 is because sometimes dfs decompose into lists... idk why -jd
         update <-  update %>%
           # remove NULL values from the list
           keep(~ !is.null(.)) %>%

@@ -318,10 +318,11 @@ verify_flag_data <- function(df_list_arg,
                                                    parameter_arg = parameter_arg)
 
           # weekly_plot_object
+
           weekly_plot_object <- generate_supplemental_weekly_plot(daily_plot_data_arg = daily_plot_data,
                                                                   df_list_arg = df_list_arg,
                                                                   site_arg = site_arg,
-                                                                  parameter_arg = parameter_arg) # need to make sure that these functions can read in information from outside of them
+                                                                  parameter_arg = parameter_arg)
 
           # print ggarrange daily and weekly plots
           print(ggarrange(daily_plot_object, weekly_plot_object, nrow = 2, ncol = 1))
@@ -361,7 +362,7 @@ verify_flag_data <- function(df_list_arg,
                verification_status = ifelse(grepl(non_removable_flags, flag, ignore.case = TRUE), "PASS", verification_status))
 
     } else if (is.list(altered_df_list)) {
-      if (length(altered_df_list) != 49){
+      if (length(altered_df_list) != 51){
         # browser()
         altered_df_list <- map(altered_df_list, function(df) {
           if(!is.null(df)) {
@@ -373,6 +374,7 @@ verify_flag_data <- function(df_list_arg,
           }
         })
       } else {
+        # browser()
         altered_df_list <- altered_df_list %>%
           mutate(mean_verified = if_else(grepl(non_removable_flags, flag, ignore.case = TRUE), NA, mean_verified),
                  is_verified = TRUE,
