@@ -79,25 +79,53 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
 
           group_data <- grouped_data[[i]]
 
-          flag_week <- unique(group_data$week)
+          year_week <- unique(group_data$y_w)
 
           # filtering dfs of interest for the week of interest
           site_df <- site_flag_dates %>%
-            filter(y_w == group_data$y_w)
+            filter(y_w == year_week)
 
           # Get the relevant sonde data
-          relevant_sondes <- map(plot_filter,
-                                 ~ {
-                                   sonde_name <- paste0(.x,"-",parameter_arg)
-                                   tryCatch({
-                                     sonde_df <- all_df_list[[sonde_name]] %>%
-                                       filter(y_w == group_data$y_w)},
-                                     error = function(err) {
-                                       cat("Sonde ", sonde_name," not found.\n")})
-                                 })
+          relevant_sondes <- map(plot_filter, ~ {
+            sonde_name <- paste0(.x, "-", parameter_arg)
+            data_source <- NULL
+            sonde_df <- NULL
+
+            # Determine which directory to pull data from
+            tryCatch({
+              data_source <- retrieve_relevant_data_name(sonde_name, year_week)
+              # cat("Data for",sonde_name,"will be pulled from",data_source,"\n")
+            }, error = function(err) {
+              # cat("Data for",sonde_name,"not found.\n")
+              return(NULL)  # Return NULL if data source can't be determined
+            })
+
+            # Only try to pull in the data if data_source was successfully determined
+            if (!is.null(data_source)) {
+              tryCatch({
+                sonde_df <- get(data_source)[[sonde_name]] %>%
+                  filter(y_w == group_data$y_w)
+              }, error = function(err) {
+                cat("Sonde", sonde_name, "not found.\n")
+                return(NULL)  # Return NULL if sonde data can't be retrieved
+              })
+            }
+
+            # Only return a list if both data_source and sonde_df are available
+            if (!is.null(data_source) & !is.null(sonde_df)) {
+              return(list(sonde_df = sonde_df, data_source = data_source))
+            } else {
+              return(NULL)  # Return NULL if either data_source or sonde_df is NULL
+            }
+          })
+
+          # Remove any NULL results from the list
+          relevant_sondes <- compact(relevant_sondes)
 
           # append site_df to relevant sonde list, clean list, and bind dfs
-          week_plot_data <- append(relevant_sondes, list(site_df)) %>%
+          # to find plot info
+          relevant_dfs <- map(relevant_sondes, ~.x[[1]])
+          week_plot_data <- append(relevant_dfs, list(site_df)) %>% # how to relevant sondes here
             keep(~ !is.null(.)) %>%
             keep(~ nrow(.)>0) %>%
             bind_rows() %>%
@@ -116,8 +144,14 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
           week_plot <- ggplot(data = week_plot_data) +
             geom_point(data = filter(week_plot_data, (site == site_arg)),
                        aes(x=DT_round, y=mean, color=flag)) +
-            geom_line(data = filter(week_plot_data, (site != site_arg)),
-                      aes(x=DT_round, y=mean, color=site)) +
+            map(relevant_sondes, function(sonde_data) {
+              data <- sonde_data[[1]]
+              data_source <- sonde_data[[2]]
+
+              y_column <- if (data_source == "all_data") "mean" else "mean_verified"
+
+              geom_line(data = data, aes(x = DT_round, y = .data[[y_column]], color = site))
+            })+
             geom_vline(xintercept = vline_dates, color = "black") +
             ggtitle(paste0(str_to_title(site_arg), " ", parameter_arg, " (", format(flag_day, "%B %d, %Y"), ")")) +
             theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
