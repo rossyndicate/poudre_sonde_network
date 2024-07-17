@@ -40,7 +40,7 @@ get_working_data_decision()
 ```{r set site and parameter variables}
 network <- "virridy"
 # Set the site and parameter to verify
-site <- "prospect"
+site <- "archery"
 parameter <- "Temperature"
 ```
 

@@ -362,7 +362,7 @@ verify_flag_data <- function(df_list_arg,
                verification_status = ifelse(grepl(non_removable_flags, flag, ignore.case = TRUE), "PASS", verification_status))
 
     } else if (is.list(altered_df_list)) {
-      if (length(altered_df_list) != 51){
+      if (!length(altered_df_list) %in% c(51,49,46)){
         # browser()
         altered_df_list <- map(altered_df_list, function(df) {
           if(!is.null(df)) {
