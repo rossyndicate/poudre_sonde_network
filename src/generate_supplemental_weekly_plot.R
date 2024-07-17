@@ -2,7 +2,7 @@ generate_supplemental_weekly_plot <- function(daily_plot_data_arg, df_list_arg, 
 
   site_param_df <- df_list_arg[[paste0(site_arg, "-", parameter_arg)]]
 
-  start_date <- min(daily_plot_data_arg$DT_round) - days(3)
+  start_date <- min(daily_plot_data_arg$DT_round) - days(3) # TODO: replace all daily_plot_data_arg instances with something more efficient
   end_date <- max(daily_plot_data_arg$DT_round) + days(3)
 
   week_plot_data <- site_param_df %>%
@@ -18,55 +18,66 @@ generate_supplemental_weekly_plot <- function(daily_plot_data_arg, df_list_arg, 
                    "archery",
                    "river bluffs")
 
-  if(network == "virridy"){
-    site_vector <-  c("joei",
-                      "cbri",
-                      "chd",
-                      "pfal",
-                      "pbd",
-                      "sfm",
-                      "lbea",
-                      "penn",
-                      NA,
-                      "lincoln",
-                      "timberline",
-                      "timberline virridy",
-                      "springcreek",
-                      "prospect",
-                      "prospect virridy",
-                      "archery",
-                      "archery virridy",
-                      "boxcreek")
+  if(network == "virridy"){ # this will be the new default
+    # establish order for all the non-tributary sites
+    sites_order <-  c("joei","cbri","chd","pfal","sfm","pbd","tamasag",
+                      "legacy","lincoln","timberline","prospect","boxelder",
+                      "archery","riverbluffs")
+    # establish the order for the tributary sites
+    trib_sites_order <- c("boxcreek", "archery", NA, "springcreek", "prospect",
+                          NA, "penn", "sfm", "lbea")
   }
 
   # determining the index for the site of interest.
-  site_index <- which(site_vector == site_arg)
+  if (site_arg %in% sites_order) {
 
-  # TryCatch used here to avoid erroring out on the first and last values of
-  # site_vector object (there is no prior/next record after the first/last record).
-  # Return df as NULL in case of an error
-  prev_site_df <- NULL
-  next_site_df <- NULL
+    plot_filter <- tibble(site = c("joei","cbri","chd","pfal","sfm","pbd",
+                                   "tamasag","legacy", "lincoln","timberline",
+                                   "timberline virridy","prospect",
+                                   "prospect virridy","boxelder","archery",
+                                   "archery virridy","riverbluffs"))
 
-  tryCatch({
-    previous_site <- paste0(site_vector[site_index-1],"-",unique(daily_plot_data_arg$parameter))
-    prev_site_df <- df_list_arg[[previous_site]] %>%
-      filter(DT_round %within% interval(start_date, end_date))},
-    error = function(err) {
-      cat("No previous site.\n")})
+    site_index <- which(sites_order == site_arg)
+    site_list <- as.vector(na.omit(sites_order[max(1, site_index - 1):min(length(sites_order), site_index + 1)]))
 
-  tryCatch({
-    next_site <- paste0(site_vector[site_index+1],"-",unique(daily_plot_data_arg$parameter))
-    next_site_df <- df_list_arg[[next_site]] %>%
-      filter(DT_round %within% interval(start_date, end_date))},
-    error = function(err) {
-      cat("No next site.\n")})
+    plot_filter <- plot_filter %>%
+      filter(grepl(paste(site_list, collapse = "|"), site, ignore.case = TRUE),
+             site != site_arg) %>%
+      pull(site)
 
-  # Bind all three dfs
-  week_plot_data <- list(week_plot_data, prev_site_df, next_site_df) %>%
-    # remove NULL values from the list
+  } else {
+
+    plot_filter <- tibble(site = c("boxcreek", "archery", "archery virridy",
+                                   "springcreek", "prospect", "prospect virridy",
+                                   "penn", "sfm", "lbea"))
+
+    site_index <- which(trib_sites_order == site_arg)
+    site_list <- as.vector(na.omit(trib_sites_order[max(1, site_index - 1):min(length(trib_sites_order), site_index + 1)]))
+
+    plot_filter <- plot_filter %>%
+      filter(grepl(paste(site_list, collapse = "|"), site, ignore.case = TRUE),
+             site != site_arg) %>%
+      pull(site)
+
+  }
+
+  # get the relevant sonde data
+  relevant_sondes <- map(plot_filter,
+                         ~ {
+                           sonde_name <- paste0(.x,"-",parameter_arg)
+                           tryCatch({
+                             sonde_df <- df_list_arg[[sonde_name]] %>%
+                               filter(DT_round %within% interval(start_date, end_date))},
+                             error = function(err) {
+                               cat("Sonde ", sonde_name," not found.\n")})
+                         })
+
+  # append week_plot_data to relevant sonde list, clean list, and bind dfs
+  week_plot_data <- append(relevant_sondes, list(week_plot_data)) %>%
     keep(~ !is.null(.)) %>%
-    bind_rows()
+    keep(~ nrow(.)>0) %>%
+    bind_rows() %>%
+    arrange(day)
 
   # Create a sequence of dates for the vertical lines
   start_date <- floor_date(min(week_plot_data$DT_round), "day")

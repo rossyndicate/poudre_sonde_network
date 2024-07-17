@@ -20,12 +20,12 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
                      "archery",
                      "river bluffs")
 
-    if(network == "virridy"){
-
+    if(network == "virridy"){ # this will be the new default
+      # establish order for all the non-tributary sites
       sites_order <-  c("joei","cbri","chd","pfal","sfm","pbd","tamasag",
                         "legacy","lincoln","timberline","prospect","boxelder",
                         "archery","riverbluffs")
-
+      # establish order for all the tributary sites
       trib_sites_order <- c("boxcreek", "archery", NA, "springcreek", "prospect",
                             NA, "penn", "sfm", "lbea")
     }
@@ -85,45 +85,23 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
           site_df <- site_flag_dates %>%
             filter(y_w == group_data$y_w)
 
-          # Get the relevant sondes
-
+          # Get the relevant sonde data
           relevant_sondes <- map(plot_filter,
                                  ~ {
                                    sonde_name <- paste0(.x,"-",parameter_arg)
                                    tryCatch({
                                      sonde_df <- all_df_list[[sonde_name]] %>%
-                                       filter(y_w == group_data$y_w)}, # *** GO BACK TO THIS
-                                       # filter(y_w == "2023 - 35")},
+                                       filter(y_w == group_data$y_w)},
                                      error = function(err) {
                                        cat("Sonde ", sonde_name," not found.\n")})
                                  })
 
-          # prev_site_df <- NULL
-          # next_site_df <- NULL
-          #
-          # tryCatch({
-          #   previous_site <- paste0(sites_order[site_index-1],"-",parameter_arg)
-          #   prev_site_df <- all_df_list[[previous_site]] %>%
-          #     filter(y_w == group_data$y_w)},
-          #   error = function(err) {
-          #     cat("No previous site.\n")})
-          #
-          # tryCatch({
-          #   next_site <- paste0(sites_order[site_index+1],"-",parameter_arg)
-          #   next_site_df <- all_df_list[[next_site]] %>%
-          #     filter(y_w == group_data$y_w)},
-          #   error = function(err) {
-          #     cat("No next site.\n")})
-
-          # Bind all dfs
+          # append site_df to relevant sonde list, clean list, and bind dfs
           week_plot_data <- append(relevant_sondes, list(site_df)) %>%
-            # remove NULL values from the list
             keep(~ !is.null(.)) %>%
-            # remove empty dfs from the list
             keep(~ nrow(.)>0) %>%
             bind_rows() %>%
             arrange(day)
-          # arrange(weekday)
 
           # Create a sequence of dates for the vertical lines
           start_date <- floor_date(min(week_plot_data$DT_round), "day")
