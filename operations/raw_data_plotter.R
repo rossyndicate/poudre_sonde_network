@@ -16,8 +16,8 @@ ui <- fluidPage(
     sidebarPanel(
       # Allows user to select sites
       selectInput("selected_site", "Select Site(s)",
-                  choices = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd", "lincoln", "timberline virridy", "timberline",
-                              "prospect virridy", "prospect", "archery virridy", "archery", "boxcreek", "springcreek"),
+                  choices = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
+                              "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
                   selected = "lincoln", multiple = TRUE),
       # User to select parameters
       selectInput("selected_param", "Select Parameter(s)",
