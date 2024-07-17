@@ -6,7 +6,7 @@ get_dt_inspection_decisions <- function(daily_plot_data) {
   plot_date <- as_date(daily_plot_data$DT_round[1])
 
   # Prompt for the number of intervals
-  prompt_text <- paste("How many intervals would you like to inspect? (Must be less than", length(dt_list), ")\n")
+  prompt_text <- paste("How many intervals would you like to inspect?\n(Must be less than", length(dt_list), ")\n")
 
   while (TRUE) {
     user_input <- readline(prompt = prompt_text)
@@ -25,7 +25,7 @@ get_dt_inspection_decisions <- function(daily_plot_data) {
   selected_intervals <- list()
 
   for (i in 1:num_intervals) {
-    prompt_text <- paste("Enter the time range for interval", i, "in the format 'HH:MM:SS-HH:MM:SS':\n")
+    prompt_text <- paste("Enter the time range for interval", i, ".\n(format 'HH:MM:SS-HH:MM:SS'):\n")
 
     while (TRUE) {
       user_input <- readline(prompt = prompt_text) # these need to be 15 minute intervals ***
@@ -50,7 +50,7 @@ get_dt_inspection_decisions <- function(daily_plot_data) {
         }
       }
 
-      cat("Invalid input. Please enter a valid time range that doesn't overlap with previous intervals.\n")
+      cat("Invalid input.\nPlease enter a valid time range that doesn't overlap with previous intervals.\n")
     }
   }
 
