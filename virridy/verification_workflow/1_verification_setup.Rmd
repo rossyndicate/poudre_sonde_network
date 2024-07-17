@@ -24,6 +24,12 @@ invisible(map(
   
 # Load all flagged data
 all_data <- set_names(map(list.files(all_path, full.names = TRUE), readRDS), list.files(all_path))
+
+# Load all intermediary data
+intermediary_data <- set_names(map(list.files(intermediary_path, full.names = TRUE), readRDS), list.files(intermediary_path))
+
+# Load all verified data
+verified_data <- set_names(map(list.files(verified_path, full.names = TRUE), readRDS), list.files(verified_path))
 ```
 
 ```{r working data selection}
@@ -34,7 +40,7 @@ get_working_data_decision()
 ```{r set site and parameter variables}
 network <- "virridy"
 # Set the site and parameter to verify
-site <- "pfal"
+site <- "prospect"
 parameter <- "Temperature"
 ```
 

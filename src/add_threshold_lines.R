@@ -3,7 +3,6 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
   # pull in threshold data (i don't like that I do this everytime the function is run)
   real_thresholds <- read_csv("data/qaqc/realistic_thresholds.csv", show_col_types = FALSE) %>%
     filter(parameter == parameter_arg)
-
   sensor_thresholds <- yaml::read_yaml("data/qaqc/sensor_spec_thresholds.yml")[[parameter_arg]]%>% #filter for parameter_arg
     #turn into tibble with min/max
     bind_rows()
