@@ -3,9 +3,11 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
   # pull in threshold data (i don't like that I do this everytime the function is run)
   real_thresholds <- read_csv("data/qaqc/realistic_thresholds.csv", show_col_types = FALSE) %>%
     filter(parameter == parameter_arg)
-  sensor_thresholds <- read_csv("data/qaqc/sensor_spec_thresholds.csv", show_col_types = FALSE) %>%
-    filter(parameter == parameter_arg)
-  seasonal_thresholds <- bind_rows(read_csv('data/qaqc/seasonal_thresholds.csv', show_col_type = FALSE), read_csv('data/qaqc/seasonal_thresholds_virridy.csv', show_col_types = FALSE)) %>%
+  sensor_thresholds <- yaml::read_yaml("data/qaqc/sensor_spec_thresholds.yml")[[parameter_arg]]%>% #filter for parameter_arg
+    #turn into tibble with min/max
+    bind_rows()
+  # seasonal_thresholds <- bind_rows(read_csv('data/qaqc/seasonal_thresholds.csv', show_col_type = FALSE), read_csv('data/qaqc/seasonal_thresholds_virridy.csv', show_col_types = FALSE)) %>%
+  seasonal_thresholds <- read_csv('data/qaqc/seasonal_thresholds_virridy.csv', show_col_types = FALSE) %>%
     distinct(site, parameter, season, .keep_all = TRUE) %>%
     #read_csv("data/qaqc/seasonal_thresholds_virridy.csv", show_col_types = FALSE) %>%
     filter(parameter == parameter_arg,
@@ -143,7 +145,7 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
       }
 
       # sensor thresholds
-      sensor_thresholds_quantiles <- unname(quantile(c(sensor_thresholds$mix, sensor_thresholds$max), c(0.1, 0.9)))
+      sensor_thresholds_quantiles <- unname(quantile(c(sensor_thresholds$min, sensor_thresholds$max), c(0.1, 0.9)))
 
       # if ((min(site_data$mean, na.rm = TRUE) <= sensor_thresholds_quantiles[1])) {
       #   plot <- plot +
@@ -204,7 +206,7 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
       }
 
       # sensor thresholds
-      sensor_thresholds_quantiles <- unname(quantile(c(sensor_thresholds$mix, sensor_thresholds$max), c(0.1, 0.9)))
+      sensor_thresholds_quantiles <- unname(quantile(c(sensor_thresholds$min, sensor_thresholds$max), c(0.1, 0.9)))
 
       # if (min(site_data$mean, na.rm = TRUE) <= sensor_thresholds_quantiles[1]) {
       #   plot <- plot +
