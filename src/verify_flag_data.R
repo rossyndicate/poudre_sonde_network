@@ -78,7 +78,7 @@ verify_flag_data <- function(df_list_arg,
                                                    site_arg = site_arg,
                                                    parameter_arg = parameter_arg)
 
-          # weekly_plot_object + a grey box ***
+          # weekly_plot_object
           weekly_plot_object <- generate_supplemental_weekly_plot(daily_plot_data_arg = daily_plot_data,
                                                                   df_list_arg = df_list_arg,
                                                                   site_arg = site_arg,
@@ -101,7 +101,7 @@ verify_flag_data <- function(df_list_arg,
             altered_df_list[[i]] <- alter_verification_column(daily_verification_decision, daily_plot_data) # this should get put in a list
           }
 
-          if (daily_verification_decision %in% inspect_decision_list){ # *** even harder stuff, update to fit verification decision for if inspect to sub daily data
+          if (daily_verification_decision %in% inspect_decision_list){
             altered_df_list[[i]] <- verify_subdaily(daily_verification_decision_arg = daily_verification_decision,
                                                     daily_plot_data_arg = daily_plot_data,
                                                     daily_plot_object_arg = daily_plot_object,
@@ -157,7 +157,7 @@ verify_flag_data <- function(df_list_arg,
                                                    site_arg = site_arg,
                                                    parameter_arg = parameter_arg)
 
-          # weekly_plot_object + a grey box ***
+          # weekly_plot_object
           weekly_plot_object <- generate_supplemental_weekly_plot(daily_plot_data_arg = daily_plot_data,
                                                                   df_list_arg = df_list_arg,
                                                                   site_arg = site_arg,
@@ -180,7 +180,7 @@ verify_flag_data <- function(df_list_arg,
             altered_df_list[[i]] <- alter_verification_column(daily_verification_decision, daily_plot_data) # this should get put in a list
           }
 
-          if (daily_verification_decision %in% inspect_decision_list){ # *** even harder stuff
+          if (daily_verification_decision %in% inspect_decision_list){
             altered_df_list[[i]] <- verify_subdaily(daily_verification_decision_arg = daily_verification_decision,
                                                     daily_plot_data_arg = daily_plot_data,
                                                     daily_plot_object_arg = daily_plot_object,
@@ -190,7 +190,7 @@ verify_flag_data <- function(df_list_arg,
         }
       }
 
-      # Inspect flagged weekly ----
+      # inspect flagged weekly ----
       if (verification_decision == "INSPECT FLAGGED") {
 
         # get which days to inspect
@@ -238,7 +238,7 @@ verify_flag_data <- function(df_list_arg,
                                                    parameter_arg = parameter_arg)
 
 
-          # weekly_plot_object + a grey box ***
+          # weekly_plot_object
           weekly_plot_object <- generate_supplemental_weekly_plot(daily_plot_data_arg = daily_plot_data,
                                                                   df_list_arg = df_list_arg,
                                                                   site_arg = site_arg,
@@ -261,7 +261,7 @@ verify_flag_data <- function(df_list_arg,
             altered_df_list[[i]] <- alter_verification_column(daily_verification_decision, daily_plot_data) # this should get put in a list
           }
 
-          if (daily_verification_decision %in% inspect_decision_list){ # *** even harder stuff
+          if (daily_verification_decision %in% inspect_decision_list){
             altered_df_list[[i]] <- verify_subdaily(daily_verification_decision_arg = daily_verification_decision,
                                                     daily_plot_data_arg = daily_plot_data,
                                                     daily_plot_object_arg = daily_plot_object,
@@ -317,7 +317,7 @@ verify_flag_data <- function(df_list_arg,
                                                    site_arg = site_arg,
                                                    parameter_arg = parameter_arg)
 
-          # weekly_plot_object + a grey box ***
+          # weekly_plot_object
           weekly_plot_object <- generate_supplemental_weekly_plot(daily_plot_data_arg = daily_plot_data,
                                                                   df_list_arg = df_list_arg,
                                                                   site_arg = site_arg,
@@ -337,10 +337,11 @@ verify_flag_data <- function(df_list_arg,
           }
 
           if (daily_verification_decision %in% simple_decision_list){
+            # browser()
             altered_df_list[[i]] <- alter_verification_column(daily_verification_decision, daily_plot_data) # this should get put in a list
           }
 
-          if (daily_verification_decision %in% inspect_decision_list){ # *** even harder stuff
+          if (daily_verification_decision %in% inspect_decision_list){
             altered_df_list[[i]] <- verify_subdaily(daily_verification_decision_arg = daily_verification_decision,
                                                     daily_plot_data_arg = daily_plot_data,
                                                     daily_plot_object_arg = daily_plot_object,
@@ -360,14 +361,24 @@ verify_flag_data <- function(df_list_arg,
                verification_status = ifelse(grepl(non_removable_flags, flag, ignore.case = TRUE), "PASS", verification_status))
 
     } else if (is.list(altered_df_list)) {
-      altered_df_list <- map(altered_df_list, function(df) {
-        if(!is.null(df)) {
-          df %>%
-            mutate(mean_verified = if_else(grepl(non_removable_flags, flag, ignore.case = TRUE), NA, mean_verified),
-                   is_verified = TRUE,
-                   verification_status = ifelse(grepl(non_removable_flags, flag, ignore.case = TRUE), "PASS", verification_status))
-        }
-      })
+      if (length(altered_df_list) != 49){
+        # browser()
+        altered_df_list <- map(altered_df_list, function(df) {
+          if(!is.null(df)) {
+            # browser()
+            df %>%
+              mutate(mean_verified = if_else(grepl(non_removable_flags, flag, ignore.case = TRUE), NA, mean_verified),
+                     is_verified = TRUE,
+                     verification_status = ifelse(grepl(non_removable_flags, flag, ignore.case = TRUE), "PASS", verification_status))
+          }
+        })
+      } else {
+        altered_df_list <- altered_df_list %>%
+          mutate(mean_verified = if_else(grepl(non_removable_flags, flag, ignore.case = TRUE), NA, mean_verified),
+                 is_verified = TRUE,
+                 verification_status = ifelse(grepl(non_removable_flags, flag, ignore.case = TRUE), "PASS", verification_status))
+      }
+
     }
 
     return(altered_df_list) # this should not be an altered df, but rather a list of dfs that have been altered.

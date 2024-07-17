@@ -17,12 +17,16 @@ for (i in weekly_plot_objects) {
     if(is_tibble(update)) {
       update <- bind_rows(update)
     } else {
-      update <-  update %>%
-        # remove NULL values from the list
-        keep(~ !is.null(.)) %>%
-        # remove empty dfs from the list
-        keep(~ nrow(.)>0) %>%
-        bind_rows(.)
+      if (length(update) != 49) { # 49 is because sometimes dfs decompose into lists... idk why -jd
+        update <-  update %>%
+          # remove NULL values from the list
+          keep(~ !is.null(.)) %>%
+          # remove empty dfs from the list
+          keep(~ nrow(.)>0) %>%
+          bind_rows(.)
+      } else {
+        update <- bind_rows(update)
+      }
     }
 
     # update site param df
