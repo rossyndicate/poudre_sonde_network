@@ -8,29 +8,29 @@ library(tidyverse)
 library(ggpubr)
 library(here)
 
-# set data directory paths
-all_path <- here("data", "virridy_verification", "all_data_directory")
-pre_verification_path <- here("data", "virridy_verification", "pre_verification_directory")
-intermediary_path <- here("data", "virridy_verification", "intermediary_directory")
-verified_path <- here("data", "virridy_verification", "verified_directory")
-
 # set function directory paths
-fxn_path <- "src/"
+fxn_path <- here("src")
 
 # Source functions
 invisible(map(
   list.files(fxn_path, pattern = "*.R", full.names = TRUE),
   ~ source(.x, echo = FALSE)
 ))
+
+# set data directory paths
+all_path <- here("data", "virridy_verification", "all_data_directory")
+pre_verification_path <- here("data", "virridy_verification", "pre_verification_directory")
+intermediary_path <- here("data", "virridy_verification", "intermediary_directory")
+verified_path <- here("data", "virridy_verification", "verified_directory")
   
 # Load all flagged data
-all_data <- set_names(map(list.files(all_path, full.names = TRUE), readRDS), list.files(all_path))
+all_data <- set_names(map(list.files(all_path, full.names = TRUE), read_rds), list.files(all_path))
 
 # Load all intermediary data
-intermediary_data <- set_names(map(list.files(intermediary_path, full.names = TRUE), readRDS), list.files(intermediary_path))
+intermediary_data <- set_names(map(list.files(intermediary_path, full.names = TRUE), read_rds), list.files(intermediary_path))
 
 # Load all verified data
-verified_data <- set_names(map(list.files(verified_path, full.names = TRUE), readRDS), list.files(verified_path))
+verified_data <- set_names(map(list.files(verified_path, full.names = TRUE), read_rds), list.files(verified_path))
 ```
 
 ```{r working data selection}
@@ -42,7 +42,7 @@ get_working_data_decision()
 network <- "virridy"
 # Set the site and parameter to verify
 site <- "archery"
-parameter <- "Temperature"
+parameter <- "Chl-a Fluorescence"
 ```
 
 ```{r set the site-param df to update}
@@ -71,7 +71,4 @@ weekly_plot_objects <- generate_initial_weekly_plots(
   flag_arg = NULL
 )
 QUIT <- FALSE
-
-# Subset weekly plot objects (for testing)
-# weekly_plot_objects <- tail(weekly_plot_objects, 4)
 ```

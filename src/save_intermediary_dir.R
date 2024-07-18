@@ -7,14 +7,14 @@ save_intermediary_dir <- function(updated_df, df_name) {
       user_input <- tolower(user_input)
 
       if (user_input == "yes") {
-        saveRDS(updated_df, paste0(intermediary_path, df_name))
+        saveRDS(updated_df, here(intermediary_path, df_name))
         break
       }
 
       if (user_input == "no") {
-        working_data <<- set_names(map(list.files(intermediary_path, full.names = TRUE), readRDS), list.files(intermediary_path))
+        working_data <<- set_names(map(list.files(intermediary_path, full.names = TRUE), read_rds), list.files(intermediary_path))
         updated_site_param_df <<- working_data[[site_param_name]] # working dir df
-        saveRDS(updated_site_param_df, paste0(intermediary_path, df_name))
+        saveRDS(updated_site_param_df, here(intermediary_path, df_name))
         break
       }
 
@@ -32,7 +32,7 @@ save_intermediary_dir <- function(updated_df, df_name) {
       user_input <- tolower(user_input)
 
       if (user_input == "yes") {
-        saveRDS(updated_df, paste0(intermediary_path, df_name))
+        saveRDS(updated_df, here(intermediary_path, df_name))
         break
       }
 
@@ -47,5 +47,5 @@ save_intermediary_dir <- function(updated_df, df_name) {
     }
   }
 
-  saveRDS(updated_df, paste0(intermediary_path, df_name))
+  saveRDS(updated_df, here(intermediary_path, df_name))
 }
