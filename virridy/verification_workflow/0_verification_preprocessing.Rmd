@@ -11,7 +11,7 @@ verified_path <- here("data", "virridy_verification", "verified_directory")
 ```
 
 ```{r}
-flagged_data <- readRDS(here("data","virridy_verification","all_data_flagged_complete.RDS"))
+flagged_data <- read_rds(here("data","virridy_verification","all_data_flagged_complete.RDS"))
 
 pre_processed_data <- map(.x = flagged_data, \(x)
   x %>% 
@@ -31,7 +31,7 @@ pre_processed_data <- map(.x = flagged_data, \(x)
 Now we will move the pre-processed flagged data into the pending review directory
 ```{r}
 iwalk(pre_processed_data, \(x, idx)
-      saveRDS(x, paste0(all_path, idx))
+      saveRDS(x, here(all_path, idx))
       )
 
 R.utils::copyDirectory(all_path, pre_verification_path)

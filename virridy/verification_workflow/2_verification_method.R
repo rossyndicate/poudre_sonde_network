@@ -37,7 +37,7 @@ for (i in weekly_plot_objects) {
       rows_update(update, by = "DT_join")
 
     # update the saved data in the intermediary dir
-    saveRDS(object = updated_site_param_df, file = paste0(intermediary_path, site_param_name))
+    saveRDS(object = updated_site_param_df, file = here(intermediary_path, site_param_name))
 
     graphics.off()
     gc()
@@ -50,7 +50,9 @@ for (i in weekly_plot_objects) {
 QUIT <- FALSE
 
 # check data
-updated_df <- readRDS(paste0(intermediary_path, site_param_name))
+updated_df <- read_rds(here(intermediary_path, site_param_name)) %>%
+  select(DT_join, site, parameter, mean, mean_verified, is_verified, verification_status) %>%
+  filter(is_verified)
 
 # clean the directories
 clean_directories()
