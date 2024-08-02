@@ -1,7 +1,7 @@
-add_biofilm_flag <- function(df){
+add_drift_flag_old <- function(df){
 
   # Only test for biofilm growth on turbidity sensors
-  if("Turbidity" %in% df$parameter){
+  if(unique(df$parameter) == "Turbidity"){
 
     # subset data to turbidity and conductivity only
     sub <- df %>%
@@ -69,11 +69,16 @@ add_biofilm_flag <- function(df){
       dplyr::right_join(., df, by = c("DT_join", "parameter")) %>%
       # If a steady slope is existing through time for turbidity, but NOT for conductivity, it is likely
       # sensor bio-fouling
-      add_flag(., Turbidity == 1 & Specific.Conductivity != 1 & !grepl("biofouling or burial", flag), "biofouling or burial") %>%
+      add_flag(., Turbidity == 1 & Specific.Conductivity != 1 & !grepl("drift", flag), "drift") %>%
       dplyr::select(-c(Turbidity, DT_join...4, Specific.Conductivity))
 
     return(biofouling)
-  } else {return(df)}
+
+  } else {
+
+    return(df)
+
+      }
 
 }
 #

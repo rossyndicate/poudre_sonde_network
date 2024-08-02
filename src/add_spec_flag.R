@@ -11,6 +11,7 @@
 #' manufacturer's specifications.
 #'
 #' @param df A data frame with a `flag` column.
+#' @param spec_table file containing In-Situ spec ranges for each sensor
 #'
 #' @return A data frame with a `flag` column that has been updated with the
 #' 'outside of sensor specification range' flag.
@@ -21,16 +22,14 @@
 #'
 #' @seealso [flag_all_data()]
 
-add_spec_flag <- function(df){
-
-  sensor_spec_ranges <- read_yaml("data/qaqc/sensor_spec_thresholds.yml")
+add_spec_flag <- function(df, spec_table = yaml::read_yaml("data/qaqc/sensor_spec_thresholds.yml")){
 
   # make this a non yaml solution and add it to the threshold table
   # get the parameter from the parameter column in the df of interest
   parameter_name <- unique(na.omit(df$parameter))
   # Pull the sensor specification range from the yaml file
-  sensor_min <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$min))
-  sensor_max <- eval(parse(text = sensor_spec_ranges[[parameter_name]]$max))
+  sensor_min <- eval(parse(text = spec_table[[parameter_name]]$min))
+  sensor_max <- eval(parse(text = spec_table[[parameter_name]]$max))
 
   df <- df %>%
     # adding sensor range flags
