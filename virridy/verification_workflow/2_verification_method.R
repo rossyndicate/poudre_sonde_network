@@ -23,9 +23,11 @@ for (i in weekly_plot_objects) {
           keep(~ !is.null(.)) %>%
           # remove empty dfs from the list
           keep(~ nrow(.)>0) %>%
-          bind_rows(.)
+          bind_rows(.) %>%
+          distinct()
       } else {
-        update <- bind_rows(update)
+        update <- bind_rows(update) %>%
+          distinct()
       }
     }
 
