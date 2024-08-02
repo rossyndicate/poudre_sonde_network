@@ -3,10 +3,10 @@
 #' @description A function that uploads and cleans the field notes submitted to mWater.
 #'
 #' @param creds A .yml file with necessary credentials for accessing the field notes. Contact Sam Struthers if you need access.
-#'
+#' @param summarize_interval At what time interval the user would like the data set to be aggregated and rounded to. Default is 15 minutes.
 #' @return A dataframe with the field notes.
 
-load_mWater_notes <- function(creds = yaml::read_yaml("creds/mWaterCreds.yml")){
+load_mWater_notes <- function(creds = yaml::read_yaml("creds/mWaterCreds.yml"), summarize_interval = "15 minutes"){
 
   # API Pull of mWater submitted notes
 
@@ -51,7 +51,7 @@ load_mWater_notes <- function(creds = yaml::read_yaml("creds/mWaterCreds.yml")){
       # If other is chosen, make photos downloaded equal to response
       photos_downloaded = ifelse(photos_downloaded == "Other (please specify)", photos_downloaded_other, photos_downloaded),
       # Rounded start date time
-      DT_round = lubridate::floor_date(start_DT, "15 minutes")) %>%
+      DT_round = lubridate::floor_date(start_DT, unit = summarize_interval)) %>%
     # arrange by most recent visit
     dplyr::arrange(DT_round)%>%
     # Remove other columns

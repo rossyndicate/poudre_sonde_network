@@ -22,7 +22,7 @@ grab_mWater_malfunction_notes <- function(mWater_api_data){
 
   malfunction_records <- malfunction_records %>%
     # keep records relevant to {target} analysis
-    select(start_DT, end_DT = malfunction_end_dt, site, parameter = which_sensor_malfunction) %>%
+    select(start_DT, end_DT = malfunction_end_dt, site, parameter = which_sensor_malfunction, notes) %>%
     # match the text in the sensor column to the text in the target analysis
     separate_rows(parameter, sep = ", ") %>%
     mutate(
