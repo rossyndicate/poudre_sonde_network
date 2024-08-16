@@ -95,12 +95,14 @@ if(hacky == FALSE){
                              network = "all",
                              # should be the same interval as what was selected for
                              # all upstream steps
-                             summarize_interval = "15 minutes") #other example: "1 hour"
-}
+                             summarize_interval = "15 minutes") %>% #other example: "1 hour"
+    dplyr::filter(lubridate::year(DT_round) == 2023)
+    }
 
 if(hacky == TRUE){
   
-  all_data <- munge_api_data_hacky()
+  all_data <- munge_api_data_hacky() %>%
+    dplyr::filter(lubridate::year(DT_round) == 2023)
   
 }
 
