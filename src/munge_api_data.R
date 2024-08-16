@@ -14,7 +14,7 @@
 
 munge_api_data <- function(api_path, network, summarize_interval = "15 minutes") {
 
-  api_data <- list.files(path = api_path, full.names = TRUE, pattern = "*.csv") %>%
+  api_data <- list.files(path = api_path, full.names = TRUE, recursive = TRUE, pattern = "*.csv") %>%
     purrr::map_dfr(~data.table::fread(.) %>%
                      dplyr::select(-id)) %>%
     # remove overlapping API-pull data
