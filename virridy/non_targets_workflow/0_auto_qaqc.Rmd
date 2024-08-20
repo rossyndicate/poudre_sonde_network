@@ -97,7 +97,7 @@ if(hacky == FALSE){
                              # all upstream steps
                              summarize_interval = "15 minutes") %>% #other example: "1 hour"
     dplyr::filter(lubridate::year(DT_round) == 2023)
-    }
+}
 
 if(hacky == TRUE){
   
@@ -431,7 +431,10 @@ final_flags <- intersensor_flags %>%
   # Remove lonely "suspect" flags after auto-cleaning of data (i.e., suspect observations
   # that are totally isolated and no longer linked to any "real" quality flag)
   dplyr::mutate(auto_cleaned_flag = ifelse(is.na(auto_cleaned_flag), NA,
-                                           ifelse(auto_cleaned_flag == "suspect data" & is.na(lag(auto_cleaned_flag, 1)) & is.na(lead(auto_cleaned_flag, 1)), NA, auto_cleaned_flag))) 
+                                           ifelse(auto_cleaned_flag == "suspect data" & is.na(lag(auto_cleaned_flag, 1)) & is.na(lead(auto_cleaned_flag, 1)), NA, auto_cleaned_flag))) %>%
+  # remove columns we don't need anymore:
+  dplyr::select(-c("r2_s_right", "r2_s_center", "r2_l_right", "r2_l_center", "tightest_r", 
+                   "failed", "over_50_percent_fail_window_right", "over_50_percent_fail_window_center"))
 
 if (include_verified == TRUE){
   # Save a version of the data set for future verification steps:
