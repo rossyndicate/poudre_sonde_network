@@ -8,7 +8,7 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
     bind_rows()
 
   seasonal_thresholds <- read_csv(here('data', 'qaqc', 'seasonal_thresholds_virridy.csv'), show_col_types = FALSE) %>%
-    #to do: Check to make sure seasonal thresholds csv is not necessary
+    # to do: Check to make sure seasonal thresholds csv is not necessary
     #bind_rows(read_csv(here('data', 'qaqc', 'seasonal_thresholds.csv'), show_col_type = FALSE),
     distinct(site, parameter, season, .keep_all = TRUE) %>%
     filter(parameter == parameter_arg,
@@ -176,14 +176,14 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
       # seasonal thresholds
       seasonal_thresholds_quantiles <- unname(quantile(c(seasonal_thresholds$t_mean01, seasonal_thresholds$t_mean99), c(0.1, 0.9)))
 
-      if ((min(site_data$mean, na.rm = TRUE) <= seasonal_thresholds_quantiles[1]) == TRUE){
+      if (min(site_data$mean, na.rm = TRUE) <= seasonal_thresholds_quantiles[1]){
         plot <- plot +
           geom_hline(aes(yintercept = seasonal_thresholds$t_mean01,
                          color = "Seasonal Min",
                          linetype = "Seasonal"))
       }
 
-      if ((max(site_data$mean, na.rm = TRUE) >= seasonal_thresholds_quantiles[2]) == TRUE) {
+      if (max(site_data$mean, na.rm = TRUE) >= seasonal_thresholds_quantiles[2]) {
         plot <- plot +
           geom_hline(aes(yintercept = seasonal_thresholds$t_mean99,
                          color = "Seasonal Max",

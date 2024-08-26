@@ -22,7 +22,7 @@ generate_initial_weekly_plots <- function(all_df_list, pending_df_list, site_arg
         plot_list <- list()
 
         grouped_data <- site_flag_dates %>%
-          group_by(y_w) %>% #group_by(week, year) %>% # group_by(week, month, year) %>%
+          group_by(y_w) %>%
           group_split()
 
         for(i in 1:length(grouped_data)) {
