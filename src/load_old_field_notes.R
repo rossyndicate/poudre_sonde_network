@@ -30,7 +30,7 @@ load_old_field_notes <- function(filepath,  summarize_interval = "15 minutes"){
     mutate(sonde_employed = dplyr::case_when(!is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
                                              !is.na(sensor_pulled) & is.na(sensor_deployed) ~ 1,
                                              is.na(sensor_pulled) & !is.na(sensor_deployed) ~ 0,
-                                             is.na(sensor_pulled) & is.na(sensor_deployed) ~ NA),
+                                             is.na(sensor_pulled) & is.na(sensor_deployed) ~ 0),
            end_dt  = as.POSIXct(NA, tz = "MST")) %>%
     # remove field dates where sensor was not handled:
     dplyr::filter(grepl("Sensor Cleaning or Check|Sensor Calibration", visit_type, ignore.case = TRUE))
