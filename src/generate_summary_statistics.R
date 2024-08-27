@@ -1,19 +1,41 @@
 # Generate summary statistics for a given site parameter data frame.
-#' @param site_param_df A data frame with a `mean` column retrieved from HydroVu API.
+#' @description  A function that generates summary statistics for a given site parameter data frame. The generated statistics include:
+#'   - The next observation and previous observation values.
+#'   - The rolling 7-point median of the value.
+#'   - The rolling 7-point mean of the value.
+#'   - The rolling 7-point standard deviation of the values.
+#'   - The slope in relation to the observations ahead and behind.
+#'   - The rolling 7-point slope of the observations.
+#'   - The month and year of each data point.
+#'   - The year-month combination.
+#' @param site_param_df A single site-parameter data frame with a `mean` column
 #' @return A data frame with summary statistics for a given site parameter data frame.
 #' @examples
-# generate_summary_statistics(site_param_df = all_data_flagged$`archery-Actual Conductivity`)
-# generate_summary_statistics(site_param_df = all_data_flagged$`boxelder-Temperature`)
+#' generate_summary_statistics(site_param_df = all_data_flagged$`archery-Actual Conductivity`)
+#' generate_summary_statistics(site_param_df = all_data_flagged$`boxelder-Temperature`)
 
 generate_summary_statistics <- function(site_param_df) {
 
+  # Function to add a column if it doesn't already exist
+  add_column_if_not_exists <- function(df, column_name, default_value = NA) {
+    if (!column_name %in% colnames(df)) {
+      df <- df %>% dplyr::mutate(!!sym(column_name) := default_value)
+    }
+    return(df)
+  }
+
   summary_stats_df <- site_param_df %>%
-    # ... so that we can get the proper leading/lagging values across our entire timeseries:
+    # To make appending of data possible, preserve historical data it it exists. Only
+    # make these columns if they don't already exist
+    add_column_if_not_exists(column_name = "front1") %>%
+    add_column_if_not_exists(column_name = "back1") %>%
+    add_column_if_not_exists(column_name = "rollmed") %>%
+    add_column_if_not_exists(column_name = "rollavg") %>%
+    add_column_if_not_exists(column_name = "rollsd") %>%
+    add_column_if_not_exists(column_name = "slope_ahead") %>%
+    add_column_if_not_exists(column_name = "slope_behind") %>%
+    add_column_if_not_exists(column_name = "rollslope") %>%
     dplyr::mutate(
-      # Add the next value and previous value for mean.
-      # Only do this for newest data (i.e., our appended historical
-      # data already has these filled out and we don't want to over-
-      # write them)
       front1 = ifelse(is.na(front1), dplyr::lead(mean, n = 1), front1),
       back1 = ifelse(is.na(back1), dplyr::lag(mean, n = 1), back1),
       # Add the median for a point and 6 points behind it:

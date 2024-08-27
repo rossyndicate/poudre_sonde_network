@@ -35,18 +35,20 @@ time*
 ```{r}
 old_field_notes <- load_old_field_notes(filepath = "data/sensor_field_notes.xlsx")
 
-new_field_notes <- load_mWater_notes() %>%
+new_field_notes <- load_mWater_notes(creds = yaml::read_yaml("creds/mWaterCreds.yml")) %>%
   grab_mWater_sensor_notes(mWater_api_data = .)
 
-#merge new mwater notes (sensor_notes) and old notes (field notes)  
+#merge new mwater notes and old notes
 all_field_notes <- rbind(old_field_notes, new_field_notes) %>%
+  # lil' renaming for consistency across data sets:
   mutate(site = ifelse(site == "riverbluffs", "river bluffs", site))
 
+# pull in user-defined instances of sensor or sonde malfunction, burial, drift, etc.
 sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = load_mWater_notes()) 
 ```
 
-*Merge the data sets from all API pulls. Then for developing this workflow, subset the
-data to only the 2022 and 2023 field season. (Previous field seasons were managed quite
+*Merge all the API data. For developing this workflow, we subset the
+data to only the 2023 field season. (Previous field seasons were managed quite
 differently, and therefore should be treated differently.)*
 
 ```{r}
@@ -59,14 +61,17 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
 # all_older_data <- try(munge_api_data(api_path = "data/api/virridy/", network = "virridy") %>%
 #   dplyr::filter(lubridate::year(DT_round) >= 2023))
 
-incoming_data_csvs_upload <- api_puller(site = c("JOEI", "CBRI", "CHD", "PFAL", "PBD", "SFM",
-                                                 "LBEA", "PENN", "BoxCreek", "Lincoln",
-                                                 "Timberline", "Prospect", "SpringCreek", "Archery"),
-                                        start_dt = "2023-01-01 01:00:00 MDT",
-                                        end_dt = Sys.time(), 
-                                        api_token = hv_token,
-                                        dump_dir = "data/api/virridy/",
-                                        require = NULL)
+# incoming_data_csvs_upload <- api_puller(site = c("JOEI", "CBRI", "CHD", "PFAL", "PBD", "SFM",
+#                                                  "LBEA", "PENN", "Tamasag", "Legacy", "Lincoln",
+#                                                  "Timberline", "Timberline virridy", "SpringCreek",
+#                                                  "Prospect", "Prospect virridy", "Boxelder", 
+#                                                  "BoxCreek", "Archery", "Archery virridy",
+#                                                  "River Bluffs"),
+#                                         start_dt = "2023-01-01 01:00:00 MDT",
+#                                         end_dt = Sys.time(), 
+#                                         api_token = hv_token,
+#                                         dump_dir = "data/api/virridy/",
+#                                         require = NULL)
 
 incoming_data_collated_csvs <- munge_api_data(api_path = "data/api/virridy/",
                                               network = "virridy",
@@ -79,7 +84,7 @@ all_data <- incoming_data_collated_csvs
 *Here, we split up all of our site-parameter combinations into a list that we can more
 easily iterate over. Then, across those lists, we average any observations whose frequency
 is greater than 15 minutes so that our data set is consistently recorded at 15-minute
-intervals. We also preserve the total number of observations within the 15-minute
+intervals. (Having data recording at something other than 15 minutes is super rare in this dataset.) We also preserve the total number of observations within the 15-minute
 increment used to calculate the mean, as well as the spread (max-min). After these
 calculations, we use {padr}'s `pad()` function to fill in data gaps at this 15-minute
 interval. Lastly, we join these data frames with the field notes.*
@@ -104,20 +109,20 @@ params <- c(# "Battery Level",
 # Constructing a df to iterate over each site-parameter combination
 site_param_combos <- tidyr::crossing(sites, params)
 
-# Make a list of the summarized data
+# Make a list of the 15-minute summarized data, joined with field notes
 all_data_summary_list <- purrr::map2(.x = site_param_combos$sites, 
                                      .y = site_param_combos$params, 
                                      ~summarize_site_param_full(site_arg = .x,
                                                                 parameter_arg = .y,
                                                                 api_data = all_data,
-                                                                notes = all_field_notes)) %>% 
+                                                                notes = all_field_notes) %>% try(distinct(.keep_all = TRUE))) %>% 
   # set the names for the dfs in the list
   purrr::set_names(paste0(site_param_combos$sites, "-", site_param_combos$params)) %>% 
   # remove NULL values from the list
   purrr::keep(~ !is.null(.))
 
 # Bind rows for each df in list
-all_data_summary_df <- dplyr::bind_rows(all_data_summary_list)
+# all_data_summary_df <- dplyr::bind_rows(all_data_summary_list)
 ```
 
 #### *Add summary stats*
@@ -127,15 +132,15 @@ observation's relationship to its neighboring observations. This includes:
 
 -   *the previous and next observation and their slopes*
 -   *the 7-point (each observation and the previous 6) moving median, mean, slope, and
-standard deviation*
+    standard deviation*
 -   *the hydrologic "season" in which the observation lands in: Winter base flow: Dec,
-Jan, Feb, Mar, Apr Snow melt: May, Jun Monsoon: Jul, Aug, Sep Fall base flow: Oct,
-Nov*
+    Jan, Feb, Mar, Apr Snow melt: May, Jun Monsoon: Jul, Aug, Sep Fall base flow: Oct,
+    Nov*
 
 ```{r}
 all_data_summary_stats_list <- all_data_summary_list %>%
   # modified generate_summary_statistics (for performing across "full" dataset)
-  purrr::map(~ generate_summary_statistics_full(.))
+  purrr::map(~ generate_summary_statistics_full(.)) 
 ```
 
 #### *Define thresholds*
@@ -154,10 +159,6 @@ threshold_lookup <- all_data_summary_stats_list %>%
   dplyr::bind_rows()
 
 readr::write_csv(threshold_lookup, 'data/qaqc/seasonal_thresholds_virridy.csv')
-
-# also save the threshold lookup table as a RDS 
-# saveRDS(threshold_lookup, 'data/qaqc/seasonal_thresholds_virridy.RDS')
-
 ```
 
 *Compare seasonal thresholds to our own "reasonable" ranges for parameters generally:*
@@ -184,23 +185,21 @@ compare <- dplyr::left_join(threshold_lookup, realistic, by = "parameter") %>%
 *Pass the dfs in all_data_summary_stats_list through the flagging functions:*
 
 ```{r}
-all_data_flagged <- purrr::map(all_data_summary_stats_list, function(data) {
+single_sensor_flags <- purrr::map(all_data_summary_stats_list, function(data) {
   data %>%
-    add_field_flag() %>%
-    add_spec_flag() %>%
-    #add_realistic_flag() %>%
-    add_seasonal_flag() %>%
-    add_na_flag() %>%
-    add_do_drops() %>%
-    add_repeat_flag() %>%
-    add_depth_shift_flag() %>%
-    fix_depth_cal()
-  # modified add_suspect_flag (for performing across "full" dataset)
-  # add_suspect_flag_full() #%>%
-  # add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes)
+    add_field_flag(.) %>%
+    #fix_depth_cal(.) %>%
+    fix_calibration(.) %>%
+    add_spec_flag(.) %>%
+    # add_realistic_flag() %>% # don't need this one
+    add_seasonal_flag(.) %>%
+    add_na_flag(.) %>%
+    add_do_drops(.) %>%
+    add_repeat_flag(.) %>%
+    add_depth_shift_flag(.) 
 })
 
-intersensor_checks <- all_data_flagged %>%
+ intersensor_flags <- single_sensor_flags %>%
   dplyr::bind_rows() %>%
   split(f = .$site, sep = "-") %>%
   purrr::map(~add_drift_flag(.)) %>%
@@ -213,21 +212,38 @@ intersensor_checks <- all_data_flagged %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   purrr::discard(~ nrow(.) == 0)
 
-# remove flags that occurred at the same time at an up- or downstream location
-final_flag <- intersensor_checks %>%
-  map(~add_suspect_flag_full(.)) %>%
+# add suspect across the intersensor-checked data, then remove flags that 
+# occurred at the same time at an up- or downstream location,
+# plus add in known times where sensor was malfunctioning
+final_flags <- intersensor_flags %>%
   map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes)) %>%
+  # creates new column, "auto_cleaned_flag" 
   map(~network_check(df = ., network = "virridy")) %>%
+  # if after auto-cleaning there is still a lot of flagged data near eachother,
+  # flag all the nearby data as "suspect"
+  map(~add_suspect_flag_full(.)) %>%
   bind_rows() %>%
   # Clean up the flag column to avoid redundant flagging info:
+  
+                              # if there is no flag, keep it flagless
   mutate(final_cleaned_flag = ifelse(is.na(auto_cleaned_flag), NA,
-                              ifelse(grepl("site visit|sv window", auto_cleaned_flag), str_remove_all(auto_cleaned_flag, "(DO interference|repeated value|drift|missing data|sonde not employed|outside of seasonal range|slope violation|outside of sensor specification range|outside of sensor realistic range|frozen|sonde unsubmerged|suspect data)"),
+                              # if there are auto-generated flags at the same time as a site visit, remove them
+                              ifelse(grepl("site visit|sv window", auto_cleaned_flag), str_remove_all(auto_cleaned_flag, 
+                             "(DO interference|repeated value|drift|missing data|sonde not employed|outside of seasonal range|
+                             slope violation|outside of sensor specification range|outside of sensor realistic range|frozen|
+                             sonde unsubmerged|suspect data)"),
+                              # if there is a sensor malfunction, remove all other flags EXCEPT site visits
                               ifelse(grepl("sensor malfunction", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sensor malfunction",
+                              # if the sonde was buried, remove all other flags EXCEPT site visits
                               ifelse(grepl("sonde burial", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sonde burial",
+                              # if the sonde had known biofouling, remove all other flags EXCEPT site visits
                               ifelse(grepl("sensor biofouling", auto_cleaned_flag) & !grepl("site visit|sv window", auto_cleaned_flag), "sensor biofouling",
                                                                  auto_cleaned_flag))))),
+         # for an indication of how well our automatically generated flags worked, create a column that shows 
+         # just our manually-generated (i.e. "known") poor data observations:
          wo_sensor_mal = str_remove_all(final_cleaned_flag, "(sensor malfunction|sonde burial|sensor biofouling)")) %>%
-  # after all that, remove lonely "suspect" flags. That is, suspects that are totally isolated after removing flags through the network check:
+  # after all that, remove lonely "suspect" flags. That is, suspect observations
+  # that are totally isolated and no longer linked to any "real" quality flag:
   mutate(final_cleaned_flag = ifelse(is.na(final_cleaned_flag), NA,
                               ifelse(final_cleaned_flag == "suspect data" & is.na(lag(final_cleaned_flag, 1)) & is.na(lead(final_cleaned_flag, 1)), NA, final_cleaned_flag)))
 
@@ -238,18 +254,17 @@ remove_trailing_semicolon <- function(text) {
     str_replace_all(";$", "")          # Remove ";" at the end of the string
 }
 
-# Applying the function to the dataset
-final_flag <- final_flag %>%
+# Removing lonely semicolons that occur after auto-removal of some flags, as well
+# as fields filled only with "":
+final_flags <- final_flags %>%
+  data.table::data.table() %>%
   mutate(final_cleaned_flag = map_chr(final_cleaned_flag, remove_trailing_semicolon),
          wo_sensor_mal = map_chr(wo_sensor_mal, remove_trailing_semicolon)) %>%
   mutate(final_cleaned_flag = na_if(final_cleaned_flag, ""),
          wo_sensor_mal = na_if(wo_sensor_mal, "")) 
 
-# For Juan:
-saveRDS(final_flag %>% rename(flag = final_cleaned_flag, raw_flag = flag) %>% split(f = list(.$site, .$parameter), sep = "-"), 'data/virridy_verification/all_data_flagged_complete.RDS')
-
-# For me: 
-write_csv(final_flag %>% bind_rows(), 'data/virridy_verification/all_data_flagged_plotter.csv')
+# Save a version of the data set for future verification steps:
+saveRDS(final_flags %>% rename(flag = final_cleaned_flag, raw_flag = flag) %>% split(f = list(.$site, .$parameter), sep = "-"), 'data/virridy_verification/all_data_flagged_complete.RDS')
 
 gc()
 ```
