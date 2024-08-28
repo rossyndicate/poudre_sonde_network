@@ -311,7 +311,6 @@ verify_flag_data <- function(df_list_arg,
 
           daily_plot_data <- site_param_df %>%
             filter((y_w %in% df_weekly_data$y_w) & (weekday == i))
-
           daily_plot_object <- generate_daily_plot(plot_data_arg = daily_plot_data,
                                                    df_list_arg = df_list_arg,
                                                    site_arg = site_arg,
@@ -355,7 +354,7 @@ verify_flag_data <- function(df_list_arg,
     }
 
 
-    if (is_tibble(altered_df_list)) {
+    if (is_tibble(altered_df_list)|is.data.frame(altered_df_list)) {
       altered_df_list <- altered_df_list %>%
         mutate(mean_verified = if_else(grepl(non_removable_flags, flag, ignore.case = TRUE), NA, mean_verified),
                is_verified = TRUE,

@@ -14,7 +14,7 @@ for (i in weekly_plot_objects) {
 
   if (!is.null(update)){
 
-    if(is_tibble(update)) {
+    if(is_tibble(update)|is.data.frame(update)) {
       update <- bind_rows(update)
     } else {
       if (!length(update) %in% c(51,49,46)) { # 46 is because sometimes dfs decompose into lists... idk why -jd
