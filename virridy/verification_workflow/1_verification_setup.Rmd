@@ -45,6 +45,8 @@ site <- "archery"
 parameter <- "Chl-a Fluorescence"
 ```
 
+If you get the error 'Error in !updated_df$is_verified : invalid argument type', it means that the site-parameter dataframe does not exist in the data. Please check the spelling of the site or parameter and make sure the data exists.
+
 ```{r set the site-param df to update}
 # Initialize the site-parameter dataframe to be updated
 site_param_name <- paste0(site, "-", parameter)
