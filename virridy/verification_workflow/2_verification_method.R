@@ -1,3 +1,7 @@
+
+# Run this for loop to be able to verify the data
+# Type R to see the verification options availabe to you
+
 for (i in weekly_plot_objects) {
 
   if(QUIT){
@@ -53,7 +57,7 @@ QUIT <- FALSE
 
 # check data
 updated_df <- read_rds(here(intermediary_path, site_param_name)) %>%
-  select(DT_join, site, parameter, mean, mean_verified, is_verified, verification_status) %>%
+  select(DT_join, site, parameter, mean, mean_verified, is_verified, verification_status)%>%
   filter(is_verified)
 
 # clean the directories
