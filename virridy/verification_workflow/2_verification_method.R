@@ -1,3 +1,7 @@
+
+# Run this for loop to be able to verify the data
+# Type R to see the verification options availabe to you
+
 for (i in weekly_plot_objects) {
 
   if(QUIT){

@@ -64,26 +64,26 @@ download_pictures <- function(){
       )
     )
 # basic path to field pics
-path <- "data/field_pics/"
+path <- "data/field_pics/sampling_pics/"
 
 
   # loop thru dataset and download the photo ONLY if it is not yet downloaded and not NA
   for (i in 1:nrow(sampling_photos)) {
     if (!is.na(sampling_photos$upstream_downloaded[i]) && !sampling_photos$upstream_downloaded[i]) {
-      print(sampling_photos$upstream_filename[i])
+      #print(sampling_photos$upstream_filename[i])
       download.file(sampling_photos$upstream_pic[i], destfile = paste0(path,sampling_photos$upstream_filename[i]))
     }
 
     if (!is.na(sampling_photos$downstream_downloaded[i]) && !sampling_photos$downstream_downloaded[i]) {
-      print(sampling_photos$downstream_filename[i])
+      #print(sampling_photos$downstream_filename[i])
       download.file(sampling_photos$downstream_pic[i], destfile = paste0(path, sampling_photos$downstream_filename[i]))
     }
     if (!is.na(sampling_photos$clarity_downloaded[i]) && !sampling_photos$clarity_downloaded[i]) {
-      print(sampling_photos$clarity_filename[i])
+      #print(sampling_photos$clarity_filename[i])
       download.file(sampling_photos$clarity[i], destfile = paste0(path, sampling_photos$clarity_filename[i]))
     }
     if (!is.na(sampling_photos$filter_downloaded[i]) && !sampling_photos$filter_downloaded[i]) {
-      print(sampling_photos$filter_filename[i])
+      #print(sampling_photos$filter_filename[i])
       download.file(sampling_photos$filter_pic[i], destfile = paste0(path, sampling_photos$filter_filename[i]))
     }
   }
@@ -108,7 +108,7 @@ path <- "data/field_pics/"
     #remove excess columns and rename sep columns to match old columns
     select(site, start_dt,yyyymmdd, other_pic = other_pic_sep, other_pic_descriptor = other_descriptor_sep)%>%
     # make descriptor lower case and remove any spaces in the name
-    mutate(other_pic_descriptor = tolower(str_replace_all(other_pic_descriptor, " ", "")),
+    mutate(other_pic_descriptor = tolower(str_replace_all(other_pic_descriptor, " ", "_")),
            other_filename = case_when(!is.na(other_pic) ~ paste0(site, "_", yyyymmdd, "_", other_pic_descriptor, ".jpg")),
            # Check to see if photo has already been downloaded
            other_downloaded = case_when(
@@ -117,10 +117,11 @@ path <- "data/field_pics/"
              TRUE ~ FALSE
            ))
 
+  path <- "data/field_pics/"
   # loop thru dataset and download the photo ONLY if it is not yet downloaded and not NA
   for (i in 1:nrow(other_photos)) {
     if (!is.na(other_photos$other_downloaded[i]) && !other_photos$other_downloaded[i]) {
-      print(other_photos$other_filename[i])
+      #print(other_photos$other_filename[i])
       download.file(other_photos$other_pic[i], destfile = paste0(path,other_photos$other_filename[i]))
     }}
 
@@ -131,3 +132,6 @@ cat("\nAll Available Pictures Downloaded\n")
 #RUN TO DOWNLOAD NEW PICTURES
 # It takes about 2-5 minutes to download ~25-50 photos
 # Sometimes the request to mWater time out, just re run the function below if that happens
+
+
+
