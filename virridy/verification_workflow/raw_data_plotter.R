@@ -125,7 +125,7 @@ server <- function(input, output) {
                        aes(x = DT_round, y = mean, colour = flag)) +
 
             labs(colour = "Flags on data", color = "Additional Sites")+
-            scale_y_continuous(trans = "log",
+            scale_y_continuous(trans = "log10",
                                breaks = c(0.001, 0.01, 0.1, 1, 10, 100, 1000),
                                # Specify breaks at 1, 10, and 100
                                labels = c("0.001", "0.01", "0.1", "1", "10", "100", "1000"))
