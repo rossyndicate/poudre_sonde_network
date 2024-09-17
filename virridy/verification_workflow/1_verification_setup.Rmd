@@ -41,8 +41,8 @@ get_working_data_decision()
 ```{r set site and parameter variables}
 network <- "virridy"
 # Set the site and parameter to verify
-site <- "archery"
-parameter <- "Chl-a Fluorescence"
+site <- "tamasag"
+parameter <- "ORP"
 ```
 
 ```{r set the site-param df to update}
