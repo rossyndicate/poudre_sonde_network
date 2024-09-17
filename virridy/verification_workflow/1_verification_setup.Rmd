@@ -2,6 +2,8 @@
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+This section may take a while to load (~1-5 min) as it will download all the data from OneDrive Folder. 
+
 ```{r load libraries, functions, and all flagged data}
 # Load necessary libraries
 library(tidyverse)
@@ -33,17 +35,23 @@ intermediary_data <- set_names(map(list.files(intermediary_path, full.names = TR
 verified_data <- set_names(map(list.files(verified_path, full.names = TRUE), read_rds), list.files(verified_path))
 ```
 
+Check to make sure that `all_data`, `intermediary_data`, and `verified_data` are a `large list` after running the chunk above. If they are `list of 0` then the data is not syncing correctly in your OneDrive folder. 
+
 ```{r working data selection}
 # Prompt user to select data for verification
 get_working_data_decision()
 ```
 
+Correct spelling of sites and parameters available in verificaiton_assignments_notes sheet
+
 ```{r set site and parameter variables}
 network <- "virridy"
 # Set the site and parameter to verify
-site <- "archery"
-parameter <- "Chl-a Fluorescence"
+site <- "archery virridy"
+parameter <- "Turbidity"
 ```
+
+If you get the error 'Error in !updated_df\$is_verified : invalid argument type', it means that the site-parameter dataframe does not exist in the data. Please check the spelling of the site or parameter and make sure the data exists.
 
 ```{r set the site-param df to update}
 # Initialize the site-parameter dataframe to be updated
@@ -72,3 +80,5 @@ weekly_plot_objects <- generate_initial_weekly_plots(
 )
 QUIT <- FALSE
 ```
+
+Move to the script `02_verification_method.R` to start the verification process.

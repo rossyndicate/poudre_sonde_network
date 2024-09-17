@@ -31,11 +31,20 @@ Don't grab videos or data that has the wrong dates
 ```{r}
 # select site
 
+compile_file_path <- "data/timelapse_photos/2024_compiled/"
+
 compile_files <- function(folder_name){
   site <- str_extract(folder_name, "tamasag|legacy|timberline|prospect|boxelder|archery|riverbluffs|rist|elc")
   photo_files <- list.files(path = folder_name, full.names = TRUE, recursive = TRUE)
+  
+  #check to see if the folder paths for each site exist, if not, create them in the compile_file_path
+  
+  if(!dir.exists(paste0(compile_file_path, site))){
+    dir.create(paste0(compile_file_path, site), recursive = TRUE)
+  }
+  
   #files in folder
-new_folder_files <- list.files(path = paste0('data/timelapse_photos/2023_compiled/',site), full.names = TRUE)
+compiled_folder_files <- list.files(path = paste0(compile_file_path, site), full.names = TRUE)
 
 photo_renamer <- function(file) {
   #grab dt from file
@@ -45,10 +54,10 @@ photo_renamer <- function(file) {
     parse_date_time("YmdHMS", tz="MST")%>%
     format("%Y%m%d_%H%M")
   #create new file name from dt
-  new_file_name <- paste0('data/timelapse_photos/2023_compiled/',site,"/", dt,'.JPG')
+  new_file_name <- paste0(compile_file_path,site,"/", dt,'.JPG')
 
   #check to see if this file is already in the folder
-  if(new_file_name %nin% new_folder_files){
+  if(new_file_name %nin% compiled_folder_files){
     #if it is not, copy it over
   file.copy(file,to =  new_file_name)  
   }
@@ -76,12 +85,20 @@ folders <- list.files(path = "data/timelapse_photos/to_be_compiled/", full.names
 
 # view timelapse year coverage
 ```{r}
-
-
+# read in all files names and then break into site and date time by parsing the file and folder name
+all_files <- list.files(path = compile_file_path, full.names = TRUE, recursive = TRUE)%>%
+  map_df(~{
+    site <- str_extract(.x, "tamasag|legacy|timberline|prospect|boxelder|archery|riverbluffs|rist|elc")
+    date <- str_extract(.x, "\\d{8}_\\d{4}")
+    tibble(site = site, date = date, photo = 1)
+  })%>%
+  mutate(date = parse_date_time(date, "Ymd_HM"))
  
+
+
 # plot the number of photos per day facet by site
 all_files%>%
-  filter(site == "archery")%>%
+  #filter(site == "archery")%>%
   ggplot(aes(x = date, y = photo))+
   geom_point()+
   facet_wrap(~site)+
