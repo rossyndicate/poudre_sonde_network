@@ -1,6 +1,7 @@
 # This script is a basic shiny app to help users verify sonde data by looking at additional parameters and sites
 
 #Run the commented line below to load the data
+
 #data <- readRDS("data/virridy_verification/all_data_flagged_complete.RDS")
 
 # Define UI
@@ -8,50 +9,87 @@ library(shiny)
 library(plotly)
 library(lubridate)
 library(tidyverse)
+library(shinyjs)  # Library to allow JavaScript functionality
 
 ui <- fluidPage(
+  useShinyjs(),  # Initialize shinyjs
+
   titlePanel("RAW Data Plotter"),
-  sidebarLayout(
-    sidebarPanel(
-      # Allows user to select sites
-      selectInput("site_oi", "Select primary Site",
-                  choices = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
-                              "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
-                  selected = "lincoln"),
-      selectInput("selected_site", "Select additional Site(s)",
-                  choices = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
-                              "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
-                  selected = c("legacy", "timberline"), multiple = TRUE),
-      # User to select parameters
-      selectInput("selected_param", "Select Parameter(s)",
-                  choices = c("Depth", "Temperature", "Specific Conductivity", "DO", "Chl-a Fluorescence", "ORP", "Turbidity", "pH", "FDOM Fluorescence"),
-                  selected = c("Depth", "Temperature"), multiple = TRUE),
-      # Select the number of columns to facet by
-      radioButtons("col_number", "Number of Columns for Facet Wrap:", choices = list("One" = 1, "Two" = 2), selected = 1),
-      # display flags?
-      radioButtons("flags_TF", "Display flags?", choices = list("Yes" = "yes", "No" = "no"), selected = "yes"),
-      # Select whether you want to transform the data
-      radioButtons("transformation", "Transformation of Data:", choices = list("None", "log10()"), selected = "None"),
-      # Select dates
-      dateRangeInput("date_range", "Select Date Range", start = "2023-03-15", end = ymd(Sys.Date())),
-      actionButton("plot_button", "Plot Data")
+
+  # Button to toggle sidebar visibility
+  actionButton("toggle_sidebar", "Toggle Sidebar"),
+
+  # Main layout with a conditional sidebar
+  fluidRow(
+    # Sidebar Panel
+    column(
+      width = 10,
+      div(id = "sidebar",
+          sidebarPanel(
+            # Allows user to select sites
+            selectInput("site_oi", "Select primary Site",
+                        choices = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
+                                    "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
+                        selected = "lincoln"),
+            selectInput("selected_site", "Select additional Site(s)",
+                        choices = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
+                                    "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
+                        selected = c("legacy", "timberline"), multiple = TRUE),
+            # User to select parameters
+            selectInput("selected_param", "Select Parameter(s)",
+                        choices = c("Depth", "Temperature", "Specific Conductivity", "DO", "Chl-a Fluorescence", "ORP", "Turbidity", "pH", "FDOM Fluorescence"),
+                        selected = c("Depth", "Temperature"), multiple = TRUE),
+            # Select the number of columns to facet by
+            radioButtons("col_number", "Number of Columns for Facet Wrap:", choices = list("One" = 1, "Two" = 2), selected = 1),
+            # display flags?
+            radioButtons("flags_TF", "Display flags?", choices = list("Yes" = "yes", "No" = "no"), selected = "yes"),
+            # Select whether you want to transform the data
+            radioButtons("transformation", "Transformation of Data:", choices = list("None", "log10()"), selected = "None"),
+            # Select dates
+            dateRangeInput("date_range", "Select Date Range", start = "2023-03-15", end = ymd(Sys.Date())),
+            actionButton("plot_button", "Plot Data")
+          )
+      )
     ),
-    mainPanel(
-                 fluidRow(
-                   column(width = 12, plotlyOutput("data_plot", height = "700px"))
-                 )
+
+    # Main Panel for the plot
+    column(
+      width = 12,
+      div(id = "main_panel",
+          plotlyOutput("data_plot", height = "800px")
+      )
     )
   )
 )
 
 
+
 # Define Server
 server <- function(input, output) {
+
+  # Keep track of whether the sidebar is visible
+  sidebar_visible <- reactiveVal(TRUE)
+
+  # Toggle the sidebar visibility and resize the plot
+  observeEvent(input$toggle_sidebar, {
+    sidebar_visible(!sidebar_visible())  # Toggle the visibility state
+
+    # Dynamically resize the plot to fill the space
+    if (sidebar_visible()) {
+      show("sidebar")
+      runjs("$('#main_panel').removeClass('col-12').addClass('col-9');")
+    } else {
+      hide("sidebar")
+      runjs("$('#main_panel').removeClass('col-9').addClass('col-12');")
+    }
+  })
+
+
 
   observeEvent(input$plot_button, {
 
 
-    req(input$selected_site, input$selected_param, input$date_range)
+    req(input$site_oi,  input$selected_param, input$date_range)
     # Read in data before running script (results in much faster plotting)
     #data <- readRDS("~/Documents/fork_yeah/poudre_sonde_network/data/virridy_verification/all_data_flagged_complete.RDS")
     # Filter the data based on user input
@@ -85,12 +123,21 @@ server <- function(input, output) {
 
 
     #Create the baseplot that will be customized below
-    base_plot <- ggplot() +
-      geom_line(data = trim_select_data %>% filter(site != input$site_oi),
-                aes(x = DT_round, y = mean, color = site)) +
-      facet_wrap(~parameter, scales = "free_y", ncol = as.integer(input$col_number)) +
-      labs(x = "Date", y = "Value") +
-      theme_bw()
+    if(length(unique(trim_select_data$site)) == 1 ){
+      #when only the primary site is selected or when additional sites are selected but have no data
+      base_plot <- ggplot(data = trim_select_data %>% filter(site == input$site_oi),
+                          aes(x = DT_round, y = mean)) +
+        facet_wrap(~parameter, scales = "free_y", ncol = as.integer(input$col_number)) +
+        labs(x = "Date", y = "Value") +
+        theme_bw()
+   } else {
+      #when additional sites are selected and have data
+      base_plot <- ggplot() +
+        geom_line(data = trim_select_data %>% filter(site != input$site_oi), aes(x = DT_round, y = mean, color = site))+
+        facet_wrap(~parameter, scales = "free_y", ncol = as.integer(input$col_number)) +
+        labs(x = "Date", y = "Value") +
+        theme_bw()
+    }
 
     output$data_plot <- renderPlotly({
 
