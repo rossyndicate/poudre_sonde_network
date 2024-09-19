@@ -74,20 +74,21 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
                     client_secret = as.character(hv_creds["secret"]),
                     url = "https://www.hydrovu.com/public-api/oauth/token")
 
+# Test this at the end of the day
+api_dump_dir <- here::here("data","api","virridy")
+
 incoming_data_csvs_upload <- api_puller(site = c("Tamasag", "Legacy", "Lincoln",
                                                  "Timberline","Prospect", "Boxelder",
                                                  "Archery", "River Bluffs"),
                                         start_dt = "2023-01-01 01:00:00 MDT",
                                         end_dt = Sys.time(),
                                         api_token = hv_token,
-                                        dump_dir = "data/api/virridy/",
+                                        dump_dir = api_dump_dir,
                                         require = NULL)
 
 # we will use `munge_API_data()` for the synapse workflow
-incoming_data_collated_csvs <- munge_api_data(api_path = "data/api/virridy/",
-                                              network = "virridy",
-                                              require = NULL)
-all_data <- incoming_data_collated_csvs
+incoming_data_collated_csvs <- munge_api_data(api_path = api_dump_dir)
+all_data_df <- incoming_data_collated_csvs
 
 ```
 
@@ -126,7 +127,7 @@ all_data_tidied_list <- purrr::map2(
   ~ tidy_and_add_field_notes(
       site_arg = .x,
       parameter_arg = .y,
-      api_data = all_data,
+      api_data = all_data_df,
       notes = all_field_notes,
       summarize_interval = "15 minutes") %>%
     # set the names for the dfs in the list
