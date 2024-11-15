@@ -31,7 +31,7 @@ Don't grab videos or data that has the wrong dates
 ```{r}
 # select site
 
-compile_file_path <- "data/timelapse_photos/2024_compiled/"
+compile_file_path <- "timelapse_data/2024_compiled/"
 
 compile_files <- function(folder_name){
   site <- str_extract(folder_name, "tamasag|legacy|timberline|prospect|boxelder|archery|riverbluffs|rist|elc")
@@ -70,7 +70,7 @@ print(paste0("Finished ", folder_name))
 }
 
 #to be compiled folder
-folders <- list.files(path = "data/timelapse_photos/to_be_compiled/", full.names = TRUE)%>%
+folders <- list.files(path = "timelapse_data/to_be_compiled/", full.names = TRUE)%>%
   # include files that do not have WRONGDATES in the name
   str_subset("WRONGDATES", negate = TRUE)%>%
   str_subset("VIDEOS", negate = TRUE)
