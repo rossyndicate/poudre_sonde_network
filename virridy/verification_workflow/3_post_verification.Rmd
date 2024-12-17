@@ -1,0 +1,261 @@
+```{r}
+library(tidyverse)
+library(readxl)
+library(here)
+
+# Load functions
+walk(list.files('src/', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
+```
+
+
+Once all of the data has been verified it will need to get fixed with the errors
+that we found while manually verifying the data. 
+
+# Clean up the issues to resolve data set
+```{r}
+# Read in the issues to resolved data
+issues_df <- read_xlsx(here('data','virridy_verification','verification_assignments_notes.xlsx'), sheet = "issues to resolve")
+
+# site list 
+site_list <- c('tamasag', 'legacy', 'lincoln', 'timberline', 'prospect', 'boxelder', 'archery', 'river bluffs')
+
+site_list <- paste(site_list, collapse = "|")
+```
+
+```{r}
+# Fix the date time columns
+issues_df$date_found <- update(issues_df$date_found, year = 2024)
+
+# make sure that the verifier column is all capitalized
+filtered_issues_df <- issues_df %>% 
+  mutate(verifier = str_to_upper(verifier),
+         site = str_to_lower(site)) %>% 
+  filter(grepl(site_list, site, ignore.case = T),
+         !grepl("virridy", site, ignore.case = T),
+         year(start_dt) == 2023,
+         year(end_dt) == 2023) %>% 
+  group_by(site, param) %>%
+  arrange(start_dt, .by_group = T)
+
+# we can filter out more data because not all of them have issues that need to be fixed
+site_params_with_issues <- unique(filtered_issues_df[, c('site', 'param')]) %>% 
+  mutate(site_params = paste(site, param, sep = "-")) %>% 
+  pull(site_params)
+```
+
+# Pull in all of the verified data
+```{r}
+verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'verified_directory'))) %>% 
+  filter(grepl(site_list, names, ignore.case = T),
+         !grepl("virridy", names, ignore.case = T)) %>% 
+  arrange() %>%
+  pull(names)
+
+verified_data <- map(.x = verified_file_names,~{
+  read_rds(here('data', 'virridy_verification', 'verified_directory', .x))
+}) 
+
+names(verified_data) <- verified_file_names
+
+# filter the verified files for data that has issues that need to be resolved
+verified_data <- verified_data[names(verified_data) %in% site_params_with_issues]
+```
+
+```{r}
+# quick look up function to explore the data easily
+
+lookup <- function(site_param) {
+  df <- verified_data[[site_param]] %>% 
+    select(DT_join, site, parameter, raw_flag, flag, mean, mean_verified, is_verified, verification_status, day, week, month, year)
+  View(df)
+}
+```
+
+Now we only have 27 data frames that we need to fix. 
+Lets make a huge function that goes through each issue individually.
+Still need to go through and solve the depth calibration issues. Those have not 
+been fixed in this script
+
+```{r}
+# use this function in imap
+post_manual_verification_clean_up <- function(idx, df) {
+  
+  site_param <- idx
+  
+  # Archery ----
+  # BETA AT800 sonde deployed resulting in very different chla values from original sonde, add flag (deployment error or...?) but do not remove?
+  if (site_param == "archery-Chl-a Fluorescence") {
+    post_verified_df <- df %>% 
+      add_flag(between(DT_round, date("2023-04-20 00:00:00"), date("2023-05-23 23:59:59")),
+               "deployment error")
+  }
+  
+  if (site_param == "archery-DO") {
+    fail_dts <- paste(c("2023-09-15 11:15:00", "2023-04-23 12:15:00", "2023-04-23 12:30:00"), collapse = "|")
+    post_verified_df <- df %>% 
+      mutate(mean_verified = if_else(grepl(fail_dts, DT_join, ignore.case = T), NA, mean_verified),
+             verification_status = if_else(grepl(fail_dts, DT_join, ignore.case = T), "FAIL", verification_status))
+  }
+  
+  if (site_param == "archery-Depth") {
+    # flag is Sonde not deployed, but the data looks fine
+    post_verified_df <- df %>% 
+      mutate(mean_verified = if_else(between(DT_round, date("2023-05-16 14:15:00"), date("2023-05-21 00:00:00")), 
+                                     mean, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-05-16 14:15:00"), date("2023-05-21 00:00:00")), 
+                                           "FAIL", 
+                                           verification_status))
+  }
+  
+  if (site_param == "archery-Specific Conductivity") {
+    # Sensor malfunction can be removed for this period of time since data looks good
+    post_verified_df <- df %>% 
+      mutate(mean_verified = if_else(between(DT_round, date("2023-09-15 10:29:00"), date("2023-10-16 00:29:00")), 
+                                     NA, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-09-15 10:29:00"), date("2023-10-16 00:29:00")), 
+                                           "FAIL", 
+                                           verification_status))
+  }
+  
+  # Boxelder ----
+  if (site_param == "boxelder-Specific Conductivity") { 
+    # There seems to be a sensor malfunction, but the data seems to be tracking the up/downstream data.
+    post_verified_df <- df %>%
+      mutate(mean_verified = if_else(between(DT_round, date("2023-07-31 17:59:00"), date("2023-08-04 10:59:00")), 
+                                     mean, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-07-31 17:59:00"), date("2023-08-04 10:59:00")), 
+                                           "FAIL", 
+                                           verification_status))
+  }
+  
+  if (site_param == "boxelder-pH") {
+    post_verified_df <- df %>% 
+      # Sensor malfunction flag can be removed for this period of time since data looks good and in line with up/downstream sites
+      mutate(mean_verified = if_else(between(DT_round, date("2023-07-31 17:59:00"), date("2023-08-04 10:59:00")), 
+                                     mean, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-07-31 17:59:00"), date("2023-08-04 10:59:00")), 
+                                           "FAIL", 
+                                           verification_status)) %>% 
+      # Sonde burial that is not being tracked in the field notes
+      add_flag(between(DT_round, date("2023-05-26 12:29:00"), date("2023-05-30 18:14:00")), "sonde burial") %>% 
+      # Failed data when it should have been passed
+      mutate(mean_verified = if_else(between(DT_round, date("2023-05-30 18:29:00"), date("2023-06-04 23:59:00")) & is.na(flag), 
+                                     mean, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-05-30 18:29:00"), date("2023-06-04 23:59:00")) & is.na(flag), 
+                                           "PASS", 
+                                           verification_status))
+  }
+  
+  if (site_param == "boxelder-Turbidity") {
+    post_verified_df <- df %>% 
+      # Sensor malfunction, but the data seems to be tracking what was happening at prospect pretty well.
+      mutate(mean_verified = ifelse(between(DT_round, date("2023-08-01 09:29:00"), date("2023-08-03 13:59:00")),
+                                    mean,
+                                    mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-08-01 09:29:00"), date("2023-08-03 13:59:00")) & is.na(flag),
+                                           "PASS",
+                                           verification_status))
+  }
+  
+  # Lincoln ----
+  if (site_param == "lincoln-Chl-a Fluorescence") {
+    post_verified_df <- df %>% 
+      # Failed flagged points, should be Pass failed points
+      mutate(mean_verified = ifelse(between(DT_round, date("2023-09-25 00:00:00"), date("2023-10-01 00:00:00")) & !is.na(flag),
+                                    NA,
+                                    mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-09-25 00:00:00"), date("2023-10-01 00:00:00")),
+                                           "PASS",
+                                           verification_status))
+  }
+  
+  # Make sure site visits always gets flagged (in case these flags were removed accidentally) ----
+  always_fail_text <- paste(c("sv window", "site visit"), collapse = "|")
+
+  post_verified_df <- post_verified_df %>% 
+    mutate(mean_verified = if_else(grepl(always_fail_text, flag, ignore.case = T), NA, mean_verified),
+           is_verified = if_else(grepl(always_fail_text, flag, ignore.case = T), TRUE, mean_verified),
+           verification_status = if_else(grepl(always_fail_text, flag, ignore.case = T), "PASS", verification_status))
+  
+  return(post_verified_df)
+  
+}
+```
+
+```{r}
+# filter the verified for those sites that I have finished and need massaging
+# Some sites issues were resolved outside of this script
+
+# finished site list 
+finished_site_list <- paste(c("archery-Chl-a Fluorescence", "archery-DO", "archery-Depth",
+                              "archery-Specific Conductivity", "boxelder-Specific Conductivity",
+                              "boxelder-pH", "boxelder-Turbidity", "lincoln-Chl-a Fluorescence"), collapse = "|")
+
+# filter the verified files for data that has issues that need to be resolved
+finished_verified_data <- verified_data[grepl(finished_site_list, names(verified_data))]
+
+post_verified_data <- imap(finished_verified_data, ~ post_manual_verification_clean_up(idx = .y, df = .x))
+```
+
+```{r}
+# Upload all of the files that we needed to manually post verify
+iwalk(post_verified_data, ~{
+  write_rds(.x, here("data", "virridy_verification", "post_verified_directory", .y))
+})
+```
+
+```{r}
+# Upload all of the files that did not need to be manually post verified
+verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'verified_directory'))) %>% 
+  filter(grepl(site_list, names, ignore.case = T),
+         !grepl("virridy", names, ignore.case = T)) %>% 
+  arrange() %>%
+  pull(names)
+
+verified_data <- map(.x = verified_file_names,~{
+  read_rds(here('data', 'virridy_verification', 'verified_directory', .x))
+}) 
+
+names(verified_data) <- verified_file_names
+
+# filter the verified files for data that have no 
+no_issue_verified_data <- verified_data[!names(verified_data) %in% site_params_with_issues]
+
+iwalk(no_issue_verified_data, ~{
+  write_rds(.x, here("data", "virridy_verification", "post_verified_directory", .y))
+})
+```
+
+```{r}
+# data that still needs to get added
+final_data <- paste(c("boxelder-ORP", "legacy-pH", "prospect-pH"), collapse = "|")
+
+
+verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'verified_directory'))) %>% 
+  filter(grepl(site_list, names, ignore.case = T),
+         !grepl("virridy", names, ignore.case = T)) %>% 
+  arrange() %>%
+  pull(names)
+
+verified_data <- map(.x = verified_file_names,~{
+  read_rds(here('data', 'virridy_verification', 'verified_directory', .x))
+}) 
+
+names(verified_data) <- verified_file_names
+
+# filter the verified files for data that has issues that need to be resolved
+last_verified_data <- verified_data[grepl(final_data, names(verified_data))]
+
+iwalk(last_verified_data, ~{
+  write_rds(.x, here("data", "virridy_verification", "post_verified_directory", .y))
+})
+```
+
+# data that still needs to get added but is not done
+"legacy-Turbidity"
+"prospect-Turbidity"
