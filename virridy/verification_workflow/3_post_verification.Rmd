@@ -61,9 +61,18 @@ names(verified_data) <- verified_file_names
 verified_data <- verified_data[names(verified_data) %in% site_params_with_issues]
 ```
 
+# Remove any of the data that is already resolved
+```{r}
+post_verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'post_verified_directory'))) %>% 
+  arrange() %>% 
+  pull(names)
+
+# This is data that needs to be resolved still
+verified_data <- verified_data[!names(verified_data) %in% post_verified_file_names]
+```
+
 ```{r}
 # quick look up function to explore the data easily
-
 lookup <- function(site_param) {
   df <- verified_data[[site_param]] %>% 
     select(DT_join, site, parameter, raw_flag, flag, mean, mean_verified, is_verified, verification_status, day, week, month, year)
@@ -71,7 +80,7 @@ lookup <- function(site_param) {
 }
 ```
 
-Now we only have 27 data frames that we need to fix. 
+Now we only have 16 data frames that we need to fix. 
 Lets make a huge function that goes through each issue individually.
 Still need to go through and solve the depth calibration issues. Those have not 
 been fixed in this script
@@ -166,12 +175,70 @@ post_manual_verification_clean_up <- function(idx, df) {
   if (site_param == "lincoln-Chl-a Fluorescence") {
     post_verified_df <- df %>% 
       # Failed flagged points, should be Pass failed points
-      mutate(mean_verified = ifelse(between(DT_round, date("2023-09-25 00:00:00"), date("2023-10-01 00:00:00")) & !is.na(flag),
+      mutate(mean_verified = if_else(between(DT_round, date("2023-09-25 00:00:00"), date("2023-10-01 00:00:00")) & !is.na(flag),
                                     NA,
                                     mean_verified),
              verification_status = if_else(between(DT_round, date("2023-09-25 00:00:00"), date("2023-10-01 00:00:00")),
                                            "PASS",
                                            verification_status))
+  }
+  
+  # River Bluffs ----
+  # depth is a calibration that will not get resolved in this script
+  # need to make a depth calibration function
+  
+  if (site_param == 'river bluffs-Chl-a Fluorescence') {
+    post_verified_df <- df %>% 
+      # Value should be flagged, this point was passed
+      mutate(mean_verified = if_else(DT_join == "2023-04-09 17:45:00",
+                                     NA,
+                                     mean_verified),
+             verification_status = if_else(DT_join == "2023-04-09 17:45:00",
+                                           "FAIL",
+                                           verification_status)) %>% 
+      # Chla drift (until sonde burial)
+      mutate(mean_verifed = if_else(between(DT_round, date("2023-04-21 23:59:00"), date("2023-05-04 10:46:00")) & is.na(flag),
+                                    NA,
+                                    mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-04-21 23:59:00"), date("2023-05-04 10:46:00")) & is.na(flag),
+                                           "FAIL",
+                                           verification_status)) %>% 
+      add_flag(between(DT_round, date("2023-04-21 23:59:00"), date("2023-05-04 10:46:00")), "drift")
+  }
+  
+  if (site_param == 'river bluffs-Temperature') {
+    post_verified_df <- df %>% 
+      # Indicates sonde burial, but data looks good
+      mutate(mean_verifed = if_else(between(DT_round, date("2023-04-11 23:44:00"), date("2023-04-16 13:31:00")),
+                                    mean,
+                                    mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-04-11 23:44:00"), date("2023-04-16 13:31:00")) & !is.na(flag),
+                                           "FAIL",
+                                           verification_status))
+  }
+  
+  if (site_param == 'river bluffs-Specific Conductivity') {
+    post_verified_df <- df %>% 
+      # Sonde burial for like 2 months but the data looks mostly fine
+      mutate(mean_verified = if_else(between(DT_round, date("2023-05-04 16:14:00"), date("2023-07-05 20:59:00")),
+                                     mean,
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-05-04 16:14:00"), date("2023-07-05 20:59:00")),
+                                           "FAIL",
+                                           verification_status))
+  }
+  
+  if (site_param == "river bluffs-ORP") {
+    post_verified_df <- df %>% 
+      # Field note flag. Sensor was visited one day and returned the next and it seems like it was kept running over night.
+      add_flag(between(DT_round, date("2023-07-17 13:59:00"), date("2023-07-18 09:46:00")), "sonde not employed") %>% 
+      # Sonde burial flag on other parameters during this time but not on ORP
+      add_flag(between(DT_round, date("2023-05-04 16:14:00"), date("2023-07-05 20:59:00")), "sonde burial")
+  }
+  
+  if (site_param == "river bluffs-DO") {
+    post_verified_df <- df %>% 
+      # to do
   }
   
   # Make sure site visits always gets flagged (in case these flags were removed accidentally) ----
@@ -211,19 +278,19 @@ iwalk(post_verified_data, ~{
 
 ```{r}
 # Upload all of the files that did not need to be manually post verified
-verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'verified_directory'))) %>% 
+verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'verified_directory'))) %>%
   filter(grepl(site_list, names, ignore.case = T),
-         !grepl("virridy", names, ignore.case = T)) %>% 
+         !grepl("virridy", names, ignore.case = T)) %>%
   arrange() %>%
   pull(names)
 
 verified_data <- map(.x = verified_file_names,~{
   read_rds(here('data', 'virridy_verification', 'verified_directory', .x))
-}) 
+})
 
 names(verified_data) <- verified_file_names
 
-# filter the verified files for data that have no 
+# filter the verified files for data that have no
 no_issue_verified_data <- verified_data[!names(verified_data) %in% site_params_with_issues]
 
 iwalk(no_issue_verified_data, ~{
@@ -236,15 +303,15 @@ iwalk(no_issue_verified_data, ~{
 final_data <- paste(c("boxelder-ORP", "legacy-pH", "prospect-pH"), collapse = "|")
 
 
-verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'verified_directory'))) %>% 
+verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'verified_directory'))) %>%
   filter(grepl(site_list, names, ignore.case = T),
-         !grepl("virridy", names, ignore.case = T)) %>% 
+         !grepl("virridy", names, ignore.case = T)) %>%
   arrange() %>%
   pull(names)
 
 verified_data <- map(.x = verified_file_names,~{
   read_rds(here('data', 'virridy_verification', 'verified_directory', .x))
-}) 
+})
 
 names(verified_data) <- verified_file_names
 
