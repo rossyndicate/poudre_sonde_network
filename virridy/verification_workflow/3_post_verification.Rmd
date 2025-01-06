@@ -237,9 +237,46 @@ post_manual_verification_clean_up <- function(idx, df) {
   }
   
   if (site_param == "river bluffs-DO") {
+    # "Passed failed points, should be ff/sonde burial, definitely a handful of points that reflect that but otherwise looks fine" note dates
+    # have to test if this actually needs the timezone information
+    timezone = "America/Denver"
+    periods <- interval(
+      start = c(
+        ymd_hms("2023-05-08 17:29:00", tz = timezone),
+        ymd_hms("2023-05-10 17:44:00", tz = timezone),
+        ymd_hms("2023-05-22 16:59:00", tz = timezone),
+        ymd_hms("2023-06-01 09:29:00", tz = timezone),
+        ymd_hms("2023-06-06 12:14:00", tz = timezone),
+        ymd_hms("2023-06-06 20:44:00", tz = timezone),
+        ymd_hms("2023-06-08 14:29:00", tz = timezone),
+        ymd_hms("2023-06-16 04:44:00", tz = timezone),
+        ymd_hms("2023-06-21 09:29:00", tz = timezone),
+        ymd_hms("2023-06-29 11:14:00", tz = timezone)),
+      end = c(
+        ymd_hms("2023-05-09 19:31:00", tz = timezone),
+        ymd_hms("2023-05-12 16:01:00", tz = timezone),
+        ymd_hms("2023-05-30 00:01:00", tz = timezone),
+        ymd_hms("2023-06-02 13:46:00", tz = timezone),
+        ymd_hms("2023-06-06 19:31:00", tz = timezone),
+        ymd_hms("2023-06-07 15:31:00", tz = timezone),
+        ymd_hms("2023-06-09 11:01:00", tz = timezone),
+        ymd_hms("2023-06-17 02:31:00", tz = timezone),
+        ymd_hms("2023-06-22 09:46:00", tz = timezone),
+        ymd_hms("2023-07-01 23:46:00", tz = timezone)))
+    
     post_verified_df <- df %>% 
-      # to do
+      # Passed failed points, should be ff
+      mutate(mean_verified = if_else(DT_round %within% periods,
+                                     mean,
+                                     mean_verified),
+             verification_status = if_else(DT_round %within% periods,
+                                           "FAIL",
+                                           verification_status))
+    
   }
+  
+  # Tamasag
+  # depth calibration will not get resolved in this script
   
   # Make sure site visits always gets flagged (in case these flags were removed accidentally) ----
   always_fail_text <- paste(c("sv window", "site visit"), collapse = "|")
