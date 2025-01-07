@@ -275,8 +275,56 @@ post_manual_verification_clean_up <- function(idx, df) {
     
   }
   
-  # Tamasag
+  # Tamasag ----
+  
   # depth calibration will not get resolved in this script
+  # specific calibration will not get resolved in this script
+  # pH calibration will not get resolved in this script
+  
+  if (site_param == "tamasag-pH") {
+    # "sonde burial that is not being tracked in the field notes" note dates
+    timezone = "America/Denver"
+    periods <- interval(
+      start = c(ymd_hms("2023-06-06 22:14:00", tz = timezone),
+                ymd_hms("2023-06-13 15:29:00", tz = timezone),
+                ymd_hms("2023-06-24 09:44:00", tz = timezone)),
+      end = c(ymd_hms("2023-06-08 13:01:00", tz = timezone),
+              ymd_hms("2023-06-21 12:46:00", tz = timezone),
+              ymd_hms("2023-06-26 11:46:00", tz = timezone)))
+    
+    post_verified_df <- df %>% 
+      add_flag(DT_round %within% periods, "sonde burial") %>% 
+      mutate(mean_verified = if_else(DT_round %within% periods,
+                                     NA,
+                                     mean_verified),
+             verification_status = if_else(DT_round %within% periods,
+                                           "PASS", # here we are passing the sonde burial flags.
+                                           verification_status))
+  }
+  
+  if (site_param == "tamasag-Turbidity") {
+    # "Drift flag did not flag all of the data in this time frame. 
+    # There is a lot of drift flag that can be back calibrated" and 
+    # "Potential drift?" note dates
+    timezone = "America/Denver"
+    periods <- interval(
+      start = c(ymd_hms("2023-08-17 23:59:00", tz = timezone),
+                ymd_hms("2023-10-03 13:14:00", tz = timezone),
+                ymd_hms("2023-10-21 23:59:00", tz = timezone)),
+      end = c(ymd_hms("2023-09-01 17:01:00", tz = timezone),
+              ymd_hms("2023-10-09 09:01:00", tz = timezone),
+              ymd_hms("2023-10-27 22:46:00", tz = timezone)))
+    
+    post_verified_df <- df %>% 
+      add_flag(DT_round %within% periods, "drift") %>% 
+      mutate(mean_verified = if_else(DT_round %within% periods,
+                                     NA,
+                                     mean_verified),
+             verification_status = if_else(DT_round %within% periods,
+                                           "PASS", # here we are passing the sonde burial flags.
+                                           verification_status))
+  }
+  
   
   # Make sure site visits always gets flagged (in case these flags were removed accidentally) ----
   always_fail_text <- paste(c("sv window", "site visit"), collapse = "|")
