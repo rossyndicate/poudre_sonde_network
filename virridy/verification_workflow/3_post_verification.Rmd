@@ -325,6 +325,29 @@ post_manual_verification_clean_up <- function(idx, df) {
                                            verification_status))
   }
   
+  # Timberline ----
+  # depth calibration will not get resolved in this script
+  # specific calibration will not get resolved in this script
+  
+  if(site_param == "timberline-Turbidity") {
+    # Drift dates
+    # "Passed failed points, should be ff/sonde burial, definitely a handful of points that reflect that but otherwise looks fine" note dates
+    # have to test if this actually needs the timezone information
+    timezone = "America/Denver"
+    periods <- interval(
+      start = c(ymd_hms("2023-11-30 23:59:00", tz = timezone)),
+      end = c(ymd_hms("2023-12-06 10:16:00", tz = timezone)))
+    
+    post_verified_df <- df %>% 
+      add_flag(DT_round %within% periods, "drift") %>% 
+      mutate(mean_verified = if_else(DT_round %within% periods,
+                                     NA,
+                                     mean_verified),
+             verification_status = if_else(DT_round %within% periods,
+                                           "PASS",
+                                           verification_status))
+  }
+  
   
   # Make sure site visits always gets flagged (in case these flags were removed accidentally) ----
   always_fail_text <- paste(c("sv window", "site visit"), collapse = "|")
