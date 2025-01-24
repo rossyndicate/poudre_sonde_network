@@ -295,13 +295,13 @@ server <- function(input, output) {
           filter(site == input$site_oi) %>%
           mutate(date_round = round_date(DT_round, unit = input$avg_data)) %>%
           group_by(date_round, parameter, site) %>%
-          summarise(mean = mean(mean, na.rm = TRUE)) %>%
+          summarise(median = median(mean, na.rm = TRUE)) %>%
           ungroup()
 
 
         avged_plot <- flagged_plot+
           geom_line(data = trim_select_avg_data,
-                    aes(x = date_round, y = mean), color = "black", linetype = "dashed")
+                    aes(x = date_round, y = median), color = "black", linetype = "dashed")
 
       }else{
         avged_plot <- flagged_plot
