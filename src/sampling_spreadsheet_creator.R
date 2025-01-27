@@ -66,7 +66,7 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
 
    sampling_notes_output <- sampling_notes%>%
      # select only the needed columns, saved in the correct order and fix column names
-     select(site_code = site, Date = date, SampleType = sample_collected, time_mst = time,chla_volume_ml,  do_mgl, cond_ms_cm, temp_c, visit_comments)
+     select(site_code = site, Date = date, DT_round, SampleType = sample_collected, time_mst = time,chla_volume_ml,  do_mgl, cond_ms_cm, temp_c, visit_comments)
 
    # write to csv
    write_csv(x = sampling_notes_output, file = paste0("data/sampling_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))

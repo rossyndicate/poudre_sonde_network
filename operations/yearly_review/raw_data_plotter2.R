@@ -1,8 +1,7 @@
-# This script is a shiny app to help users verify sonde data by looking at additional parameters and sites
+#raw_data_plotter_2
+library(feather)
+#data <- feather::read_feather("data/api/sjs_test/psn_2024_3.feather")
 
-#Run the commented line below to load the data
-
-#data <- readRDS("data/virridy_verification/all_data_flagged_complete.RDS")
 
 # Define UI
 library(shiny)
@@ -142,11 +141,11 @@ ui <- fluidPage(
             # Allows user to select sites
             selectInput("site_oi", "Select primary Site",
                         choices = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
-                                    "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
+                                    "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "riverbluffs"),
                         selected = "legacy"),
             selectInput("selected_site", "Select additional Site(s)",
                         choices = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
-                                    "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
+                                    "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "riverbluffs"),
                         selected = c("tamasag", "timberline"), multiple = TRUE),
             # User to select parameters
             selectInput("selected_param", "Select Parameter(s)",
@@ -158,12 +157,8 @@ ui <- fluidPage(
             radioButtons("flags_TF", "Display flags?", choices = list("Yes" = "yes", "No" = "no"), selected = "yes"),
             # Select whether you want to transform the data
             radioButtons("transformation", "Transformation of Data:", choices = list("None", "log10()"), selected = "None"),
-            # Add daily average line?
-            radioButtons("avg_data", "Add averaged data line:", choices = list("Daily" = "day","12 Hour" = "12 hours", "4 Hour" = "4 hours",
-                                                                               "Hourly" = "1 hour", "No" = "no"), selected = "no"),
-
             # Select dates
-            dateRangeInput("date_range", "Select Date Range", start = "2023-03-15", end = "2023-05-31"),
+            dateRangeInput("date_range", "Select Date Range", start = "2024-03-01", end = "2024-12-01"),
             actionButton("plot_button", "Plot Data")
           )
       )
@@ -206,7 +201,7 @@ server <- function(input, output) {
   observeEvent(input$plot_button, {
 
 
-    req(input$site_oi,  input$selected_param, input$date_range, input$avg_data)
+    req(input$site_oi,  input$selected_param, input$date_range)
 
     # Read in data before running script (results in much faster plotting)
     #data <- readRDS("~/Documents/fork_yeah/poudre_sonde_network/data/virridy_verification/all_data_flagged_complete.RDS")
@@ -221,9 +216,9 @@ server <- function(input, output) {
       pull(combo)
 
     #grab the data for the site and parameter combos the user selected
-    all_select_data <- site_param_combos %>%
-      keep(~ .x %in% names(data)) %>%
-      map_dfr(~ data[[.x]])
+    all_select_data <- data %>%
+      filter(site %in% sites_selected & parameter %in% input$selected_param)%>%
+      rename(mean = value)
     #grab start and end dates
     start_date <- as.POSIXct(input$date_range[1])%>% force_tz("MST")
     end_date <- as.POSIXct(input$date_range[2])%>% force_tz("MST")
@@ -239,10 +234,27 @@ server <- function(input, output) {
       #remove rows where "missing data" is included in the flag string but still include rows with NA
       filter(grepl("missing data", flag) == FALSE | is.na(flag))
     #%>%
-      #if flag is NA, change it to "NA"
-     # mutate(flag = ifelse(is.na(flag), "No Flag", flag))
+    #if flag is NA, change it to "NA"
+    # mutate(flag = ifelse(is.na(flag), "No Flag", flag))
 
 
+    #Create the baseplot that will be customized below
+    if(length(unique(trim_select_data$site)) == 1 ){
+      #when only the primary site is selected or when additional sites are selected but have no data
+      base_plot <- ggplot(data = trim_select_data %>% filter(site == input$site_oi),
+                          aes(x = DT_round, y = mean)) +
+        facet_wrap(~parameter, scales = "free_y", ncol = as.integer(input$col_number)) +
+        labs(x = "Date", y = "Value") +
+        theme_bw()
+    } else {
+      #when additional sites are selected and have data
+      base_plot <- ggplot() +
+        geom_line(data = trim_select_data %>% filter(site != input$site_oi), aes(x = DT_round, y = mean, color = site))+
+        scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site)) +
+        facet_wrap(~parameter, scales = "free_y", ncol = as.integer(input$col_number))+
+        labs(x = "Date", y = "Value") +
+        theme_bw()
+    }
 
 
     output$data_plot <- renderPlotly({
@@ -250,85 +262,50 @@ server <- function(input, output) {
       ## To do: get color scales to work sites and flags
       ## ggnewscale worked on a static plot by doesn't work with plotly and lines get dropped :(
 
-      #Create the baseplot that will be customized below
-      if(length(unique(trim_select_data$site)) == 1 ){
-        #when only the primary site is selected or when additional sites are selected but have no data
-        base_plot <- ggplot(data = trim_select_data %>% filter(site == input$site_oi),
-                            aes(x = DT_round, y = mean)) +
-          facet_wrap(~parameter, scales = "free_y", ncol = as.integer(input$col_number)) +
-          labs(x = "Date", y = "Value") +
-          theme_bw()
+
+
+      if(input$flags_TF == "yes"){
+        flagged_plot <- base_plot +
+          geom_point(data = trim_select_data %>% filter(site == input$site_oi),
+                     aes(x = DT_round, y = mean, fill = flag), shape = 21, stroke = 0) +
+          #To do: standardize colors for all flags across all sites
+          #scale_fill_manual(values = setNames(flag_color_combo$flag_fill, flag_color_combo$flag)) +
+          scale_fill_viridis_d(option = "plasma", begin = 0.1, end = 0.9, na.value = "#A0A0A0") +
+          labs(fill = "Site of interest w flags (Points)", color = "Additional Sites (Lines)")
+
+
       } else {
-        #when additional sites are selected and have data
-        base_plot <- ggplot() +
-          geom_line(data = trim_select_data %>% filter(site != input$site_oi), aes(x = DT_round, y = mean, color = site))+
-          scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site)) +
-          facet_wrap(~parameter, scales = "free_y", ncol = as.integer(input$col_number))+
-          labs(x = "Date", y = "Value") +
-          theme_bw()
+        flagged_plot <- base_plot +
+          geom_point(data = trim_select_data %>% filter(site == input$site_oi),
+                     aes(x = DT_round, y = mean, fill = site), shape = 21, stroke = 0) +
+          scale_fill_manual(values = "#A0A0A0")+
+          labs(fill = "Site of interest (Points)", color = "Additional Sites (Lines)")
+
+
       }
 
 
-        if(input$flags_TF == "yes"){
-           flagged_plot <- base_plot +
-            geom_point(data = trim_select_data %>% filter(site == input$site_oi),
-                       aes(x = DT_round, y = mean, fill = flag), shape = 21, stroke = 0) +
-             #To do: standardize colors for all flags across all sites
-             #scale_fill_manual(values = setNames(flag_color_combo$flag_fill, flag_color_combo$flag)) +
-            scale_fill_viridis_d(option = "plasma", begin = 0.1, end = 0.9, na.value = "#A0A0A0") +
-             labs(fill = "Site of interest w flags (Points)", color = "Additional Sites (Lines)")
 
 
-        } else {
-          flagged_plot <- base_plot +
-            geom_point(data = trim_select_data %>% filter(site == input$site_oi),
-                       aes(x = DT_round, y = mean, fill = site), shape = 21, stroke = 0) +
-            scale_fill_manual(values = "#A0A0A0")+
-            labs(fill = "Site of interest (Points)", color = "Additional Sites (Lines)")
-        }
+      ### Log transformed plot ####
+      if(input$transformation == "log10()"){
 
-  ### add average line to plot ####
+        # Flags + log 10
+        final_plot <- flagged_plot +
+          scale_y_continuous(trans = "log10",
+                             breaks = c(0.001, 0.01, 0.1, 1, 10, 100, 1000),
+                             # Specify breaks at 1, 10, and 100
+                             labels = c("0.001", "0.01", "0.1", "1", "10", "100", "1000"))
 
-      if(input$avg_data != "no"){
-
-        trim_select_avg_data <- trim_select_data %>%
-          filter(site == input$site_oi) %>%
-          mutate(date_round = round_date(DT_round, unit = input$avg_data)) %>%
-          group_by(date_round, parameter, site) %>%
-          summarise(median = median(mean, na.rm = TRUE)) %>%
-          ungroup()
-
-
-        avged_plot <- flagged_plot+
-          geom_line(data = trim_select_avg_data,
-                    aes(x = date_round, y = median), color = "black", linetype = "dashed")
-
-      }else{
-        avged_plot <- flagged_plot
+      } else {
+        #No log transformation
+        final_plot <- flagged_plot
       }
-
-
-### Log transformed plot ####
-    if(input$transformation == "log10()"){
-
-          # Flags + log 10
-          final_plot <- avged_plot +
-            scale_y_continuous(trans = "log10",
-                               breaks = c(0.001, 0.01, 0.1, 1, 10, 100, 1000),
-                               # Specify breaks at 1, 10, and 100
-                               labels = c("0.001", "0.01", "0.1", "1", "10", "100", "1000"))
-
-        } else {
-          #No log transformation
-          final_plot <- avged_plot
-        }
-
 
 
 
       gp <- ggplotly(final_plot)%>%
         clean_pltly_legend()
-
 
     })
 
