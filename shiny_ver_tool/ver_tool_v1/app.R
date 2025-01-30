@@ -198,7 +198,7 @@ ui <- page_navbar(
   ),
 
 #### Tab 3: Final Data View ####
-## To do: This doesnt work at all yet, just a placeholder
+## To do: This doesn't work at all yet, just a placeholder
   nav_panel(
     title = "Final Data",
     card(
@@ -219,10 +219,10 @@ ui <- page_navbar(
 server <- function(input, output, session) {
 #### Reactive values ####
   data <- reactiveVal(NULL)
-  current_week <- reactiveVal(NULL)
-  selected_data <- reactiveVal(NULL) # site param df
-  all_datasets <- reactiveVal(NULL)
-  brush_active <- reactiveVal(FALSE)
+  current_week <- reactiveVal(NULL) #controlled by next/prev week buttons, and submit weekly decision
+  selected_data <- reactiveVal(NULL) # This is essentially site param df
+  all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots?
+  brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
 
 
   #### Data Selection functions ####
@@ -238,7 +238,7 @@ server <- function(input, output, session) {
     req(input$directory, all_datasets())
     sites <- get_sites(all_datasets(), input$directory)
     updateSelectInput(session, "site",
-                      choices = sites)
+                      choices = sites) #based on directory
   })
 
   # Update parameter choices when site changes
@@ -246,7 +246,7 @@ server <- function(input, output, session) {
     req(input$directory, input$site, all_datasets())
     parameters <- get_parameters(all_datasets(), input$directory, input$site)
     updateSelectInput(session, "parameter",
-                      choices = parameters)
+                      choices = parameters) #based on site and directory
   })
 
   # Show/hide and update sub parameters UI based on main parameter selection
@@ -276,9 +276,6 @@ server <- function(input, output, session) {
     } else {
       datasets$intermediary_data
     }
-
-
-    updateTabsetPanel(session, inputId = "tabs", selected = "Data Verification")
     # Try to get the specific dataset
     tryCatch({
       site_param_df <- working_data[[site_param_name]]
@@ -299,10 +296,8 @@ server <- function(input, output, session) {
       selected_data(processed)
 
       # Set initial week
+      #To Do: This should update to first week with unverified data if possible
       current_week(min(processed$week))
-
-      # Navigate to verification tab
-      updateNavbarPage(session, "navbar", selected = "Data Verification")
 
     }, error = function(e) {
       showNotification(
@@ -310,12 +305,18 @@ server <- function(input, output, session) {
         type = "error"
       )
     })
+
+    #Move to next tab
+    updateTabsetPanel(session, inputId = "tabs", selected = "Data Verification")
+
   })
 
   #### Data Verification functions ####
 # Previous Tab
   observeEvent(input$prev_tab, {
     updateNavbarPage(session, "tabs", selected = "Data Selection")
+
+#Q: Should this update the data files or no?
   })
 
 ## Week navigation handlers
@@ -343,15 +344,12 @@ server <- function(input, output, session) {
   output$main_plot <- renderPlot({
     req(selected_data(), current_week())
 
-
     week_data <- selected_data() %>%
       filter(week == current_week())
 
-
-    #browser()
     # Check the decision and create appropriate plot
     if (input$weekly_decision != "s") {
-
+#Q: not sure if this is necessary?
         weekly_decision <- input$weekly_decision
 
   #TO DO: Update matrix with final decisions
@@ -378,7 +376,7 @@ server <- function(input, output, session) {
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "OMIT")
       }
-
+#To Do: Add in other sites + other information
       p <- ggplot(week_choice_data, aes(x = DT_round)) +
         geom_point(aes(y = mean, color = final_decision))+
         labs(
@@ -389,7 +387,7 @@ server <- function(input, output, session) {
 
       plot(p)
     } else {
-  #TO DO: Swap with create weekly plot function call
+  #TO DO: Swap with create weekly plot function call, adding in other sites, etc
    p <- ggplot(week_data, aes(x = DT_round)) +
       geom_point(aes(y = mean, color = flag))+
      #Add Omitted data in red
@@ -399,16 +397,17 @@ server <- function(input, output, session) {
         x = "Date",
         y = input$parameter )
 
-   # Add brush highlight if brush is active and brush exists
+   # Add brush rectangle if brush is active and brush exists
 
-# This might need to be reactive later on ?
+#Q This might need to be reactive later on ?
    if(input$toggle_brush && !is.null(input$plot_brush)) {
      req(input$plot_brush)
 
      # Get brushed points
      brushed_data <- brushedPoints(week_data, input$plot_brush,
                                    xvar = "DT_round", yvar = "mean")
-
+#If data exists, add a rectangle to it
+#Note: rectangle doesnt show up for single point but data does update correctly
      if(nrow(brushed_data) > 0) {
        # Add rectangle around brushed points
 
@@ -428,7 +427,7 @@ server <- function(input, output, session) {
 ## Subplot card UI
   output$subplot_card <- renderUI({
     req(input$show_subplots)
-
+#To Do: Change this to where we want it, make it bigger,  add in other sites and make it scrollable
     card(
       card_header("Sub Parameter Plots"),
       card_body(
@@ -440,8 +439,9 @@ server <- function(input, output, session) {
 ## Sub plots output
   output$sub_plots <- renderPlot({
     req(all_datasets(), current_week(), input$show_subplots, input$sub_parameters)
-
-    #To do: this should probably be moved to make it faster?
+# See notes in Card UI Page
+#To do: this should probably be changed to make it faster?
+#Q: can most of the code from raw data plotter be migrated over?
     datasets <- all_datasets()
     working_data <- if(input$directory == "pre") {
       datasets$pre_verification_data
@@ -470,8 +470,8 @@ server <- function(input, output, session) {
     }
   })
 
-## Brush card
-  # UI
+## Brush card UI
+#To do: reduce empty space and make it look better
   output$brush_card <- renderUI({
     card(
       card_header(
@@ -587,8 +587,10 @@ server <- function(input, output, session) {
     session$resetBrush("plot_brush")
 
   })
+# To Do: Add week reset button to undo brush submissions
 
 ## Weekly Decision
+# To Do: If a user moves to a week with a decision already made, show this somehow
   # Submit decision button UI
   output$submit_decision_ui <- renderUI({
     req(input$weekly_decision)
@@ -604,10 +606,8 @@ server <- function(input, output, session) {
     #update backend data
 
       weekly_decision <- input$weekly_decision
-      #TO DO: Update matrix with final decisions
-
-
-      updated_week_data <- selected_data() %>%
+#TO DO: Update matrix with final decisions
+    updated_week_data <- selected_data() %>%
         filter(week == current_week())%>%
         mutate(
           omit = case_when(
@@ -643,8 +643,6 @@ server <- function(input, output, session) {
       selected_data(bind_rows(other_data, updated_week_data)%>%arrange(DT_round))
 #TO DO: save to int directory/general save data function
 
-
-
     # Get all weeks and current week
     weeks <- unique(selected_data()$week)
     current <- current_week()
@@ -654,8 +652,7 @@ server <- function(input, output, session) {
     if (idx < length(weeks)) {
       current_week(weeks[idx + 1])
     }else{
-#TO DO: This should actually check if all data has been reviewed
-
+#TO DO: This should actually check if all data has been reviewed and move to final tab if all data has been verified
       showNotification("All weeks have been reviewed.", type = "message")
       updateTabsetPanel(session, inputId = "tabs", selected = "Data Verification")
     }
@@ -693,7 +690,6 @@ server <- function(input, output, session) {
   # Handle quit button
   observeEvent(input$quit_app, {
     stopApp()
-
   #TO DO: Update backend and save file
   })
 
