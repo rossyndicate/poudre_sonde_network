@@ -80,14 +80,16 @@ get_auto_parameters <- function(parameter) {
 final_decision_colors <- c("PASS" = "green",
                            "TAG" = "yellow",
                            "OMIT" = "red")
-
-###### End Helper Functions ######
 # All available parameters for sub-parameter selection
 available_parameters <- c("Specific Conductivity", "Temperature", "pH",
-                          "Turbidity", "ORP", "DO", "Depth")
+                          "Turbidity", "DO", "Depth")
+#TO DO: This only has the primary datasets for testing purposes need to add (FDOM, CHLA, ORP)
+###### End Helper Functions ######
+
 
 # UI Definition
 ui <- page_navbar(
+#To Do: remove header to save space? it shouldnt need to be used by users
   title = "Data Processing Pipeline",
   id = "tabs",
   theme = bs_theme(version = 5),
@@ -133,6 +135,7 @@ ui <- page_navbar(
       col_widths = c(8, 4),
 
       # Main Plot Card
+#TO DO: Make plot wider but shorter
       card(
         card_header(
           div(
@@ -162,12 +165,15 @@ ui <- page_navbar(
         )
       ),
       # Decision and Sub Plots Cards Column
+
+#To DO: move weekly decision to bottom and give sub plots their own card
       layout_columns(
         col_widths = 12,
         # Decision Card
         card(
           card_header("Make weekly decision"),
           card_body(
+  #To Do: Update with final terminology/decision matrix
             radioButtons("weekly_decision", "Select decision:",
                          choices = c("AA" = "aa",
                                      "ANO" = "ano",
@@ -177,7 +183,7 @@ ui <- page_navbar(
                                      "S" = "s"),
                          selected = "s"),
             div(
-              checkboxInput("remove_fail", "Omit FAIL data", value = FALSE),
+              checkboxInput("remove_fail", "Remove OMIT data", value = FALSE),
               style = "margin: auto"
             ),
             uiOutput("submit_decision_ui")
@@ -192,6 +198,7 @@ ui <- page_navbar(
   ),
 
 #### Tab 3: Final Data View ####
+## To do: This doesnt work at all yet, just a placeholder
   nav_panel(
     title = "Final Data",
     card(
