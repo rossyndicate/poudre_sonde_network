@@ -213,7 +213,7 @@ server <- function(input, output, session) {
 #### Reactive values ####
   data <- reactiveVal(NULL)
   current_week <- reactiveVal(NULL)
-  selected_data <- reactiveVal(NULL)
+  selected_data <- reactiveVal(NULL) # site param df
   all_datasets <- reactiveVal(NULL)
   brush_active <- reactiveVal(FALSE)
 
@@ -545,6 +545,8 @@ server <- function(input, output, session) {
             between(mean, brush_mean_min, brush_mean_max) & user_brush_select == "A" ~ as.character(NA),
             #Flag
             between(DT_round, brush_dt_min, brush_dt_max) &
+
+  #TO DO: Turn into function add flag
             between(mean, brush_mean_min, brush_mean_max) &  user_brush_select == "F" ~ as.character(flag_choices),
             #Omit
 #TO DO: If a user selects Omit, do they need to give the data a flag?
@@ -554,9 +556,12 @@ server <- function(input, output, session) {
             TRUE ~ flag),
 
           #if a user brushes points as omit, then change omit to TRUE
-          omit = case_when(
+        omit = case_when(
             between(DT_round, brush_dt_min, brush_dt_max) &
             between(mean, brush_mean_min, brush_mean_max) &  user_brush_select == "O" ~ TRUE,
+            #Accept
+            between(DT_round, brush_dt_min, brush_dt_max) &
+              between(mean, brush_mean_min, brush_mean_max) & user_brush_select %in% c("A","F")  ~ NA,
             TRUE ~ omit),
           #if a user brushes points, add their initials to the user column
           user = ifelse(between(DT_round, brush_dt_min, brush_dt_max) &
