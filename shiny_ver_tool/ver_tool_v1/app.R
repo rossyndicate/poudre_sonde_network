@@ -6,6 +6,7 @@ library(lubridate)
 library(here)
 library(ggpubr)
 library(gridExtra)
+library(plotly)
 
 ##### Helper functions for data loading #####
 load_data_directories <- function() {
@@ -77,7 +78,7 @@ get_auto_parameters <- function(parameter) {
   }, error = function(e) character(0))
 }
 
-final_decision_colors <- c("PASS" = "green",
+final_status_colors <- c("PASS" = "green",
                            "TAG" = "yellow",
                            "OMIT" = "red")
 # All available parameters for sub-parameter selection
@@ -199,17 +200,43 @@ ui <- page_navbar(
 
 #### Tab 3: Final Data View ####
 ## To do: This doesn't work at all yet, just a placeholder
-  nav_panel(
-    title = "Final Data",
+nav_panel(
+  title = "Finalize Data",
+  layout_columns(
+    col_widths = c(8, 4),
+
+    # Main Plot Card
     card(
-      card_header("Processed Dataset"),
+      card_header("Final Data Overview"),
       card_body(
-        downloadButton("download_data", "Download Data"),
-        br(), br(),
-        DTOutput("final_table")
+        plotOutput("final_plot", height = "400px")
+      )
+    ),
+
+    # Week Selection and Actions Card
+    card(
+      card_header("Modify Verification"),
+      card_body(
+        selectInput("final_week_selection", "Select Week:", choices = NULL),
+        actionButton("goto_final_week", "Return to Selected Week",
+                     class = "btn-primary w-100 mb-3"),
+        hr(),
+        actionButton("submit_final", "Submit Final Changes",
+                     class = "btn-success w-100")
+      ),
+      card_footer(
+        div(
+          class = "d-flex justify-content-between",
+          div(
+            checkboxInput("remove_omit_finalplot", "Remove omitted data from plot", value = FALSE),
+            style = "margin: auto"
+          )
+        )
       )
     )
   )
+)
+
 )
 
 
@@ -383,7 +410,7 @@ server <- function(input, output, session) {
           title = paste0("Weekly Data for:", input$site, "-", input$parameter),
           x = "Date",
           y = input$parameter )+
-        scale_color_manual(values = final_decision_colors)
+        scale_color_manual(values = final_status_colors)
 
       plot(p)
     } else {
@@ -649,13 +676,14 @@ server <- function(input, output, session) {
     idx <- which(weeks == current)
 
     # Move to next week if available
-    if (idx < length(weeks)) {
-      current_week(weeks[idx + 1])
-    }else{
-#TO DO: This should actually check if all data has been reviewed and move to final tab if all data has been verified
+    if(all(!is.na(selected_data()$final_status))){
+
       showNotification("All weeks have been reviewed.", type = "message")
-      updateTabsetPanel(session, inputId = "tabs", selected = "Data Verification")
+      updateTabsetPanel(session, inputId = "tabs", selected = "Finalize Data")
+      } else{
+      current_week(weeks[idx + 1])
     }
+#To Do: If next week has been reviewed, move to closest week without verified data
 
     # Show notification of submission
     showNotification(
@@ -668,23 +696,75 @@ server <- function(input, output, session) {
 
 
 ##### Final Verification Tab ####
-  # Final table output
-  output$final_table <- renderDT({
+  observe({
     req(selected_data())
-    datatable(selected_data(),
-              options = list(pageLength = 10),
-              style = "bootstrap5")
+    weeks <- selected_data() %>%
+      pull(week) %>%
+      unique() %>%
+      sort()
+
+    updateSelectInput(session, "final_week_selection",
+                      choices = weeks)
   })
 
-  # Download handler
-  output$download_data <- downloadHandler(
-    filename = function() {
-      paste0(input$site, "_", input$directory, "_processed.csv")
-    },
-    content = function(file) {
-      selected_data() %>% write_csv(file)
+  # Handle week selection in final tab
+  observeEvent(input$goto_final_week, {
+    req(input$final_week_selection)
+    selected_week <- as.numeric(input$final_week_selection)
+    current_week(selected_week)
+    updateNavbarPage(session, inputId = "tabs", selected = "Data Verification")
+  })
+
+  # Add plotly plot for final overview
+  output$final_plot <- renderPlot({
+    req(selected_data())
+
+    final_plot_data <- selected_data()
+
+    if (input$remove_omit_finalplot) {
+
+  #To Do: Update if omit is T/F not T vs NA
+      final_plot_data <- final_plot_data %>%
+        filter(is.na(omit))
     }
-  )
+
+start_date <-round_date(min(final_plot_data$DT_round, na.rm = T), unit = "day")
+end_date <- round_date(max(final_plot_data$DT_round, na.rm = T), unit = "day")
+
+vline_dates <- seq(start_date, end_date, by = "week")
+week_dates <- vline_dates + days(3)
+week_num = week(vline_dates)
+
+
+  p <- ggplot(final_plot_data, aes(x = DT_round)) +
+          geom_point(aes(y = mean, color = final_status)) +
+      scale_color_manual(values = final_status_colors) +
+      geom_vline(xintercept = as.numeric(vline_dates), color = "black") +
+      labs(
+        title = paste0("Complete Dataset Overview: ", input$site, "-", input$parameter),
+        subtitle = ifelse(input$remove_omit_finalplot, "Omitted data removed",  ""),
+        x = "Date",
+        y = input$parameter,
+        color = "Final Status") +
+      theme_bw()+
+      scale_x_datetime(date_breaks = "1 week",
+                       date_labels = "%b %d",
+                       minor_breaks = week_dates,
+                       sec.axis = sec_axis(~., breaks = week_dates, labels = unique(week_num)))
+
+  p
+#To Do: geom vline not playing nice in ggplotly
+#     ggplotly(p) %>%
+#       layout(dragmode = "select") %>%
+#       config(modeBarButtons = list(list("select2d", "lasso2d", "zoom2d", "pan2d",
+#                                         "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d")))
+  })
+
+  # Handle final submission
+  observeEvent(input$submit_final, {
+    showNotification("Final changes submitted successfully!", type = "message")
+    updateNavbarPage(session, "navbar", selected = "Data Selection")
+  })
 
   #### Extras ####
   # Handle quit button
