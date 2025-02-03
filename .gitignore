@@ -4,16 +4,13 @@
 .RDatatmp
 .RDatatmp1
 .Ruserdata
-
 data
 docs
 data/
 docs/
-
 # remove the annoying Mac .DS_Store
 .DS_Store
 **.DS_Store
-
 # files/folders to untrack for API pulls
 */apienv/
 */requirements.txt
@@ -24,17 +21,13 @@ for_azure/creds/HydroVuCreds.yml
 
 # reporting
 scratch/reporting/PWQN_overview.html
-
 # vs code
 .vscode/
-
 # targets folder
 _targets/
-
 # any figures
 *.png
 **/images/
-
 #Sam testing script
 scratch/sjs_scratch.Rmd
-
+timelapse_data

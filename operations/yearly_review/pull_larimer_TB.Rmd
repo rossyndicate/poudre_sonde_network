@@ -1,0 +1,336 @@
+---
+title: "pull_larimerTB"
+author: "Sam Struthers + Megan Sears"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(httr)
+library(sf)
+library(viridis)
+library(mapview)
+library(tidyverse)
+library(plotly)
+library(leaflet)
+`%nin%` = negate(`%in%`)
+
+mapviewOptions(basemaps = "CartoDB.Positron")
+```
+
+# get all station ids for CLP region
+
+```{r}
+station_ids <- read_csv("data/context_data/precip/station_data.csv", show_col_types = F)%>%
+  filter(grepl("Precip",data_available))%>%
+  # Other agencies are out of network
+  filter( agency %in% c("Fort Collins", "Larimer", "Other", "Windsor"))%>%
+  #These stations dont work for some reason
+  filter(numId < 11555 & numId %nin% c(11525, 11041,7420,10510,10523,6780,6250,6410, 6270,6510,6530,6550) )%>%
+  mutate(station_id = as.character(numId))%>%
+  #st_as_sf(coords = c("long", "lat"), crs = 4326)%>%
+  pull(station_id)
+
+#mapview::mapview(station_ids, zcol = "watershed")
+```
+
+# Grab Larimer County Precip
+
+Already pulled for 2024! Lets be nice to their API and more run it over and other again!
+```{r}
+
+
+grab_new_larimer <- function(start_date = "2024-01-01"){
+
+end_dt =  format(Sys.Date(), "%Y-%m-%d")
+
+#Station numbers
+# station_ids <- read_csv('data/larimer_co_TB.csv') %>%
+#   #slice(:16) %>%
+#   pull(station_id)
+
+
+larimer_co_q_pull <- function(station_id, start_dt = "2024-03-01", end_dt = "2024-06-02"){
+  
+  start_dt <- format(as.POSIXct(start_dt, tz = "MST"), "%Y-%m-%dT%H:%M:%S%z")
+  start_dt <- paste0(substr(start_dt, 1, nchar(start_dt) - 2), ":", substr(start_dt, nchar(start_dt) - 1, nchar(start_dt)))
+  end_dt <- format(as.POSIXct(end_dt, tz = "MST"), "%Y-%m-%dT%H:%M:%S%z")
+  end_dt <- paste0(substr(end_dt, 1, nchar(end_dt) - 2), ":", substr(end_dt, nchar(end_dt) - 1, nchar(end_dt)))
+  
+  get_station_meta <- function(site_num){
+    #URLs for metadata and data 
+    start_meta <- "https://larimerco-ns5.trilynx-novastar.systems/novastar/data/api/v1/stationSummaries?forOperatorStationDashboard=true&stationNumId="
+    start_data <- "https://larimerco-ns5.trilynx-novastar.systems/novastar/data/api/v1/stationSummaries?forOperatorStationDashboard=true&stationNumId="
+    mid_data <- "&periodStart=" 
+    end_data <- "&periodEnd="
+    
+    site_meta_url <-  paste0(start_meta, site_num)
+    site_data_url <-  paste0(start_data, site_num, mid_data, start_dt,end_data, end_dt)
+    
+    
+    meta_request <- GET(url = site_meta_url)
+    total_list <-content(meta_request) 
+
+    sensor_list <- total_list[["stationSummaries"]][[1]][["dataTypes"]]
+    
+    # grab all sensors and their position within lists
+    station_meta <- as.data.frame(do.call(rbind, sensor_list)) %>%
+      mutate(name = as.character(name))%>%
+      distinct(name)%>%
+      mutate(sensor_list_num = row_number())%>%
+      pivot_wider( names_from = "name", values_from = "sensor_list_num")%>%
+      mutate(id = total_list[["stationSummaries"]][[1]][["id"]], 
+             numid = total_list[["stationSummaries"]][[1]][["numId"]], 
+             name = total_list[["stationSummaries"]][[1]][["name"]],
+             elevation = total_list[["stationSummaries"]][[1]][["elevation"]],
+             lat = total_list[["stationSummaries"]][[1]][["latitude"]],
+             long = total_list[["stationSummaries"]][[1]][["longitude"]], 
+             site_number = site_num, 
+             site_meta_url = site_meta_url,
+             site_data_url = site_data_url)
+    
+    Sys.sleep(1)   
+    
+    return(station_meta)
+  }
+  
+  #maps to get all metadata/ location of all sensors within JSON
+  clp_station_meta <- get_station_meta(station_id)
+  
+  request <- NA
+  
+  download_q <- function(site_data_url, site_number) {
+    
+    #create request to novastar website using url created 
+    request <- GET(url = site_data_url)
+    
+    #gives content of httr pull
+    total_list <- content(request)
+    
+    #find list number where q is located
+    site_meta <- filter(clp_station_meta, numid == site_number)
+    
+    Q_sensor_num <-  as.numeric(site_meta$Precip[1]) # change to precip name
+    
+    # find list where discharge data is stored
+    
+    discharge_data <- total_list[["stationSummaries"]][[1]][["ts"]][[Q_sensor_num]][["data"]]
+    
+    if(length(discharge_data) == 0){
+      nah <- tibble()
+      return(nah)
+    }
+    #This function actually breaks down the list for a given site into the datetime and value components
+    unlist_q_data <- function(i){
+      unlist(discharge_data[[i]])
+    }
+    
+    q_df <- map_dfr(seq(1, length(discharge_data), 1), unlist_q_data)%>%
+      mutate(numid = site_number)
+    Sys.sleep(2)
+    return(q_df)
+    
+    
+  }
+  
+  #map function over all sites
+  clp_q_station_data<- download_q(clp_station_meta$site_data_url, clp_station_meta$site_number)
+  
+  
+  return(clp_q_station_data)
+}
+
+
+q_total <- tibble()           
+                
+for(i in 1:length(station_ids)){
+  import <- larimer_co_q_pull(station_id = station_ids[i], start_dt = start_date, end_dt = end_dt)
+  
+  if(nrow(import) == 0){
+    q_site <- tibble()
+  }else{
+  q_site <- import%>%
+    mutate(q_cfs = as.double(v),
+           datetime = ymd_hms(dt, tz = "",quiet = TRUE), 
+           DT_mst = with_tz(datetime, tzone = "MST"))%>%
+    select(site = numid, DT_mst, q_cfs, flag = f)
+  
+  q_total <- rbind(q_total, q_site)%>%
+    filter(!is.na(q_cfs))
+}
+}
+tidy_q <- q_total %>%
+  distinct()%>%
+  mutate(source = "Larimer County")
+
+
+return(tidy_q)
+
+}
+
+precip <- grab_new_larimer()
+
+
+meta <- read_csv("data/context_data/precip/station_data.csv", show_col_types = F) %>%
+  mutate(site = as.character(numId))%>%
+  select(site,name, lat, long, agency, watershed)
+
+larimer_precip <- left_join(precip, meta, by = 'site')
+
+#Save data
+write_csv(larimer_precip, 'data/flow/precip/select_larimerco_precip_2024.csv')
+
+
+```
+
+
+# Load data
+
+```{r}
+
+larimer_precip <- read_csv('data/context_data/precip/select_larimerco_precip_2024.csv', show_col_types = F)%>%
+  filter(site != "11525" & watershed != "out")%>%
+  mutate(site = as.character(site), 
+         p_in = q_cfs, 
+         DT_mst = with_tz(DT_mst, tzone = "MST"), 
+         date = as.Date(DT_mst))%>%
+  select(-q_cfs, -flag, -source, -site)
+
+```
+
+
+# plot precip
+
+```{r}
+
+
+
+create_precip_plot <- function(start_date, end_date, grouping){
+  
+  
+  if(grouping == "ws"){
+    precip_trim <- larimer_precip %>% 
+      filter(DT_mst >= start_date & DT_mst <= end_date & p_in > 0 )%>% 
+      group_by(date, watershed) %>%
+    summarise(
+      total_precip = sum(p_in),
+      num_sites = n_distinct(site),
+      avg_daily_precip = total_precip / num_sites,
+      .groups = "drop")
+    
+    #make a histogram bar plot with dt mst as X axis and color by name
+ggplot(precip_trim, aes(x = date,y = avg_daily_precip, fill = watershed))+
+  geom_col()+
+    # add a geom rect around each date
+ # geom_rect(aes(xmin = date - 0.5, xmax = date + 0.5, ymin = 0, ymax = max(avg_daily_precip)), fill = NA, color = "black")+
+  labs(title = 'Larimer County Precipitation',
+       x = 'Date',
+       y = 'Precip (WS daily precip/sites)')+
+  theme_bw()
+    
+  }else{
+    precip_trim <- larimer_precip %>%
+  filter(DT_mst >= start_date & DT_mst <= end_date & p_in > 0 )%>% 
+  #find how many sites triggered on a day
+  group_by(date, name) %>%
+  summarise(
+    avg_daily_precip = sum(p_in))
+    
+        #make a histogram bar plot with dt mst as X axis and color by name
+ggplot(precip_trim, aes(x = date,y = avg_daily_precip, fill = name))+
+  geom_col()+
+    # add a geom rect around each date
+ # geom_rect(aes(xmin = date - 0.5, xmax = date + 0.5, ymin = 0, ymax = max(avg_daily_precip)), fill = NA, color = "black")+
+  labs(title = 'Larimer County Precipitation',
+       x = 'Date',
+       y = 'Precip (in) at each site')+
+  theme(legend.position = "none")
+  }
+  
+
+}
+
+ggplotly(create_precip_plot(start_date = as.Date("2024-05-01"), end_date = as.Date("2024-08-29"), grouping = "site"))
+
+
+
+
+
+
+```
+
+# map precip
+
+```{r}
+
+
+
+create_precip_map <- function(date_sel){
+
+  date_sel = as.Date(date_sel)
+
+    # Filter the data based on the selected date
+    filtered_data <- larimer_precip  %>%
+      filter(date == date_sel) %>%
+      group_by(name, date, lat, long) %>%
+      summarise(daily_precip = sum(p_in), .groups = "drop")%>%
+      st_as_sf(coords = c('long', "lat"), crs = 4326)
+
+    if(nrow(filtered_data) == 0){
+      return("No data for this date")
+    }
+    
+    zero_data <- filtered_data%>%
+      filter(daily_precip == 0)
+  non_zero_data <- filtered_data%>%
+    filter(daily_precip != 0)
+
+  
+  
+palfunc <- function(n, alpha = 1, begin = 0, end = 1, direction = 1){
+  colors <- magma(11, direction = -1)
+  if (direction < 0) colors <- rev(colors)
+  colorRampPalette(colors, alpha = alpha)(n)
+}
+
+at_10 = c(0.01, 0.05, 0.1, 0.2,  0.25, 0.5, 0.75, 1, 1.25, 1.5, 2)
+
+
+      # Modified mapview call
+      if(nrow(non_zero_data) > 0){
+        map <- mapview::mapview(non_zero_data,
+          zcol = "daily_precip",
+          layer.name = paste0("Daily Precipitation on ", date_sel),
+          col.regions = palfunc, 
+          at = at_10)
+      }
+      if(nrow(non_zero_data) == 0){
+        map <- mapview::mapview(zero_data, zcol = "daily_precip",
+          layer_name = "No Precip",
+          col.regions = "grey")
+      }
+      if(nrow(zero_data) > 0){
+       map + mapview::mapview(zero_data, zcol = "daily_precip",
+                         layer_name = "No Precip",
+                         col.regions = "grey")
+      }else{
+        map
+      }
+}
+
+create_precip_map("2024-08-16")
+dates <- seq(as.Date("2024-04-01"), as.Date("2024-12-31"), by = "day")
+
+list_of_maps <- lapply(dates, create_precip_map)%>%
+  #name list   elements by date
+  setNames(dates)
+
+
+
+
+
+
+```
+

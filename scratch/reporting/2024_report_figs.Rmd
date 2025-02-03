@@ -1,0 +1,405 @@
+---
+title: "2024 Report and Figs"
+author: "Sam Struthers- CSU ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+package_load <- function(package_names){
+  for(i in 1:length(package_names)){
+    if(!package_names[i] %in% installed.packages()){
+      install.packages(package_names[i])
+    }
+    library(package_names[i],character.only = TRUE)
+  }
+}
+
+#vector of packages
+pack_req <- c( 
+  # data wrangling packages
+  "tidyverse","lubridate","padr","janitor","padr", "broom","arrow",
+  #spatial packages
+  "sf","terra","nhdplusTools", "tigris","raster", "leaflet","tmap",
+  # plotting
+  "ggpubr","ggthemes","scales","corrplot","gghighlight", "geomtextpath", "ggbeeswarm","plotly", "ggpmisc","flextable", "patchwork",
+  # web scrapping
+  "rjson", "rvest", "dataRetrieval", "httr", "jsonlite", "yaml",
+  #extra
+  "devtools", "trend")
+package_load(pack_req)
+
+library(cdssr)
+
+`%nin%` = Negate(`%in%`)
+
+save_2024_fig_plot <- function(plot, filename){
+
+  ggsave(paste0("data/sharing/figures/2024/",filename, ".png"), plot, width = 12, height = 8, units = "in", dpi = 500)
+}
+
+
+options(dplyr.summarise.inform = FALSE)
+rm(pack_req, package_load)
+```
+
+
+```{r}
+
+
+site_names <- tibble(site = c("pbd", "tamasag", "legacy", "lincoln", "timberline", "prospect" ,"boxelder",  "archery", "riverbluffs"), 
+                        site_name = c("Canyon Mouth", "Tamasag", "Legacy", "Lincoln", "Timberline", "Prospect" ,"Boxelder",  "Archery", "River Bluffs"))
+
+labels <- tibble(param = c("Turbidity", "Specific Conductivity", "Depth", "Chl-a Fluorescence", "FDOM Fluorescence", "Temperature", "DO", 'pH'),
+                 label = c("Turbidity (NTU)", "Specific Conductivity (uS/cm)", "Depth (m)", "Chl-a Fluorescence (RFU)", "FDOM Fluorescence (RFU)", "Temperature (C)", "DO (mg/L)", 'pH'))
+
+sensor_data <- read_feather(file = "data/api/sjs_test/psn_2024_3.feather")%>%
+  left_join(site_names, by = c("site"))%>%
+  left_join(labels, by = c( "parameter" = "param")) 
+
+
+sensor_data_auto_clean <- filter(sensor_data, auto_cleaned_flag_binary == 0)
+
+sensor_data_simple_clean <- sensor_data%>%
+  filter(!grepl("site visit|sv window", flag))%>%
+  filter(!grepl("sonde unsubmerged", flag))%>%
+  filter(!grepl("sonde not employed", flag))%>%
+  filter(!grepl("sensor malfunction", flag))
+
+
+
+site_order <- c("Canyon Mouth", "Tamasag", "Legacy", "Lincoln", "Timberline" , "Prospect", "Boxelder", "Archery", "River Bluffs"  )
+
+```
+
+
+
+# Plots
+
+## Function
+```{r}
+plot_sensor_grabs <- function(df, sites, parameters, renamed_sites, start_dt, end_dt, timestep, add_grabs, color_scheme = bg_colors, b_size = 30){
+  
+  
+  
+  all_data <- filter(df, site %in% sites & DT_round >= ymd_hm(start_dt) & DT_round <= ymd_hm(end_dt))%>%
+    filter(parameter %in% parameters)
+  
+
+  create_plot <- function(param_arg) {
+
+    if(param_arg == "Flow"){
+      
+      flow_plot <- function(sites,start_dt, end_dt, timestep){
+
+  flow_sites <- tibble(
+    site = c("pbd", "lincoln", "boxelder", "riverbluffs"), 
+    site_name = c("Canyon Mouth", "Lincoln", "Boxelder", "River Bluffs"  ),
+    source = c('CDWR', 'USGS', 'USGS', 'CDWR'), 
+    abbrev = c("CLAFTCCO","06752260","06752280",   "CLARIVCO" ))%>%
+    filter(site %in% sites)
+  
+  
+  start_dt <- ymd_hm(start_dt, tz = "MST")
+  end_dt <- ymd_hm(end_dt, tz = "MST")
+  start_date <- floor_date(start_dt, unit = "day")
+  end_date <- ceiling_date(end_dt, unit = "day")
+  
+  gather_q <- function(selected_sites, start_date, end_date, timestep) {
+
+
+    all_q <- tibble()
+
+    for (i in 1:nrow(flow_sites)) {
+      if (flow_sites$source[i] == "USGS") {
+        q_data <- readNWISuv(siteNumbers = flow_sites$abbrev[i],
+                             startDate = start_date,
+                             endDate = end_date,
+                             parameterCd = "00060", tz = "America/Denver") %>%
+          distinct() %>%
+          mutate(DT_mst = with_tz(dateTime, tzone = "MST"),
+                 source = "USGS") %>%
+          select(site = site_no, DT_mst, q_cfs = X_00060_00000, flag = X_00060_00000_cd)
+
+      } else if (flow_sites$source[i] == "CDWR") {
+        q_data <- get_telemetry_ts(
+          abbrev = flow_sites$abbrev[i],
+          parameter = "DISCHRG",
+          start_date = start_date,
+          end_date = end_date,
+          timescale = "raw",
+          include_third_party = TRUE) %>%
+          distinct() %>%
+          mutate(DT_mst = force_tz(datetime, tzone = "MST"),
+                 flag = case_when(!is.na(flag_a) & !is.na(flag_b) ~ paste0(flag_a, ",", flag_b),
+                                  is.na(flag_a) & !is.na(flag_b) ~ flag_b,
+                                  is.na(flag_b) & !is.na(flag_b) ~ flag_a,
+                                  TRUE ~ NA_character_),
+                 source = "DWR") %>%
+          select(site = abbrev, DT_mst, q_cfs = meas_value, flag, source)
+      }
+      all_q <- bind_rows(all_q, q_data)
+    }
+
+  
+      final_q <- all_q %>%
+        mutate(DT_round = round_date(x = DT_mst, unit = timestep)) %>%
+        group_by(site, DT_round) %>%
+        summarise(q_cfs = mean(q_cfs, na.rm = TRUE)) %>%
+        filter(!is.na(q_cfs))%>%
+        left_join(flow_sites, by = c("site" = "abbrev"))
+   
+
+    return(final_q)
+  }
+  final_q <- gather_q(flow_sites, start_date, end_date, timestep)
+  
+  
+  trim_q <- final_q%>%
+    filter(between(DT_round, start_dt, end_dt))
+    
+  
+  # Subset the colors since there are only a few sites where flow is available
+  colors_selected <- tibble(site = sites)%>%
+    left_join(site_names, by = c("site" = "site"))
+  colors_selected$site_name <- factor(colors_selected$site_name, levels = site_order )
+  
+  
+    colors_selected <- colors_selected %>%
+      mutate(color = color_scheme[1:length(sites)])%>%
+    filter(site %in% flow_sites$site)
+    
+    
+    color_scheme <- colors_selected$color
+  
+  trim_q$site_name <- factor(trim_q$site_name, levels = site_order )
+      
+    
+  
+    ggplot(trim_q, aes(x = DT_round, y = q_cfs, color = site_name)) +
+      geom_line(size = 1.5) +
+      scale_color_manual(values = color_scheme) +
+      labs( x = "Date", y = "Flow (cfs)", color = "")+
+      theme_few(base_size = b_size) +
+      theme(axis.title.x = element_blank(), legend.position = "none", 
+            legend.text = element_blank())
+  
+
+      }
+      
+      plot <- flow_plot(sites, start_dt, end_dt, timestep)
+      
+      return(plot)
+    }
+    
+    
+    plot_data <- all_data %>%
+      filter(parameter == param_arg)
+    
+    label <- labels %>%
+      filter(param == param_arg) %>%
+      pull(label)
+    
+    plot_data$site_name <- factor(plot_data$site_name, levels = site_order )
+    
+    
+    plot <- ggplot(plot_data, aes(x = DT_round, y = value, color = site_name)) +
+      geom_line(linewidth = 2) +
+      scale_color_manual(name = "Site", values = color_scheme) +
+      labs(x = "Date", y = label, color = "Site") +
+      theme_few(base_size = b_size) +
+      labs(color = "Site") +
+      theme(axis.title.x = element_blank(), legend.position = "bottom")
+    
+    if (add_grabs) {
+      grab_data <- tidy_correlated_df %>%
+        filter(site %in% sites & grab_dt >= ymd_hm(start_dt) & grab_dt <= ymd_hm(end_dt))%>%
+        left_join(site_names, by = c("site" = "site"))
+      
+      plot <- plot +
+        geom_vline(data = grab_data, aes(xintercept = grab_dt, color = site_name), linetype = "dashed", size = 1)
+    }
+    
+    return(plot)
+  }
+  
+  all_data <- all_data%>%
+    mutate(DT_round = round_date(DT_round, unit = timestep))%>%
+    group_by(DT_round, site_name,site, parameter)%>%
+    summarise(value = mean(value, na.rm = TRUE), .groups = "drop")
+
+
+  all_plot <- map(parameters, create_plot)
+  
+
+  
+  if(length(parameters) == 1){
+    all_plot[[1]] <- all_plot[[1]] + theme(axis.title.x = element_text( size = b_size))
+    
+    plots <- wrap_plots(all_plot, ncol = 1) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom")
+    
+  }else if(length(parameters) == 2){
+    all_plot[[1]] <- all_plot[[1]] + theme(axis.text.x = element_blank(), 
+                                           legend.position = "none")
+    all_plot[[2]] <- all_plot[[2]] + theme(axis.title.x = element_text( size = b_size))
+    plots <- wrap_plots(all_plot, ncol = 1) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom", legend.text = element_text(size = b_size))
+    
+    return(plots)
+  }else if(length(parameters) == 3){
+    all_plot[[3]] <- all_plot[[3]] + theme(axis.title.x = element_text( size = b_size))
+    plots <- wrap_plots(all_plot, ncol = 1) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom", legend.text = element_text(size = b_size))
+  }else if(length(parameters) == 4){
+    all_plot[[3]] <- all_plot[[3]] + theme(axis.title.x = element_text( size = b_size))
+    all_plot[[4]] <- all_plot[[4]] + theme(axis.title.x = element_text( size = b_size))
+    plots <- wrap_plots(all_plot, ncol = 2) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom", legend.text = element_text(size = b_size))
+  }else if(length(parameters) == 5){
+    all_plot[[5]] <- all_plot[[5]] + theme(axis.title.x = element_text( size = b_size))
+    plots <- wrap_plots(all_plot, ncol = 2) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom", legend.text = element_text(size = b_size))
+  }
+  
+  
+  return(plots)
+}
+
+
+
+
+bg_colors <- c( "#01377D", "#009DD1", "#97E7F5",
+                "#7ED348", "#26B170", "#000000") 
+
+colors <- c("#01377D","#009DD1", "#D55E00")
+
+
+
+
+```
+
+## March Horsetooth Release
+
+```{r}
+
+sites_mh <- c("tamasag", "legacy", "lincoln", "boxelder")
+
+
+
+march <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_mh,  parameters = c("Flow", "Specific Conductivity", "Turbidity"), start_dt = "2024-03-26  00:00",
+                  end_dt = "2024-03-29 12:00",timestep =  "15 minutes", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+
+
+
+save_2024_fig_plot(march,"march_horsetooth")
+```
+
+
+## April Cond spike
+
+Find the ditch pulling water. Swap depth for flow data
+clean up cond data
+
+
+```{r}
+sites_apr <- c("tamasag", "legacy", "lincoln", "boxelder", "riverbluffs")
+
+apr <- plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_apr,  parameters = c("Flow", "Specific Conductivity","DO", "Temperature"), start_dt = "2024-04-07  00:00",
+                  end_dt = "2024-04-18 23:00",timestep = "15 minute", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+
+save_2024_fig_plot(apr,"april_cond_spike")
+```
+
+
+## May Cond spike
+
+```{r}
+sites_may <- c("legacy", "lincoln", "boxelder", "archery", "riverbluffs")
+
+may <- plot_sensor_grabs(df = sensor_data_simple_clean,sites = sites_may,  parameters = c("Flow", "Specific Conductivity", "Temperature"), start_dt = "2024-05-28  00:00",
+                  end_dt = "2024-06-08 23:00",timestep = "1 hour", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+
+save_2024_fig_plot(may,"may_cond_spike")
+```
+
+## Low DO levels at lower sites due to low flows
+
+Swap depth for depth for flow data and add in previous year's data to compare DO levels
+
+```{r}
+sites_low_do <- c("lincoln",  "boxelder","prospect", "riverbluffs")
+
+low_do <- plot_sensor_grabs(df = sensor_data_simple_clean,sites = sites_low_do,  parameters = c("Flow","DO",  "Specific Conductivity", "Temperature"), start_dt = "2024-07-31  00:00",
+                  end_dt = "2024-08-11 00:00", timestep = "1 hour", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+
+
+save_2024_fig_plot(low_do,"low_do")
+
+sites_low_do_2 <- c("tamasag", "lincoln", "timberline", "boxelder", "archery")
+low_do2 <- plot_sensor_grabs(df = sensor_data_simple_clean,sites = sites_low_do_2,  parameters = c("Flow","DO",  "Specific Conductivity", "Temperature"), start_dt = "2024-09-01  00:00",
+                  end_dt = "2024-10-05 00:00", timestep = "1 hour", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+
+
+save_2024_fig_plot(low_do2,"low_do2")
+```
+
+## August Storm
+
+Add precip from 8/10
+
+
+```{r}
+
+sites_aug <- c("tamasag", "legacy", "lincoln","prospect", "boxelder")
+aug <- plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_aug,  parameters = c("Flow", "Specific Conductivity", "Turbidity"), start_dt = "2024-08-09  00:00",
+                  end_dt = "2024-08-15 00:00", timestep = "15 minute", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+
+save_2024_fig_plot(aug,"aug_storm")
+```
+
+
+
+## Late summer Timberline prospect cond trends
+
+```{r}
+sites_timberline <- c("timberline", "prospect")
+
+timb_pros <-plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_timberline,  parameters = c("Depth", "Specific Conductivity", "Temperature"), start_dt = "2024-08-10  00:00",
+                  end_dt = "2024-11-05 00:00", timestep = "4 hour", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+save_2024_fig_plot(timb_pros,"timb_pros")
+```
+
+## Fall Horsetooth release
+
+Similar to previous year, there was a big release from horsetooth in mid october. This increased flows in the river and caused conducitivty to decrease. This shift was shorter at lower sites in the network as water was likely pulled between lincoln and Boxelder
+
+```{r}
+sites_fall <- c("legacy", "lincoln","prospect",  "boxelder", "riverbluffs")
+
+fall_h <- plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_fall,  parameters = c("Flow", "Specific Conductivity", "pH", "DO"), start_dt = "2024-10-05  00:00",
+                  end_dt = "2024-11-15 00:00", timestep = "6 hour", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+save_2024_fig_plot(fall_h,"fall_horset")
+```
+
+
+## Month long comp of River Bluffs and Archery
+
+
+Higher up sites (Boxelder, archery, lincoln) follow patterns consistent with flow level fluctuations whereas riverbluffs is more stable (flow doesn't change as much). Takes a much larger release/shift for riverbluffs to see a change in conductivity. pH is also elevated for an extended period. 
+
+```{r}
+
+sites_comp <- c("lincoln", "boxelder","archery","riverbluffs")
+arch_rivr <-   plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_comp,  parameters = c("Flow", "Specific Conductivity", "Temperature", "pH"), start_dt = "2024-07-01  00:00",
+                  end_dt = "2024-11-15 23:45", timestep = "5 day", add_grabs = F, color_scheme = bg_colors,b_size = 18)
+
+save_2024_fig_plot(arch_rivr,"arch_rivr")
+```
+
+
