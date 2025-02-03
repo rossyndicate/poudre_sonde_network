@@ -9,7 +9,9 @@ library(gridExtra)
 library(plotly)
 
 ##### Helper functions for data loading #####
+
 load_data_directories <- function() {
+#To Do: Convert to {here} paths (for all file paths)
   list(
     all_path = "data/all_data_directory",
     pre_verification_path = "data/pre_verification_directory",
@@ -199,13 +201,14 @@ ui <- page_navbar(
   ),
 
 #### Tab 3: Final Data View ####
-## To do: This doesn't work at all yet, just a placeholder
+
 nav_panel(
   title = "Finalize Data",
   layout_columns(
     col_widths = c(8, 4),
 
     # Main Plot Card
+#To Do: Convert to plotly object for better data vis
     card(
       card_header("Final Data Overview"),
       card_body(
@@ -312,6 +315,8 @@ server <- function(input, output, session) {
       }
 
       sel_data <- working_data[[site_param_name]]
+
+      #To do: Add additional columns (verification status, etc ) to match with old ver system
       processed <- sel_data%>%
         #FOR TESTING PURPOSES ONLY
         mutate(omit = NA,
