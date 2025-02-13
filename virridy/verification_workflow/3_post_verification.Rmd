@@ -1,0 +1,411 @@
+```{r}
+library(tidyverse)
+library(readxl)
+library(here)
+
+# Load functions
+walk(list.files('src/', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
+```
+
+
+Once all of the data has been verified it will need to get fixed with the errors
+that we found while manually verifying the data. 
+
+# Clean up the issues to resolve data set
+```{r}
+# Read in the issues to resolved data
+issues_df <- read_xlsx(here('data','virridy_verification','verification_assignments_notes.xlsx'), sheet = "issues to resolve")
+
+# site list 
+site_list <- c('tamasag', 'legacy', 'lincoln', 'timberline', 'prospect', 'boxelder', 'archery', 'river bluffs')
+
+site_list <- paste(site_list, collapse = "|")
+```
+
+```{r}
+# Fix the date time columns
+issues_df$date_found <- update(issues_df$date_found, year = 2024)
+
+# clean up the issues df
+filtered_issues_df <- issues_df %>% 
+  mutate(verifier = str_to_upper(verifier),
+         site = str_to_lower(site)) %>% 
+  filter(grepl(site_list, site, ignore.case = T),
+         !grepl("virridy", site, ignore.case = T),
+         year(start_dt) == 2023,
+         year(end_dt) == 2023) %>% 
+  group_by(site, param) %>%
+  arrange(start_dt, .by_group = T)
+```
+
+# Pull in all of the verified data
+```{r}
+verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'verified_directory'))) %>% 
+  filter(grepl(site_list, names, ignore.case = T),
+         !grepl("virridy", names, ignore.case = T)) %>% 
+  arrange() %>%
+  pull(names)
+
+verified_data <- map(.x = verified_file_names,~{
+  read_rds(here('data', 'virridy_verification', 'verified_directory', .x))
+}) 
+
+names(verified_data) <- verified_file_names
+
+# we can filter out more data because not all of them have issues that need to be fixed
+site_params_with_issues <- unique(filtered_issues_df[, c('site', 'param')]) %>% 
+  mutate(site_params = paste(site, param, sep = "-")) %>% 
+  pull(site_params)
+
+# filter the verified files for data that has issues that need to be resolved
+verified_data <- verified_data[names(verified_data) %in% site_params_with_issues]
+```
+
+# Remove any of the data that is already resolved
+```{r}
+post_verified_file_names <- tibble(names = list.files(path = here('data', 'virridy_verification', 'post_verified_directory'))) %>% 
+  arrange() %>% 
+  pull(names)
+
+# This is data that needs to be resolved still
+verified_data <- verified_data[!names(verified_data) %in% post_verified_file_names]
+```
+
+```{r}
+# quick look up function to explore the data easily
+lookup <- function(site_param) {
+  df <- verified_data[[site_param]] %>% 
+    select(DT_join, site, parameter, raw_flag, flag, mean, mean_verified, is_verified, verification_status, day, week, month, year)
+  View(df)
+}
+
+post_lookup <- function(site_param) {
+  df <- post_verified_data[[site_param]] %>% 
+    select(DT_join, site, parameter, raw_flag, flag, mean, mean_verified, is_verified, verification_status, day, week, month, year)
+  View(df)
+}
+```
+
+Now we only have 5 data frames that we need to fix. These are data that need
+the calibration script. 
+
+# Post manual verification function
+
+`post_manual_verification_clean_up` is a huge function that tries to resolve each 
+issue that was found during manual verification individually. Only those issues that
+can and should be resolved here are done so. The comments within the function often
+relate to those comments in the manual verification notes.
+
+NOTE: We still need to go through and solve the calibration issues. Those have not 
+been fixed in this script.
+
+```{r}
+post_manual_verification_clean_up <- function(idx, df) {
+  
+  site_param <- idx
+  
+  # Archery ----
+  # BETA AT800 sonde deployed resulting in very different chla values from original sonde, add flag (deployment error or...?) but do not remove?
+  if (site_param == "archery-Chl-a Fluorescence") {
+    post_verified_df <- df %>% 
+      add_flag(between(DT_round, date("2023-04-20 00:00:00"), date("2023-05-23 23:59:59")),
+               "deployment error")
+  }
+  
+  else if (site_param == "archery-DO") {
+    fail_dts <- paste(c("2023-09-15 11:15:00", "2023-04-23 12:15:00", "2023-04-23 12:30:00"), collapse = "|")
+    post_verified_df <- df %>% 
+      mutate(mean_verified = if_else(grepl(fail_dts, DT_join, ignore.case = T), NA, mean_verified),
+             verification_status = if_else(grepl(fail_dts, DT_join, ignore.case = T), "FAIL", verification_status))
+  }
+  
+  else if (site_param == "archery-Depth") {
+    # flag is Sonde not deployed, but the data looks fine
+    post_verified_df <- df %>% 
+      mutate(mean_verified = if_else(between(DT_round, date("2023-05-16 14:15:00"), date("2023-05-21 00:00:00")), 
+                                     mean, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-05-16 14:15:00"), date("2023-05-21 00:00:00")), 
+                                           "FAIL", 
+                                           verification_status))
+  }
+  
+  else if (site_param == "archery-Specific Conductivity") {
+    # Sensor malfunction can be removed for this period of time since data looks good
+    post_verified_df <- df %>% 
+      mutate(mean_verified = if_else(between(DT_round, date("2023-09-15 10:29:00"), date("2023-10-16 00:29:00")), 
+                                     NA, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-09-15 10:29:00"), date("2023-10-16 00:29:00")), 
+                                           "FAIL", 
+                                           verification_status))
+  }
+  
+  # Boxelder ----
+  else if (site_param == "boxelder-Specific Conductivity") { 
+    # There seems to be a sensor malfunction, but the data seems to be tracking the up/downstream data.
+    post_verified_df <- df %>%
+      mutate(mean_verified = if_else(between(DT_round, date("2023-07-31 17:59:00"), date("2023-08-04 10:59:00")), 
+                                     mean, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-07-31 17:59:00"), date("2023-08-04 10:59:00")), 
+                                           "FAIL", 
+                                           verification_status))
+  }
+  
+  else if (site_param == "boxelder-pH") {
+    post_verified_df <- df %>% 
+      # Sensor malfunction flag can be removed for this period of time since data looks good and in line with up/downstream sites
+      mutate(mean_verified = if_else(between(DT_round, date("2023-07-31 17:59:00"), date("2023-08-04 10:59:00")), 
+                                     mean, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-07-31 17:59:00"), date("2023-08-04 10:59:00")), 
+                                           "FAIL", 
+                                           verification_status)) %>% 
+      # Sonde burial that is not being tracked in the field notes
+      add_flag(between(DT_round, date("2023-05-26 12:29:00"), date("2023-05-30 18:14:00")), "sonde burial") %>% 
+      # Failed data when it should have been passed
+      mutate(mean_verified = if_else(between(DT_round, date("2023-05-30 18:29:00"), date("2023-06-04 23:59:00")) & is.na(flag), 
+                                     mean, 
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-05-30 18:29:00"), date("2023-06-04 23:59:00")) & is.na(flag), 
+                                           "PASS", 
+                                           verification_status))
+  }
+  
+  else if (site_param == "boxelder-Turbidity") {
+    post_verified_df <- df %>% 
+      # Sensor malfunction, but the data seems to be tracking what was happening at prospect pretty well.
+      mutate(mean_verified = ifelse(between(DT_round, date("2023-08-01 09:29:00"), date("2023-08-03 13:59:00")),
+                                    mean,
+                                    mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-08-01 09:29:00"), date("2023-08-03 13:59:00")) & is.na(flag),
+                                           "PASS",
+                                           verification_status))
+  }
+  
+  # Lincoln ----
+  else if (site_param == "lincoln-Chl-a Fluorescence") {
+    post_verified_df <- df %>% 
+      # Failed flagged points, should be Pass failed points
+      mutate(mean_verified = if_else(between(DT_round, date("2023-09-25 00:00:00"), date("2023-10-01 00:00:00")) & !is.na(flag),
+                                    NA,
+                                    mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-09-25 00:00:00"), date("2023-10-01 00:00:00")),
+                                           "PASS",
+                                           verification_status))
+  }
+  
+  # River Bluffs ----
+  # depth calibration that will not get resolved in this script
+  
+  else if (site_param == 'river bluffs-Chl-a Fluorescence') {
+    post_verified_df <- df %>% 
+      # Value should be flagged, this point was passed
+      mutate(mean_verified = if_else(DT_join == "2023-04-09 17:45:00",
+                                     NA,
+                                     mean_verified),
+             verification_status = if_else(DT_join == "2023-04-09 17:45:00",
+                                           "FAIL",
+                                           verification_status)) %>% 
+      # Chla drift (until sonde burial)
+      mutate(mean_verifed = if_else(between(DT_round, date("2023-04-21 23:59:00"), date("2023-05-04 10:46:00")) & is.na(flag),
+                                    NA,
+                                    mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-04-21 23:59:00"), date("2023-05-04 10:46:00")) & is.na(flag),
+                                           "FAIL",
+                                           verification_status)) %>% 
+      add_flag(between(DT_round, date("2023-04-21 23:59:00"), date("2023-05-04 10:46:00")), "drift")
+  }
+  
+  else if (site_param == 'river bluffs-Temperature') {
+    post_verified_df <- df %>% 
+      # Indicates sonde burial, but data looks good
+      mutate(mean_verifed = if_else(between(DT_round, date("2023-04-11 23:44:00"), date("2023-04-16 13:31:00")),
+                                    mean,
+                                    mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-04-11 23:44:00"), date("2023-04-16 13:31:00")) & !is.na(flag),
+                                           "FAIL",
+                                           verification_status))
+  }
+  
+  else if (site_param == 'river bluffs-Specific Conductivity') {
+    post_verified_df <- df %>% 
+      # Sonde burial for like 2 months but the data looks mostly fine
+      mutate(mean_verified = if_else(between(DT_round, date("2023-05-04 16:14:00"), date("2023-07-05 20:59:00")),
+                                     mean,
+                                     mean_verified),
+             verification_status = if_else(between(DT_round, date("2023-05-04 16:14:00"), date("2023-07-05 20:59:00")),
+                                           "FAIL",
+                                           verification_status))
+  }
+  
+  else if (site_param == "river bluffs-ORP") {
+    post_verified_df <- df %>% 
+      # Field note flag. Sensor was visited one day and returned the next and it seems like it was kept running over night.
+      add_flag(between(DT_round, date("2023-07-17 13:59:00"), date("2023-07-18 09:46:00")), "sonde not employed") %>% 
+      # Sonde burial flag on other parameters during this time but not on ORP
+      add_flag(between(DT_round, date("2023-05-04 16:14:00"), date("2023-07-05 20:59:00")), "sonde burial")
+  }
+  
+  else if (site_param == "river bluffs-DO") {
+    # "Passed failed points, should be ff/sonde burial, definitely a handful of points that reflect that but otherwise looks fine" note dates
+    # have to test if this actually needs the timezone information
+    timezone = "America/Denver"
+    periods <- interval(
+      start = c(
+        ymd_hms("2023-05-08 17:29:00", tz = timezone),
+        ymd_hms("2023-05-10 17:44:00", tz = timezone),
+        ymd_hms("2023-05-22 16:59:00", tz = timezone),
+        ymd_hms("2023-06-01 09:29:00", tz = timezone),
+        ymd_hms("2023-06-06 12:14:00", tz = timezone),
+        ymd_hms("2023-06-06 20:44:00", tz = timezone),
+        ymd_hms("2023-06-08 14:29:00", tz = timezone),
+        ymd_hms("2023-06-16 04:44:00", tz = timezone),
+        ymd_hms("2023-06-21 09:29:00", tz = timezone),
+        ymd_hms("2023-06-29 11:14:00", tz = timezone)),
+      end = c(
+        ymd_hms("2023-05-09 19:31:00", tz = timezone),
+        ymd_hms("2023-05-12 16:01:00", tz = timezone),
+        ymd_hms("2023-05-30 00:01:00", tz = timezone),
+        ymd_hms("2023-06-02 13:46:00", tz = timezone),
+        ymd_hms("2023-06-06 19:31:00", tz = timezone),
+        ymd_hms("2023-06-07 15:31:00", tz = timezone),
+        ymd_hms("2023-06-09 11:01:00", tz = timezone),
+        ymd_hms("2023-06-17 02:31:00", tz = timezone),
+        ymd_hms("2023-06-22 09:46:00", tz = timezone),
+        ymd_hms("2023-07-01 23:46:00", tz = timezone)))
+    
+    post_verified_df <- df %>% 
+      # Passed failed points, should be ff
+      mutate(mean_verified = if_else(DT_round %within% periods,
+                                     mean,
+                                     mean_verified),
+             verification_status = if_else(DT_round %within% periods,
+                                           "FAIL",
+                                           verification_status))
+    
+  }
+  
+  # Tamasag ----
+  
+  # depth calibration will not get resolved in this script
+  # specific calibration will not get resolved in this script
+  # pH calibration will not get resolved in this script
+  
+  else if (site_param == "tamasag-pH") {
+    # "sonde burial that is not being tracked in the field notes" note dates
+    timezone = "America/Denver"
+    periods <- interval(
+      start = c(ymd_hms("2023-06-06 22:14:00", tz = timezone),
+                ymd_hms("2023-06-13 15:29:00", tz = timezone),
+                ymd_hms("2023-06-24 09:44:00", tz = timezone)),
+      end = c(ymd_hms("2023-06-08 13:01:00", tz = timezone),
+              ymd_hms("2023-06-21 12:46:00", tz = timezone),
+              ymd_hms("2023-06-26 11:46:00", tz = timezone)))
+    
+    post_verified_df <- df %>% 
+      add_flag(DT_round %within% periods, "sonde burial") %>% 
+      mutate(mean_verified = if_else(DT_round %within% periods,
+                                     NA,
+                                     mean_verified),
+             verification_status = if_else(DT_round %within% periods,
+                                           "PASS", # here we are passing the sonde burial flags.
+                                           verification_status))
+  }
+  
+  else if (site_param == "tamasag-Turbidity") {
+    # "Drift flag did not flag all of the data in this time frame. 
+    # There is a lot of drift flag that can be back calibrated" and 
+    # "Potential drift?" note dates
+    timezone = "America/Denver"
+    periods <- interval(
+      start = c(ymd_hms("2023-08-17 23:59:00", tz = timezone),
+                ymd_hms("2023-10-03 13:14:00", tz = timezone),
+                ymd_hms("2023-10-21 23:59:00", tz = timezone)),
+      end = c(ymd_hms("2023-09-01 17:01:00", tz = timezone),
+              ymd_hms("2023-10-09 09:01:00", tz = timezone),
+              ymd_hms("2023-10-27 22:46:00", tz = timezone)))
+    
+    post_verified_df <- df %>% 
+      add_flag(DT_round %within% periods, "drift") %>% 
+      mutate(mean_verified = if_else(DT_round %within% periods,
+                                     NA,
+                                     mean_verified),
+             verification_status = if_else(DT_round %within% periods,
+                                           "PASS", # here we are passing the sonde burial flags.
+                                           verification_status))
+  }
+  
+  # Timberline ----
+  # depth calibration will not get resolved in this script
+  # specific calibration will not get resolved in this script
+  
+  else if(site_param == "timberline-Turbidity") {
+    # Drift dates
+    # "Passed failed points, should be ff/sonde burial, definitely a handful of points that reflect that but otherwise looks fine" note dates
+    # have to test if this actually needs the timezone information
+    timezone = "America/Denver"
+    periods <- interval(
+      start = c(ymd_hms("2023-11-30 23:59:00", tz = timezone)),
+      end = c(ymd_hms("2023-12-06 10:16:00", tz = timezone)))
+    
+    post_verified_df <- df %>% 
+      add_flag(DT_round %within% periods, "drift") %>% 
+      mutate(mean_verified = if_else(DT_round %within% periods,
+                                     NA,
+                                     mean_verified),
+             verification_status = if_else(DT_round %within% periods,
+                                           "PASS",
+                                           verification_status))
+  }
+  
+  # If none of the above conditions were met ----
+  else {
+    print(paste(site_param, "does not have post manual verification instructions."))
+    return(NULL)
+  }
+  
+  # Make sure site visits always gets flagged (in case these flags were removed accidentally) ----
+  always_fail_text <- paste(c("sv window", "site visit"), collapse = "|")
+
+  post_verified_df <- post_verified_df %>% 
+    mutate(mean_verified = if_else(grepl(always_fail_text, flag, ignore.case = T), NA, mean_verified),
+           is_verified = if_else(grepl(always_fail_text, flag, ignore.case = T), TRUE, mean_verified),
+           verification_status = if_else(grepl(always_fail_text, flag, ignore.case = T), "PASS", verification_status))
+  
+  return(post_verified_df)
+  
+}
+```
+
+```{r}
+# Apply post_manual_verification_clean_up to the verified data object
+post_verified_data <- imap(verified_data, ~ post_manual_verification_clean_up(idx = .y, df = .x))
+
+# remove NULL values from the list
+post_verified_data <- compact(post_verified_data)
+```
+
+```{r}
+# Upload all of the files that we needed to manually post verify
+iwalk(post_verified_data, ~{
+  write_rds(.x, here("data", "virridy_verification", "post_verified_directory", .y))
+})
+```
+
+# data that still needs to get added but is still being manually verified
+"legacy-Turbidity"
+"prospect-Turbidity"
+
+# All data that is in post verified folder has post manual verification for the 2023 year only.
+Those data that seem like they should be in post verification folder need to
+go through calibration script.
+- timberline-Specific Conductivity
+- timberline-Depth
+- tamasag-Depth
+- tamasag-Specific Conductivity
+- river bluffs-Depth
+
+NOTE: There are some files that were handled outside of this function and were moved 
+to the post verified directory in a less automated way. 

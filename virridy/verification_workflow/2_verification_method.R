@@ -57,8 +57,9 @@ QUIT <- FALSE
 
 # check data
 updated_df <- read_rds(here(intermediary_path, site_param_name)) %>%
-  select(DT_join, site, parameter, mean, mean_verified, is_verified, verification_status)%>%
-  filter(is_verified)
+  select(DT_join, site, parameter, mean, mean_verified, is_verified, verification_status) %>%
+  filter(is_verified) %>%
+  View()
 
 # clean the directories
 clean_directories()
