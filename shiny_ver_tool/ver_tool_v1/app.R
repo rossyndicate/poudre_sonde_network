@@ -234,7 +234,11 @@ ui <- page_navbar(
         # Main plot (top left)
         card(
           card_body(
-            plotOutput("main_plot", brush = "plot_brush")
+            plotOutput("main_plot",
+                       brush = brushOpts(
+                         id = "plot_brush",
+                         resetOnNew = FALSE  # This allows multiple brush selections
+                       ))
           ),
           card_footer(
             div(
@@ -244,6 +248,8 @@ ui <- page_navbar(
               actionButton("next_week", "Next Week →", class = "btn-secondary"),
               actionButton("reset_week", "Reset Data", class = "btn-danger"),
               checkboxInput("remove_omit", "Remove OMIT data", value = FALSE),
+              # Add a clear brushes button to UI
+              actionButton("clear_brushes", "Clear Brushes"),
               keys::useKeys(),
               keys::keysInput("q_key", "q"),
               actionButton("quit_app", "Quit", class = "btn-danger")
@@ -266,12 +272,12 @@ ui <- page_navbar(
                 radioButtons(
                   "weekly_decision",
                   label = NULL,
-                  choices = c("AA" = "aa",
-                              "ANO" = "ano",
-                              "TF" = "tf",
-                              "OF" = "of",
-                              "OA" = "oa",
-                              "S" = "s"),
+                  choices = c("Accept ALL" = "aa",
+                              "Accept Non Omit" = "ano",
+                              "Tag Flagged" = "tf",
+                              "Omit Flagged" = "of",
+                              "Omit ALL" = "oa",
+                              "Skip" = "s"),
                   selected = "s",
                   inline = TRUE
                 )
@@ -658,24 +664,50 @@ server <- function(input, output, session) {
    # Add brush rectangle if brush is active and brush exists
 
 #Q This might need to be reactive later on ?
-   if(!is.null(input$plot_brush)) {
-     req(input$plot_brush)
+#    if(!is.null(input$plot_brush)) {
+#      req(input$plot_brush)
+#
+#      # Get brushed points
+#      brushed_data <- brushedPoints(week_data, input$plot_brush,
+#                                    xvar = "DT_round", yvar = "mean")
+# #If data exists, add a rectangle to it
+# #Note: rectangle doesnt show up for single point but data does update correctly
+#      if(nrow(brushed_data) > 0) {
+#        # Add rectangle around brushed points
+#
+#        p <- p +
+#          geom_rect(aes(xmin = min(brushed_data$DT_round, na.rm = T),
+#                                          xmax = max(brushed_data$DT_round, na.rm = T),
+#                                          ymin = min(brushed_data$mean, na.rm = T),
+#                                          ymax = max(brushed_data$mean, na.rm = T)),
+#          fill = NA, color = "blue", alpha = 0.3)
+#      }
+#    }
+   # Check if there are any brushed areas
+   if(length(brushed_areas()) > 0) {
+     #browser()
+     # Create a data frame of all brush boundaries
+       brush_boxes <- map_dfr(
+         brushed_areas()[seq(1, length(brushed_areas()), by = 2)], #for some reason this likes to duplicate values so just grabbing half of them
+         ~data.frame(
+           xmin_DT = .x$brush_dt_min,
+           xmax_DT = .x$brush_dt_max,
+           ymin_mean = .x$brush_mean_min,
+           ymax_mean = .x$brush_mean_max
+         )
+       )
+   #
+   #   # Add rectangles for all brushed areas
+     p <- p +
+       geom_rect(data = brush_boxes,
+                 aes(xmin = xmin_DT,
+                     xmax = xmax_DT,
+                     ymin = ymin_mean,
+                     ymax = ymax_mean),
+                 fill = NA,
+                 color = "blue",
+                 alpha = 0.3, inherit.aes = F)
 
-     # Get brushed points
-     brushed_data <- brushedPoints(week_data, input$plot_brush,
-                                   xvar = "DT_round", yvar = "mean")
-#If data exists, add a rectangle to it
-#Note: rectangle doesnt show up for single point but data does update correctly
-     if(nrow(brushed_data) > 0) {
-       # Add rectangle around brushed points
-
-       p <- p +
-         geom_rect(aes(xmin = min(brushed_data$DT_round, na.rm = T),
-                                         xmax = max(brushed_data$DT_round, na.rm = T),
-                                         ymin = min(brushed_data$mean, na.rm = T),
-                                         ymax = max(brushed_data$mean, na.rm = T)),
-         fill = NA, color = "blue", alpha = 0.3)
-     }
    }
  #create plot
    p
@@ -761,39 +793,14 @@ server <- function(input, output, session) {
 
 
 
-  # Brush submit button UI
-  output$brush_submit_ui <- renderUI({
-    can_submit <- FALSE
+#### Bursh Tools ####
 
-  if (!is.null(input$brush_action) & !is.null(input$plot_brush) & !is.null(input$brush_action)) {
+  # Create a reactive value to store multiple brush selections
+  brushed_areas <- reactiveVal(list())
 
-    if(input$brush_action != "F"){
-      can_submit = TRUE
-    }else{
-      if(input$brush_action == "F"){
-        can_submit = FALSE
-        if(!is.null(input$user_brush_flags)){
-          can_submit = TRUE
-        }
-      }
-    }
-  }
-
-
-  actionButton(
-    "submit_brush",
-    "Submit Selection",
-    class = ifelse(can_submit, "btn-success", "btn-secondary"),
-    disabled = !can_submit
-  )
-
-  })
-
-
-
-  # Handle brush submission
-  observeEvent(input$submit_brush, {
-    req(input$plot_brush, input$brush_action, selected_data())
+  # Add an observer to collect brush selections
+  observeEvent(input$plot_brush, {
+    req(input$plot_brush)
 
     # Get current week's data
     week_data <- selected_data() %>%
@@ -801,68 +808,226 @@ server <- function(input, output, session) {
 
     # Get brushed points
     brushed <- brushedPoints(week_data, input$plot_brush,
-                                  xvar = "DT_round", yvar = "mean")
-    brush_dt_max <- max(brushed$DT_round, na.rm = T)
-    brush_dt_min <- min(brushed$DT_round, na.rm = T)
-    brush_mean_max <- max(brushed$mean, na.rm = T)
-    brush_mean_min <- min(brushed$mean, na.rm = T)
+                             xvar = "DT_round", yvar = "mean")
+
+    if (nrow(brushed) > 0) {
+      # Store brush coordinates
+      current_brush <- list(
+        brush_dt_max = max(brushed$DT_round, na.rm = TRUE),
+        brush_dt_min = min(brushed$DT_round, na.rm = TRUE),
+        brush_mean_max = max(brushed$mean, na.rm = TRUE),
+        brush_mean_min = min(brushed$mean, na.rm = TRUE)
+      )
+      existing_brushes <- brushed_areas()
+
+      brushed_areas(c(existing_brushes, list(current_brush)))
+      print(length(brushed_areas()))
+        }
+
+  })
 
 
-    user_brush_select <- input$brush_action
-
-    if(input$brush_action == "F") {
-      flag_choices <- input$user_brush_flags
-
-    }else{
-      flag_choices <- NA
-    }
-
-      updated_data <- selected_data() %>%
-        mutate(
-          flag = case_when(
-            #Accept
-            between(DT_round, brush_dt_min, brush_dt_max) &
-            between(mean, brush_mean_min, brush_mean_max) & user_brush_select == "A" ~ as.character(NA),
-            #Flag
-            between(DT_round, brush_dt_min, brush_dt_max) &
-
-  #TO DO: Turn into function add flag
-            between(mean, brush_mean_min, brush_mean_max) &  user_brush_select == "F" ~ paste(as.character(flag_choices), sep = "\n"),
-            #Omit
-#TO DO: If a user selects Omit, do they need to give the data a flag?
-            #Keep existing flags
-            between(DT_round, brush_dt_min, brush_dt_max) &
-            between(mean, brush_mean_min, brush_mean_max) &   user_brush_select == "O" ~ flag,
-            TRUE ~ flag),
-
-          #if a user brushes points as omit, then change omit to TRUE
-        omit = case_when(
-            between(DT_round, brush_dt_min, brush_dt_max) &
-            between(mean, brush_mean_min, brush_mean_max) &  user_brush_select == "O" ~ TRUE,
-            #Accept
-            between(DT_round, brush_dt_min, brush_dt_max) &
-              between(mean, brush_mean_min, brush_mean_max) & user_brush_select %in% c("A","F")  ~ NA,
-            TRUE ~ omit),
-          #if a user brushes points, add their initials to the user column
-          user = ifelse(between(DT_round, brush_dt_min, brush_dt_max) &
-                          between(mean, brush_mean_min, brush_mean_max), input$user, NA)
-        )
-
-      selected_data(updated_data)
-      showNotification("Brush Changes saved.", type = "message")
-
-    # Reset brush action and flags
-    updateRadioButtons(session, "brush_action", selected = character(0))
-    if(!is.null(input$user_brush_flags)) {
-      updateSelectInput(session, "user_brush_flags", selected = character(0))
-    }
-    # Reset the brush by clearing it
+  # Observer to clear brushed areas
+  observeEvent(input$clear_brushes, {
+    brushed_areas(list())
     session$resetBrush("plot_brush")
 
   })
-# To Do: Add week reset button to undo brush submissions
 
-## Weekly Decision
+
+ # Brush submit button UI
+  output$brush_submit_ui <- renderUI({
+    can_submit <- FALSE
+
+    if (!is.null(input$brush_action) & !is.null(input$plot_brush) & !is.null(input$brush_action)) {
+
+      if(input$brush_action != "F"){
+        can_submit = TRUE
+      }else{
+        if(input$brush_action == "F"){
+          can_submit = FALSE
+          if(!is.null(input$user_brush_flags)){
+            can_submit = TRUE
+          }
+        }
+      }
+    }
+
+
+    actionButton(
+      "submit_brush",
+      "Submit Selection",
+      class = ifelse(can_submit, "btn-success", "btn-secondary"),
+      disabled = !can_submit
+    )
+
+  })
+
+
+
+
+  # Modified submit observer
+  observeEvent(input$submit_brush, {
+    req(brushed_areas(), input$brush_action, selected_data())
+
+    user_brush_select <- input$brush_action
+
+    flag_choices <- if(input$brush_action == "F") {
+      input$user_brush_flags
+    } else {
+      NA
+    }
+
+    brush_boxes <- map_dfr(
+      brushed_areas()[seq(1, length(brushed_areas()), by = 2)],
+      ~data.frame(
+        xmin_DT = .x$brush_dt_min,
+        xmax_DT = .x$brush_dt_max,
+        ymin_mean = .x$brush_mean_min,
+        ymax_mean = .x$brush_mean_max
+      )
+    )
+
+    # Initialize updated data with current data
+    updated_data <- selected_data()
+
+    # Process each brushed area
+    for(i in 1:nrow(brush_boxes)) {
+      # Get points within current brush area
+      brush <- brush_boxes %>% slice(i)
+
+      xmin_DT <- pull(brush, xmin_DT)
+      xmax_DT <- pull(brush, xmax_DT)
+      ymin_mean <- pull(brush, ymin_mean)
+      ymax_mean <- pull(brush, ymax_mean)
+
+      # Update data for current brush area
+      updated_data <- updated_data %>%
+        mutate(
+          flag = case_when(
+            #Accept
+            between(DT_round, xmin_DT, xmax_DT) &
+              between(mean, ymin_mean, ymax_mean) &
+              user_brush_select == "A" ~ as.character(NA),
+            #Flag
+            between(DT_round, xmin_DT, xmax_DT) &
+              between(mean, ymin_mean, ymax_mean) &
+              user_brush_select == "F" ~ paste(as.character(flag_choices), sep = "\n"),
+            #Omit
+            between(DT_round, xmin_DT, xmax_DT) &
+              between(mean, ymin_mean, ymax_mean) &
+              user_brush_select == "O" ~ flag,
+            TRUE ~ flag),
+
+          omit = case_when(
+            between(DT_round, xmin_DT, xmax_DT) &
+              between(mean, ymin_mean, ymax_mean) &
+              user_brush_select == "O" ~ TRUE,
+            #Accept
+            between(DT_round, xmin_DT, xmax_DT) &
+              between(mean, ymin_mean, ymax_mean) &
+              user_brush_select %in% c("A","F")  ~ NA,
+            TRUE ~ omit),
+
+          user = ifelse(between(DT_round, xmin_DT, xmax_DT) &
+                          between(mean, ymin_mean, ymax_mean),
+                        input$user,
+                        user)
+        )
+    }
+
+    # Update the data
+    selected_data(updated_data)
+
+    # Clear brushed areas after submission
+    brushed_areas(list())
+    session$resetBrush("plot_brush")
+
+    showNotification("Brush Changes saved.", type = "message")
+  })
+
+
+
+
+#
+#
+#
+#   # Handle brush submission
+#   observeEvent(input$submit_brush, {
+#     req(input$plot_brush, input$brush_action, selected_data())
+#
+#     # Get current week's data
+#     week_data <- selected_data() %>%
+#       filter(week == current_week())
+#
+#     # Get brushed points
+#     brushed <- brushedPoints(week_data, input$plot_brush,
+#                                   xvar = "DT_round", yvar = "mean")
+#     brush_dt_max <- max(brushed$DT_round, na.rm = T)
+#     brush_dt_min <- min(brushed$DT_round, na.rm = T)
+#     brush_mean_max <- max(brushed$mean, na.rm = T)
+#     brush_mean_min <- min(brushed$mean, na.rm = T)
+#
+#
+#     user_brush_select <- input$brush_action
+#
+#     if(input$brush_action == "F") {
+#       flag_choices <- input$user_brush_flags
+#
+#     }else{
+#       flag_choices <- NA
+#     }
+#
+#       updated_data <- selected_data() %>%
+#         mutate(
+#           flag = case_when(
+#             #Accept
+#             between(DT_round, brush_dt_min, brush_dt_max) &
+#             between(mean, brush_mean_min, brush_mean_max) & user_brush_select == "A" ~ as.character(NA),
+#             #Flag
+#             between(DT_round, brush_dt_min, brush_dt_max) &
+#
+#   #TO DO: Turn into function add flag
+#             between(mean, brush_mean_min, brush_mean_max) &  user_brush_select == "F" ~ paste(as.character(flag_choices), sep = "\n"),
+#             #Omit
+# #TO DO: If a user selects Omit, do they need to give the data a flag?
+#             #Keep existing flags
+#             between(DT_round, brush_dt_min, brush_dt_max) &
+#             between(mean, brush_mean_min, brush_mean_max) &   user_brush_select == "O" ~ flag,
+#             TRUE ~ flag),
+#
+#           #if a user brushes points as omit, then change omit to TRUE
+#         omit = case_when(
+#             between(DT_round, brush_dt_min, brush_dt_max) &
+#             between(mean, brush_mean_min, brush_mean_max) &  user_brush_select == "O" ~ TRUE,
+#             #Accept
+#             between(DT_round, brush_dt_min, brush_dt_max) &
+#               between(mean, brush_mean_min, brush_mean_max) & user_brush_select %in% c("A","F")  ~ NA,
+#             TRUE ~ omit),
+#           #if a user brushes points, add their initials to the user column
+#           user = ifelse(between(DT_round, brush_dt_min, brush_dt_max) &
+#                           between(mean, brush_mean_min, brush_mean_max), input$user, NA)
+#         )
+#
+#       selected_data(updated_data)
+#       showNotification("Brush Changes saved.", type = "message")
+#
+#     # Reset brush action and flags
+#     updateRadioButtons(session, "brush_action", selected = character(0))
+#     if(!is.null(input$user_brush_flags)) {
+#       updateSelectInput(session, "user_brush_flags", selected = character(0))
+#     }
+#     # Reset the brush by clearing it
+#     session$resetBrush("plot_brush")
+#
+#   })
+# # To Do: Add week reset button to undo brush submissions
+#
+
+
+
+
+#### Weekly Decision ####
 # To Do: If a user moves to a week with a decision already made, show this somehow
   # Submit decision button UI
   output$submit_decision_ui <- renderUI({
