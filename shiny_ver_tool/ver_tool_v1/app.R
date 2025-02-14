@@ -11,7 +11,8 @@ library(keys)
 library(patchwork)
 library(digest)
 library(fs)
-
+library(shinyFiles)
+options(shiny.maxRequestSize = 1000 * 1024^2)
 
 ##### Helper functions for data loading #####
 
@@ -179,7 +180,20 @@ ui <- page_navbar(
 #To Do: remove header to save space? it shouldnt need to be used by users
   title = "Data Processing Pipeline",
   id = "tabs",
-  theme = bs_theme(version = 5),
+  theme = bs_theme(version = 5, bootswatch  = "zephyr"),
+
+# #Tab 0: For future version to be shared open source
+# nav_panel(
+#   title = "Data Setup",
+#   card(
+#     card_header("Data Upload"),
+#     card_body(
+#       fileInput("upload", "Upload a file", accept = c(".zip")),
+#       tableOutput("uploaded_files")
+#     )
+#   )
+# ),
+
 
   #### Tab 1: Data Selection ####
   nav_panel(
@@ -207,7 +221,7 @@ ui <- page_navbar(
     )
   ),
 
-  #### Tab 2: Data Verification ####
+
   #### Tab 2: Data Verification ####
   nav_panel(
     title = "Data Verification",
@@ -370,6 +384,64 @@ nav_panel(
 
 # Server Definition
 server <- function(input, output, session) {
+#### Not used in internal version ####
+#
+#
+#   output$uploaded_files <- renderTable({
+#     req(input$upload)
+#
+#     # Get the uploaded file
+#     zip_file <- input$upload$datapath
+#     # Create a unique temporary directory for this upload
+#     temp_dir <- file.path(tempdir(), paste0("upload_", format(Sys.time(), "%Y%m%d_%H%M%S")))
+#     dir.create(temp_dir)
+#
+#     # Unzip the file to the temporary directory
+#     unzip(zip_file, exdir = temp_dir)
+#     files <- list.files(
+#       path = temp_dir,
+#       recursive = TRUE,
+#       full.names = TRUE
+#     )%>%
+#     #remove the temp_dir from the file path
+#     gsub(paste0(temp_dir, "/data/"), "", .)
+#     # Remove metadata folder entries
+#     # Extract folder and site-parameter combinations
+#     file_info <- data.frame(
+#       Folder = dirname(files),
+#       Site_Parameter = basename(files) %>%
+#         tools::file_path_sans_ext()  # Remove .csv extension
+#     ) %>%
+#       # Remove any empty folders or "."
+#       filter(Folder != "." & Folder != "" ) %>%
+#       filter(!grepl("meta", Folder)) %>%
+#       # Sort by folder and site-parameter
+#       arrange(Folder, Site_Parameter)%>%
+#       # Split Site_Parameter into Site and Parameter
+#       tidyr::separate(Site_Parameter,
+#                       into = c("Site", "Parameter"),
+#                       sep = "-",
+#                       remove = TRUE)%>%
+#       # Pivot wider to make folders as columns
+#       pivot_wider(
+#         names_from = Folder,
+#         values_from = Parameter,
+#         values_fn = function(x) paste(unique(x), collapse = ","),
+#         values_fill = ""
+#       ) %>%
+#       arrange(Site)
+#
+#
+# file_info
+#
+#     })
+#### Not used in internal version ####
+
+
+
+
+
+
 #### Reactive values ####
   data <- reactiveVal(NULL)
   current_week <- reactiveVal(NULL) #controlled by next/prev week buttons, and submit weekly decision
