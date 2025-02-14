@@ -7,18 +7,25 @@ library(here)
 library(ggpubr)
 library(gridExtra)
 library(plotly)
+<<<<<<< HEAD
 library(keys)
 library(patchwork)
+=======
+library(digest)
+library(fs)
+>>>>>>> 1ce551a8777d6d0d31add91eb70db6f9ca155285
 
 ##### Helper functions for data loading #####
 
+# TODO: once a user has submitted final decision for data put them back into the data selection tab
+
 load_data_directories <- function() {
-#To Do: Convert to {here} paths (for all file paths)
   list(
-    all_path = "data/all_data_directory",
-    pre_verification_path = "data/pre_verification_directory",
-    intermediary_path = "data/intermediary_directory",
-    verified_path = "data/verified_directory")
+    all_path = here("shiny_ver_tool", "ver_tool_v1", "data", "all_data_directory"),
+    pre_verification_path = here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory"),
+    intermediary_path = here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory"),
+    verified_path = here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")
+  )
 }
 
 load_all_datasets <- function(paths) {
