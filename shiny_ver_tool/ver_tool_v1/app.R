@@ -7,6 +7,8 @@ library(here)
 library(ggpubr)
 library(gridExtra)
 library(plotly)
+library(keys)
+library(patchwork)
 
 ##### Helper functions for data loading #####
 
@@ -80,18 +82,95 @@ get_auto_parameters <- function(parameter) {
   }, error = function(e) character(0))
 }
 
+relevant_sonde_selector <- function(site_arg) {
+  if (site_arg == "joei") {
+    plot_filter <- c("cbri")
+  }
+  if (site_arg == "cbri") {
+    plot_filter <- c("joei", "chd")
+  }
+  if (site_arg == "chd") {
+    plot_filter <- c("cbri", "pfal")
+  }
+  if (site_arg == "pfal") {
+    plot_filter <- c("chd", "sfm")
+  }
+  if (site_arg == "sfm") {
+    plot_filter <- c("pfal", "pbd")
+  }
+  if (site_arg == "penn") {
+    plot_filter <- c("sfm")
+  }
+  if (site_arg == "lbea") {
+    plot_filter <- c("sfm")
+  }
+  if (site_arg == "pbd") {
+    plot_filter <- c("sfm", "tamasag")
+  }
+  if (site_arg == "tamasag") {
+    plot_filter <- c("pbd", "legacy")
+  }
+  if (site_arg == "legacy") {
+    plot_filter <- c("tamasag", "lincoln")
+  }
+  if (site_arg == "lincoln") {
+    plot_filter <- c("legacy", "timberline", "timberline virridy")
+  }
+  if (site_arg == "timberline") {
+    plot_filter <- c("lincoln", "timberline virridy", "prospect")
+  }
+  if (site_arg == "timberline virridy") {
+    plot_filter <- c("lincoln", "timberline", "prospect", "prospect virridy")
+  }
+  if (site_arg == "springcreek") {
+    plot_filter <- c("prospect virridy", "prospect")
+  }
+  if (site_arg == "prospect") {
+    plot_filter <- c("timberline", "prospect virridy", "boxelder")
+  }
+  if (site_arg == "prospect virridy") {
+    plot_filter <- c("timberline virridy", "prospect", "boxelder")
+  }
+  if (site_arg == "boxelder") {
+    plot_filter <- c("prospect",
+                     "prospect virridy",
+                     "archery",
+                     "archery virridy")
+  }
+  if (site_arg == "boxcreek") {
+    plot_filter <- c("archery", "archery virridy")
+  }
+  if (site_arg == "archery") {
+    plot_filter <- c("boxelder", "archery virridy", "river bluffs")
+  }
+  if (site_arg == "archery virridy") {
+    plot_filter <- c("boxelder", "archery", "river bluffs")
+  }
+  if (site_arg == "river bluffs") {
+    plot_filter <- c("archery", "archery virridy")
+  }
+  return(plot_filter)
+}
+
+site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
+                                    "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
+                           color = c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC",
+                                     "#117744", "#44AA77", "#88CCAA", "#777711", "#AAAA44","#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788"))
+
 final_status_colors <- c("PASS" = "green",
                            "TAG" = "yellow",
                            "OMIT" = "red")
 # All available parameters for sub-parameter selection
 available_parameters <- c("Specific Conductivity", "Temperature", "pH",
                           "Turbidity", "DO", "Depth")
+available_sites <- c("legacy", "lincoln", "timberline", "tamasag")
 #TO DO: This only has the primary datasets for testing purposes need to add (FDOM, CHLA, ORP)
 ###### End Helper Functions ######
 
 
 # UI Definition
 ui <- page_navbar(
+  #useShinyjs(),
 #To Do: remove header to save space? it shouldnt need to be used by users
   title = "Data Processing Pipeline",
   id = "tabs",
@@ -118,84 +197,123 @@ ui <- page_navbar(
         selectInput("parameter", "Select Parameter:",
                     choices = NULL),
 
-        # Sub parameter selection
-        tags$div(
-          id = "sub_parameters_ui",
-          selectInput("sub_parameters", "Select Sub Parameters:",
-                      choices = available_parameters,
-                      multiple = TRUE)
-        ),
-
         actionButton("load_data", "Load Data", class = "btn-primary")
       )
     )
   ),
 
   #### Tab 2: Data Verification ####
+  #### Tab 2: Data Verification ####
   nav_panel(
     title = "Data Verification",
     layout_columns(
-      col_widths = c(8, 4),
+      col_widths = c(8,4),
 
-      # Main Plot Card
-#TO DO: Make plot wider but shorter
-      card(
-        card_header(
-          div(
-            class = "d-flex justify-content-between align-items-center",
-            h4("Main Plot", class = "m-0"),
+      #### Left column ####
+      layout_columns(
+        col_widths = 12,
+        # Main plot (top left)
+        card(
+          card_body(
+            plotOutput("main_plot", brush = "plot_brush")
+          ),
+          card_footer(
             div(
-              class = "btn-group",
+              class = "d-flex justify-content-evenly align-items-center",
+              actionButton("prev_tab", "← Back to Selection", class = "btn-info"),
               actionButton("prev_week", "← Previous Week", class = "btn-secondary"),
-              actionButton("next_week", "Next Week →", class = "btn-secondary")
+              actionButton("next_week", "Next Week →", class = "btn-secondary"),
+              actionButton("reset_week", "Reset Data", class = "btn-danger"),
+              checkboxInput("remove_omit", "Remove OMIT data", value = FALSE),
+              keys::useKeys(),
+              keys::keysInput("q_key", "q"),
+              actionButton("quit_app", "Quit", class = "btn-danger")
             )
           )
         ),
-        card_body(
-          plotOutput("main_plot", height = "400px",
-                     brush = "plot_brush")
-        ),
-        card_footer(
-          div(
-            class = "d-flex justify-content-between",
-            actionButton("prev_tab", "← Back to Selection", class = "btn-info"),
+
+       #### Weekly decision card (bottom left, shorter height) ####
+        card(
+          style = "height: 5px; overflow: hidden;",
+          card_header(
+            "Make weekly decision"
+          ),
+          card_body(
+           # style = "padding: 4px 12px;",
             div(
-              checkboxInput("show_subplots", "Show Sub Parameters", value = FALSE),
-              style = "margin: auto"
-            ),
-            actionButton("quit_app", "Quit", class = "btn-danger")
+              #class = "d-flex align-items-center gap-3",
+              div(
+               # style = "margin: -10px 0;", # Negative margin to reduce radio button spacing
+                radioButtons(
+                  "weekly_decision",
+                  label = NULL,
+                  choices = c("AA" = "aa",
+                              "ANO" = "ano",
+                              "TF" = "tf",
+                              "OF" = "of",
+                              "OA" = "oa",
+                              "S" = "s"),
+                  selected = "s",
+                  inline = TRUE
+                )
+              ),
+              uiOutput("submit_decision_ui")
+            )
           )
         )
+    #### end Weekly decision card ####
       ),
-      # Decision and Sub Plots Cards Column
 
-#To DO: move weekly decision to bottom and give sub plots their own card
+  #### Right column ####
       layout_columns(
         col_widths = 12,
-        # Decision Card
+        # Sub plots card (top right)
         card(
-          card_header("Make weekly decision"),
+          card_header("Sub Parameter Plots"),
           card_body(
-  #To Do: Update with final terminology/decision matrix
-            radioButtons("weekly_decision", "Select decision:",
-                         choices = c("AA" = "aa",
-                                     "ANO" = "ano",
-                                     "TF" = "tf",
-                                     "OF" = "of",
-                                     "OA" = "oa",
-                                     "S" = "s"),
-                         selected = "s"),
-            div(
-              checkboxInput("remove_fail", "Remove OMIT data", value = FALSE),
-              style = "margin: auto"
-            ),
-            uiOutput("submit_decision_ui")
-          )
-        ),
+            # Sub parameter selection
+              selectInput("sub_parameters", "Select Parameters:",
+                          choices = available_parameters,
+                          multiple = TRUE),
+              selectInput("sub_sites", "Select Sites:",
+                          choices = available_sites,
+                          multiple = TRUE),
+              div(
+                style = "height: 600px; overflow-y: auto;",  # Make this div scrollable
+                plotOutput("sub_plots", width = "100%", height = "100%")
+              )
 
-      # Sub Plots Card (conditionally shown)
-      uiOutput("subplot_card"),
-      uiOutput("brush_card")
+
+                )
+        ),
+        # Data selection card (bottom right)
+        card(
+          card_header(
+            h4("Data Selection Tools", class = "m-0")
+          ),
+          card_body(
+            div(
+              class = "d-flex align-items-center gap-3",
+              radioButtons("brush_action",
+                           "Select Action:",
+                           choices = c("Accept" = "A",
+                                       "Flag" = "F",
+                                       "Omit" = "O"),
+                           selected = character(0),
+                           inline = TRUE)  # This makes the radio buttons horizontal
+            ),
+
+            selectInput("user_brush_flags", "Select Flags:",
+                        choices = c("sv" = "sv",
+                                    "suspect data" = "suspect",
+                                    "sensor malfunction" = "malfunction",
+                                    "drift" = "drift"),
+                        multiple = TRUE),
+
+            # Conditional submit button
+            uiOutput("brush_submit_ui")
+          )
+        )
       )
     )
   ),
@@ -212,7 +330,7 @@ nav_panel(
     card(
       card_header("Final Data Overview"),
       card_body(
-        plotOutput("final_plot", height = "400px")
+        plotOutput("final_plot", height = "500px")
       )
     ),
 
@@ -254,6 +372,11 @@ server <- function(input, output, session) {
   all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots?
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
 
+  # observeEvent(input$remove_omit, {
+  #   # Toggle the button's appearance
+  #   shinyjs::toggleClass("remove_omit", "btn-danger")
+  #   shinyjs::toggleClass("remove_omit", "btn-success")
+  # })
 
   #### Data Selection functions ####
   # Initialize data directories and load datasets
@@ -291,6 +414,18 @@ server <- function(input, output, session) {
                       choices = available_parameters,
                       selected = auto_params)
   })
+  observe({
+    req(input$site)
+
+    # Get auto-selected parameters for the chosen parameter
+    auto_sites <- relevant_sonde_selector(input$site)
+
+    # Update sub-parameters selection
+    updateSelectInput(session, "sub_sites",
+                      choices = available_sites,
+                      selected = auto_sites)
+  })
+
 
   # Load data when button is clicked
   observeEvent(input$load_data, {
@@ -378,7 +513,7 @@ server <- function(input, output, session) {
 
     week_data <- selected_data() %>%
       filter(week == current_week())
-
+#browser()
     # Check the decision and create appropriate plot
     if (input$weekly_decision != "s") {
 #Q: not sure if this is necessary?
@@ -404,7 +539,7 @@ server <- function(input, output, session) {
           # Omit any user selected omit data (assuming AA was not the choice)
           weekly_decision != "aa" & !is.na(omit) ~ "OMIT"))
 #Remove omitted data (user or from weekly decision)
-      if (input$remove_fail) {
+      if (input$remove_omit) {
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "OMIT")
       }
@@ -420,6 +555,11 @@ server <- function(input, output, session) {
       plot(p)
     } else {
   #TO DO: Swap with create weekly plot function call, adding in other sites, etc
+      if(input$remove_omit){
+        week_data <- week_data %>%
+          filter(is.na(omit))
+      }
+
    p <- ggplot(week_data, aes(x = DT_round)) +
       geom_point(aes(y = mean, color = flag))+
      #Add Omitted data in red
@@ -432,7 +572,7 @@ server <- function(input, output, session) {
    # Add brush rectangle if brush is active and brush exists
 
 #Q This might need to be reactive later on ?
-   if(input$toggle_brush && !is.null(input$plot_brush)) {
+   if(!is.null(input$plot_brush)) {
      req(input$plot_brush)
 
      # Get brushed points
@@ -456,24 +596,12 @@ server <- function(input, output, session) {
 }
   })
 
-## Subplot card UI
-  output$subplot_card <- renderUI({
-    req(input$show_subplots)
-#To Do: Change this to where we want it, make it bigger,  add in other sites and make it scrollable
-    card(
-      card_header("Sub Parameter Plots"),
-      card_body(
-        plotOutput("sub_plots", height = "600px")
-      )
-    )
-  })
+
 
 ## Sub plots output
   output$sub_plots <- renderPlot({
-    req(all_datasets(), current_week(), input$show_subplots, input$sub_parameters)
-# See notes in Card UI Page
-#To do: this should probably be changed to make it faster?
-#Q: can most of the code from raw data plotter be migrated over?
+    req(all_datasets(), current_week(), input$site, input$sub_parameters, input$sub_sites)
+#TODO: correctly grab the appropriate file (ver prefered, int (remove omitted), or pre)
     datasets <- all_datasets()
     working_data <- if(input$directory == "pre") {
       datasets$pre_verification_data
@@ -481,74 +609,101 @@ server <- function(input, output, session) {
       datasets$intermediary_data
     }
 
-
     # Create individual plots for each sub parameter
     plots <- map(input$sub_parameters, function(param) {
+      # Get main site data
+      main_site_param_name <- paste0(input$site, "-", param)
+      main_site_data <- working_data[[main_site_param_name]]
+      main_week_data <- filter(main_site_data, week == current_week())
 
-      site_param_name <- paste0(input$site, "-", param)
-      site_param_df <- working_data[[site_param_name]]
-      week_data <- filter(site_param_df, week == current_week())
-
-      ggplot(week_data, aes(x = DT_round)) +
-        geom_point(aes(y = mean))+
+      # Get sub sites data
+      sub_sites_data <- map_dfr(input$sub_sites, function(sub_site) {
+        site_param_name <- paste0(sub_site, "-", param)
+        site_data <- working_data[[site_param_name]]
+        week_data <- filter(site_data, week == current_week())
+        week_data$site <- sub_site  # Add site identifier
+        return(week_data)
+      })
+     # browser()
+      # Create plot
+      p <- ggplot() +
+        # Add main site as grey points
+        geom_point(data = main_week_data,
+                   aes(x = DT_round, y = mean),
+                   color = "grey40",
+                   size = 2) +
+        # Add sub sites as colored lines
+        geom_line(data = sub_sites_data,
+                  aes(x = DT_round, y = mean, color = site),
+                  linewidth = 1) +
+        scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site)) +
         labs(x = "Date",
-             y = param) +
-        theme_minimal()
-    })%>%
+             y = param,
+             #title = param,
+             color = "Sites") +
+        theme_minimal() +
+        theme(
+          axis.title.x = element_blank(),
+          axis.text.x = element_blank()
+          #plot.title = element_text(hjust = 0.5),
+          #legend.position = "top"
+          )
+
+      return(p)
+    }) %>%
       compact()
 
     if (length(plots) > 0) {
-      gridExtra::grid.arrange(grobs = plots, ncol = 1)
+      # Calculate height for each plot: 600px / number of plots
+     # plot_height <- 800 / length(plots)
+      plots[[1]] <- plots[[1]] +
+        theme(axis.text.x = element_text())
+      # Add x-axis label to last plot only
+      plots[[length(plots)]] <- plots[[length(plots)]] +
+        theme(axis.title.x = element_text(),
+              axis.text.x = element_text())
+
+      # Combine plots with specific heights
+      wrap_plots(plots, ncol = 1)+
+        #heights = rep(plot_height/800, length(plots))) +
+        plot_layout(guides = "collect") &
+        theme(legend.position='top')
     }
+
+
   })
 
-## Brush card UI
-#To do: reduce empty space and make it look better
-  output$brush_card <- renderUI({
-    card(
-      card_header(
-        div(
-          class = "d-flex justify-content-between align-items-center",
-          h4("Data Selection Tools", class = "m-0"),
-          checkboxInput("toggle_brush", "Enable Brush Tool", value = FALSE)
-        )
-      ),
-      card_body(
-        conditionalPanel(
-          condition = "input.toggle_brush == true",
-          radioButtons("brush_action", "Select Action:",
-                       choices = c("Accept" = "A",
-                                   "Flag" = "F",
-                                   "Omit" = "O"),
-                       selected = character(0)),
-
-          # Show flag options if Flag is selected
-          conditionalPanel(
-            condition = "input.brush_action == 'F'",
-            selectInput("user_brush_flags", "Select Flags:",
-                        choices = c("sv" = "sv",
-                                    "suspect data" = "suspect",
-                                    "sensor malfunction" = "malfunction",
-                                    "drift" = "drift"),
-                        multiple = TRUE)
-          ),
-
-          # Conditional submit button
-          uiOutput("brush_submit_ui")
-        )
-      )
-    )
-  })
 
   # Brush submit button UI
+  # Brush submit button UI
   output$brush_submit_ui <- renderUI({
-    req(input$plot_brush, input$brush_action)
-    # For Flag action, also require flag options
-    if(input$brush_action %in% c("F")) {
-      req(input$user_brush_flags)
+    can_submit <- FALSE
+
+  if (!is.null(input$brush_action) & !is.null(input$plot_brush) & !is.null(input$brush_action)) {
+
+    if(input$brush_action != "F"){
+      can_submit = TRUE
+    }else{
+      if(input$brush_action == "F"){
+        can_submit = FALSE
+        if(!is.null(input$user_brush_flags)){
+          can_submit = TRUE
+        }
+      }
     }
-    actionButton("submit_brush", "Submit Selection", class = "btn-success")
+  }
+
+
+  actionButton(
+    "submit_brush",
+    "Submit Selection",
+    class = ifelse(can_submit, "btn-success", "btn-secondary"),
+    disabled = !can_submit
+  )
+
   })
+
+
 
   # Handle brush submission
   observeEvent(input$submit_brush, {
@@ -626,10 +781,18 @@ server <- function(input, output, session) {
   # Submit decision button UI
   output$submit_decision_ui <- renderUI({
     req(input$weekly_decision)
+    can_submit <- FALSE
+
     if (input$weekly_decision != "s") {
-      actionButton("submit_decision", "Submit Weekly Decision",
-                   class = "btn-success")
+      can_submit <- T
     }
+
+    actionButton(
+      "submit_decision",
+      "Submit Weekly Decision",
+      class = ifelse(can_submit, "btn-success", "btn-secondary"),
+      disabled = !can_submit
+    )
   })
 
   # Update data on backend with submitted decision
@@ -697,6 +860,7 @@ server <- function(input, output, session) {
     )
     # Reset weekly decision back to "s"
     updateRadioButtons(session, "weekly_decision", selected = "s")
+    updateCheckboxInput(session, "remove_omit", value = FALSE)
   })
 
 
@@ -768,14 +932,23 @@ week_num = week(vline_dates)
   # Handle final submission
   observeEvent(input$submit_final, {
     showNotification("Final changes submitted successfully!", type = "message")
-    updateNavbarPage(session, "navbar", selected = "Data Selection")
+    updateNavbarPage(session, inputId = "tabs", selected = "Data Selection")
+
+#TODO: sync_files()/reset available data (load data)
+
   })
 
   #### Extras ####
   # Handle quit button
   observeEvent(input$quit_app, {
     stopApp()
-  #TO DO: Update backend and save file
+  })
+
+  # Add this to handle the keyboard shortcut
+  observeEvent(input$q_key, {
+    if (input$q_key == "q") {
+      stopApp()
+    }
   })
 
 }
