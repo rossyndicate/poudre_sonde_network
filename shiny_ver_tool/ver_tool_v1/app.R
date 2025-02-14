@@ -7,13 +7,11 @@ library(here)
 library(ggpubr)
 library(gridExtra)
 library(plotly)
-<<<<<<< HEAD
 library(keys)
 library(patchwork)
-=======
 library(digest)
 library(fs)
->>>>>>> 1ce551a8777d6d0d31add91eb70db6f9ca155285
+
 
 ##### Helper functions for data loading #####
 
@@ -337,7 +335,7 @@ nav_panel(
     card(
       card_header("Final Data Overview"),
       card_body(
-        plotOutput("final_plot", height = "500px")
+        plotlyOutput("final_plot", height = "100%", width = "100%")
       )
     ),
 
@@ -421,6 +419,7 @@ server <- function(input, output, session) {
                       choices = available_parameters,
                       selected = auto_params)
   })
+  # Show/hide and update additional sites UI based on site selection
   observe({
     req(input$site)
 
@@ -511,6 +510,13 @@ server <- function(input, output, session) {
     idx <- which(weeks == current)
     if (idx < length(weeks)) {
       current_week(weeks[idx + 1])
+    }else{
+      showNotification(
+        "No more weeks to verify. Click Final Verification to see unverified weeks",
+        type = "warning"
+      )
+      current <- current_week()
+      idx <- which(weeks == current)
     }
   })
 
@@ -518,9 +524,10 @@ server <- function(input, output, session) {
   output$main_plot <- renderPlot({
     req(selected_data(), current_week())
 
+
     week_data <- selected_data() %>%
       filter(week == current_week())
-#browser()
+
     # Check the decision and create appropriate plot
     if (input$weekly_decision != "s") {
 #Q: not sure if this is necessary?
@@ -631,7 +638,7 @@ server <- function(input, output, session) {
         week_data$site <- sub_site  # Add site identifier
         return(week_data)
       })
-     # browser()
+     #
       # Create plot
       p <- ggplot() +
         # Add main site as grey points
@@ -681,7 +688,7 @@ server <- function(input, output, session) {
   })
 
 
-  # Brush submit button UI
+
   # Brush submit button UI
   output$brush_submit_ui <- renderUI({
     can_submit <- FALSE
@@ -748,7 +755,7 @@ server <- function(input, output, session) {
             between(DT_round, brush_dt_min, brush_dt_max) &
 
   #TO DO: Turn into function add flag
-            between(mean, brush_mean_min, brush_mean_max) &  user_brush_select == "F" ~ as.character(flag_choices),
+            between(mean, brush_mean_min, brush_mean_max) &  user_brush_select == "F" ~ paste(as.character(flag_choices), sep = "\n"),
             #Omit
 #TO DO: If a user selects Omit, do they need to give the data a flag?
             #Keep existing flags
@@ -768,7 +775,7 @@ server <- function(input, output, session) {
           user = ifelse(between(DT_round, brush_dt_min, brush_dt_max) &
                           between(mean, brush_mean_min, brush_mean_max), input$user, NA)
         )
-#TO DO: Redundant?
+
       selected_data(updated_data)
       showNotification("Brush Changes saved.", type = "message")
 
@@ -855,8 +862,19 @@ server <- function(input, output, session) {
 
       showNotification("All weeks have been reviewed.", type = "message")
       updateTabsetPanel(session, inputId = "tabs", selected = "Finalize Data")
-      } else{
-      current_week(weeks[idx + 1])
+      }else{
+      if(idx == length(weeks)){
+
+        showNotification(
+          "No more weeks to verify. Click Final Verification to see unverified weeks",
+          type = "warning")
+        current <- current_week()
+        idx <- which(weeks == current)
+        current_week(weeks[idx])
+      }else{
+        current_week(weeks[idx + 1])
+      }
+
     }
 #To Do: If next week has been reviewed, move to closest week without verified data
 
@@ -892,7 +910,7 @@ server <- function(input, output, session) {
   })
 
   # Add plotly plot for final overview
-  output$final_plot <- renderPlot({
+  output$final_plot <- renderPlotly({
     req(selected_data())
 
     final_plot_data <- selected_data()
@@ -904,36 +922,105 @@ server <- function(input, output, session) {
         filter(is.na(omit))
     }
 
-start_date <-round_date(min(final_plot_data$DT_round, na.rm = T), unit = "day")
-end_date <- round_date(max(final_plot_data$DT_round, na.rm = T), unit = "day")
 
+
+#start & end of period (still not tested on multiyear datasets)
+min_year <- min(selected_data()$year)
+max_year <- max(selected_data()$year)
+#Find start of week (even if it is before the start of the week)
+start_week <- min(selected_data()$week)
+start_date <- parse_date_time(paste(min_year, start_week, 0, sep="/"),'Y/W/w')
+#Find end of last week (even if it is after the end of the data)
+end_week <- max(selected_data()$week)
+end_date <- parse_date_time(paste(max_year, end_week, 6, sep="/"),'Y/W/w')
+#create vertical lines to seperate each week
 vline_dates <- seq(start_date, end_date, by = "week")
+#add 3 days to each vertical line to center the week
 week_dates <- vline_dates + days(3)
-week_num = week(vline_dates)
 
 
-  p <- ggplot(final_plot_data, aes(x = DT_round)) +
-          geom_point(aes(y = mean, color = final_status)) +
-      scale_color_manual(values = final_status_colors) +
-      geom_vline(xintercept = as.numeric(vline_dates), color = "black") +
-      labs(
-        title = paste0("Complete Dataset Overview: ", input$site, "-", input$parameter),
-        subtitle = ifelse(input$remove_omit_finalplot, "Omitted data removed",  ""),
-        x = "Date",
-        y = input$parameter,
-        color = "Final Status") +
-      theme_bw()+
-      scale_x_datetime(date_breaks = "1 week",
-                       date_labels = "%b %d",
-                       minor_breaks = week_dates,
-                       sec.axis = sec_axis(~., breaks = week_dates, labels = unique(week_num)))
+final_status_colors <- c(
+  "PASS" = "green",
+  "TAG" = "yellow",
+  "OMIT" = "red",
+  "NA" = "gray"  # Assign a color for NA values
+)
+#browser()
+# Replace NA values in final_status (this will not affect the actual saved data, just for plotting)
+final_plot_data$final_status <- ifelse(is.na(final_plot_data$final_status), "NA", final_plot_data$final_status)
+# This seems to be important for the plotly to work
+final_plot_data$final_status <- as.factor(final_plot_data$final_status)
 
-  p
-#To Do: geom vline not playing nice in ggplotly
-#     ggplotly(p) %>%
-#       layout(dragmode = "select") %>%
-#       config(modeBarButtons = list(list("select2d", "lasso2d", "zoom2d", "pan2d",
-#                                         "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d")))
+
+# Create plotly object
+ p_plotly <- plot_ly(
+  data = final_plot_data,
+  x = ~DT_round,
+  y = ~mean,
+  type = 'scatter',
+  mode = 'markers',
+  color = ~final_status,
+  colors = final_status_colors,
+  text = ~paste0("Week ", week, "\nStatus: ", final_status),
+  hoverinfo = "text"
+) %>%
+    layout(
+      title = list(
+        text = paste0("Complete Dataset Overview: ", input$site, "-", input$parameter),
+        x = 0.5 # Centers the title
+      ),
+      xaxis = list(
+        title = "Date",
+        tickformat = "%b %d",
+        tickmode = "array",
+        tickvals = week_dates,
+        ticktext = paste0("Week ", week(week_dates), "\n", format(week_dates, "%b %d")),
+        showgrid = TRUE,
+        domain = c(0, 1)  # Ensure it spans the full width
+      ),
+      yaxis = list(
+        title = input$parameter
+      ),
+      xaxis2 = list(
+        title = "Week #",
+        tickmode = "array",
+        tickvals = week_dates,
+        ticktext = as.character(week(week_dates)),
+        overlaying = "x",
+        side = "top",
+        showgrid = FALSE,
+        zeroline = FALSE,
+        ticks = "outside",
+        ticklen = 5
+      ),
+      shapes = lapply(vline_dates, function(date) {
+        list(
+          type = "line",
+          x0 = date, x1 = date, y0 = 0, y1 = 1,
+          xref = "x", yref = "paper",
+          line = list(color = "black", width = 1)
+        )
+      })
+    )
+  if (input$remove_omit_finalplot) {
+    p_plotly <- p_plotly %>%
+      layout(
+        annotations = list(
+          list(
+            text = "Omitted data removed",
+            x = 0.5,
+            y = 1.02,
+            xref = "paper",
+            yref = "paper",
+            showarrow = FALSE,
+            font = list(size = 12, color = "gray50")
+          )
+        )
+      )
+  }
+
+  p_plotly
+
   })
 
   # Handle final submission
