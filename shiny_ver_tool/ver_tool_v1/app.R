@@ -12,10 +12,11 @@ library(patchwork)
 library(digest)
 library(fs)
 library(shinyFiles)
+library(shinyWidgets)
 options(shiny.maxRequestSize = 1000 * 1024^2)
 
-source(here("shiny_ver_tool", "ver_tool_v1", "R", "load_data.R"))
-source(here("shiny_ver_tool", "ver_tool_v1", "R", "selectors.R"))
+#source(here("shiny_ver_tool", "ver_tool_v1", "R", "load_data.R"))
+#source(here("shiny_ver_tool", "ver_tool_v1", "R", "selectors.R"))
 
 #load in data
 
@@ -44,7 +45,7 @@ final_status_colors <- c("PASS" = "#008a18",
 #TODO: Create function that actually looks for available sites/parameters in the data
 available_parameters <- c("Specific Conductivity", "Temperature", "pH",
                           "Turbidity", "DO", "Depth")
-available_sites <- c("legacy", "lincoln", "timberline", "tamasag")
+available_sites <- site_color_combo$site
 
 ###### End Helper Functions ######
 
@@ -108,6 +109,14 @@ ui <- page_navbar(
         col_widths = 12,
         # Main plot (top left)
         card(
+          card_header(
+            div(
+              actionButton("prev_tab", "← Back to Selection", class = "btn-info"),
+              keys::useKeys(),
+              keys::keysInput("q_key", "q"),
+              actionButton("quit_app", "Quit", class = "btn-danger")
+            )
+          ),
           card_body(
             plotOutput("main_plot",
                        brush = brushOpts(
@@ -117,40 +126,62 @@ ui <- page_navbar(
           ),
           card_footer(
             div(
-              class = "d-flex justify-content-evenly align-items-center",
-              actionButton("prev_tab", "← Back to Selection", class = "btn-info"),
-              actionButton("prev_week", "← Previous Week", class = "btn-secondary"),
-              actionButton("next_week", "Next Week →", class = "btn-secondary"),
-              actionButton("reset_week", "Reset Data", class = "btn-danger"),
-              checkboxInput("remove_omit", "Remove OMIT data", value = FALSE),
-              # Add a clear brushes button to UI
-              actionButton("clear_brushes", "Clear Brushes"),
-              keys::useKeys(),
-              keys::keysInput("q_key", "q"),
-              actionButton("quit_app", "Quit", class = "btn-danger")
-            )
+              class = "d-flex justify-content-between gap-3", # Use space-between instead of evenly
+                class = "d-flex gap-3",
+                selectInput("add_sites", "Additional Sites:",
+                            choices = available_sites,
+                            multiple = TRUE,
+                            width = "300px"),
+              div(
+                class = "d-flex flex-column gap-2",
+                materialSwitch(
+                  inputId = "remove_omit",
+                  label = "Remove Omit",
+                  value = FALSE,
+                  width = "200px",
+                  status = "success"
+                ),
+                materialSwitch(
+                  inputId = "remove_flag",
+                  label = "Remove Flag",
+                  value = FALSE,
+                  width = "200px",
+                  status = "success"
+                )
+              ),
+                materialSwitch(
+                  inputId = "incl_thresholds",
+                  label = "Thresholds",
+                  value = FALSE,
+                  width = "200px",
+                  status = "success"
+                ),
+                actionButton("prev_week","← Previous Week", class = "btn-secondary", style = "width: 200px;"),
+                actionButton("next_week","Next Week →", class = "btn-secondary", style = "width: 200px;"),
+                actionButton("reset_week", "Reset Data", class = "btn-danger")
+              )
           )
         ),
 
        #### Weekly decision card (bottom left, shorter height) ####
-        card(
-          style = "height: 5px; overflow: hidden;",
-          card_header(
-            "Make weekly decision"
-          ),
-          card_body(
-           # style = "padding: 4px 12px;",
-            div(
-              #class = "d-flex align-items-center gap-3",
-              div(
-               # style = "margin: -10px 0;", # Negative margin to reduce radio button spacing
-                uiOutput("weekly_decision_radio")
+       card(
+         style = "height: 5px; overflow: hidden;",
+         # card_header(
+         #   h6("Make weekly decision")
+         # ),
+         card_body(
+           div(
+             div(
+               class = "d-flex gap-5", # Add flexbox with gap between elements
+               div(
+                 uiOutput("weekly_decision_radio")
+               )
+             ),
+             uiOutput("submit_decision_ui")
+           )
+         )
+       )
 
-              ),
-              uiOutput("submit_decision_ui")
-            )
-          )
-        )
     #### end Weekly decision card ####
       ),
 
@@ -159,7 +190,9 @@ ui <- page_navbar(
         col_widths = 12,
         # Sub plots card (top right)
         card(
-          card_header("Sub Parameter Plots"),
+          card_header(
+            h6("Additional Parameters")
+            ),
           card_body(
             # Sub parameter selection
               selectInput("sub_parameters", "Select Parameters:",
@@ -179,18 +212,19 @@ ui <- page_navbar(
         # Data selection card (bottom right)
         card(
           card_header(
-            h4("Data Selection Tools", class = "m-0")
+            h6("Data Brush")
           ),
           card_body(
             div(
-              class = "d-flex align-items-center gap-3",
+              class = "d-flex align-items-center gap-5",
               radioButtons("brush_action",
                            "Select Action:",
                            choices = c("Accept" = "A",
                                        "Flag" = "F",
                                        "Omit" = "O"),
                            selected = character(0),
-                           inline = TRUE)  # This makes the radio buttons horizontal
+                           inline = TRUE),  # This makes the radio buttons horizontal
+              actionButton("clear_brushes", "Clear Brushes")
             ),
 
             selectInput("user_brush_flags", "Select Flags:",
@@ -368,6 +402,10 @@ server <- function(input, output, session) {
     updateSelectInput(session, "sub_sites",
                       choices = available_sites,
                       selected = auto_sites)
+    updateSelectInput(session, "add_sites",
+                      choices = available_sites,
+                      selected = auto_sites)
+
   })
 
 
@@ -499,7 +537,7 @@ server <- function(input, output, session) {
 
     # site = "timberline"
     # parameter_arg = "Temperature"
-    plot_filter <- relevant_sonde_selector(site_arg = input$site)
+    plot_filter <- input$add_sites
     # Get the relevant sonde data
     relevant_sondes <- map(plot_filter, ~ {
       sonde_name <- paste0(.x, "-", input$parameter)
@@ -538,19 +576,17 @@ server <- function(input, output, session) {
     # Remove any NULL results from the list
     relevant_sondes <- compact(relevant_sondes)
 
-    # # append site_df to relevant sonde list, clean list, and bind dfs
-    # # to find plot info
-    # relevant_dfs <- map(relevant_sondes, ~.x[[1]])
-    # week_plot_data <- append(relevant_dfs, list(site_df)) %>% # how to relevant sondes here
-    #   keep(~ !is.null(.)) %>%
-    #   keep(~ nrow(.)>0) %>%
-    #   bind_rows() %>%
-    #   arrange(day)
-#
-#     week_plot <- add_threshold_lines(plot = week_plot,
-#                                      plot_data = week_plot_data,
-#                                      site_arg = site_arg,
-#                                      parameter_arg = parameter_arg)
+     # append site_df to relevant sonde list, clean list, and bind dfs
+     # to find plot info
+     relevant_dfs <- map(relevant_sondes, ~.x[[1]])
+     week_plot_data <- append(relevant_dfs, list(week_data)) %>% # how to relevant sondes here
+       keep(~ !is.null(.)) %>%
+       keep(~ nrow(.)>0) %>%
+       bind_rows() %>%
+       arrange(day)
+
+
+
 
 
 
@@ -581,7 +617,12 @@ server <- function(input, output, session) {
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "OMIT")
       }
-      #To Do: Add in other sites + other information
+      if(input$remove_flag){
+        week_choice_data <- week_choice_data %>%
+          filter(final_decision != "FLAGGED")
+      }
+
+
       p <- ggplot(week_choice_data, aes(x = DT_round)) +
         map(relevant_sondes, function(sonde_data) {
           add_data <- sonde_data[[1]]
@@ -602,12 +643,23 @@ server <- function(input, output, session) {
           color = "Sites" )+
       theme_bw(base_size = 14)
 
+      if(input$incl_thresholds){
+        p <- add_threshold_lines(plot = p,
+                                         plot_data = week_plot_data,
+                                         site_arg = input$site,
+                                         parameter_arg = input$parameter)
+      }
+
       p
     } else {
       #TO DO: Swap with create weekly plot function call, adding in other sites, etc
       if(input$remove_omit){
         week_data <- week_data %>%
           filter(!omit)
+      }
+      if(input$remove_flag){
+        week_data <- week_data %>%
+          filter(is.na(user_flag))
       }
 
       p <-ggplot(week_data, aes(x = DT_round)) +
@@ -621,7 +673,7 @@ server <- function(input, output, session) {
         }) +
         geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+
         #Add Omitted data in red
-        geom_point(data = week_data %>%filter(omit == TRUE),aes(y = mean),shape = 21, stroke = 0, fill = "red1")+
+        geom_point(data = week_data %>%filter(omit == TRUE),aes(y = mean),shape = 21, stroke = 0, size = 2, fill = "#ff1100")+
       scale_color_manual(
           name = "Sites",
           values = setNames(site_color_combo$color, site_color_combo$site)) +
@@ -631,7 +683,7 @@ server <- function(input, output, session) {
           option = "plasma",
           begin = 0.1,
           end = 0.9,
-          na.value = "#A0A0A0" )+
+          na.value = "grey" )+
         labs(
           title = paste0(str_to_title(input$site), " ", input$parameter, " (", format(flag_day, "%B %d, %Y"), ")"),
           x = "Date",
@@ -667,6 +719,12 @@ server <- function(input, output, session) {
 
       }
       #create plot
+      if(input$incl_thresholds){
+        p <- add_threshold_lines(plot = p,
+                                 plot_data = week_plot_data,
+                                 site_arg = input$site,
+                                 parameter_arg = input$parameter)
+      }
       p
     }
   })
@@ -828,9 +886,7 @@ server <- function(input, output, session) {
         brush_mean_min = min(brushed$mean, na.rm = TRUE)
       )
       existing_brushes <- brushed_areas()
-
       brushed_areas(c(existing_brushes, list(current_brush)))
-      print(length(brushed_areas()))
         }
 
   })
@@ -873,20 +929,17 @@ server <- function(input, output, session) {
   })
 
 
-
-
   # Modified submit observer
   observeEvent(input$submit_brush, {
     req(brushed_areas(), input$brush_action, selected_data())
 
-#browser()
     user_brush_select <- input$brush_action
 
-    flag_choices <- if(input$brush_action == "F") {
-      input$user_brush_flags
-    } else {
-      NA
-    }
+    # flag_choices <- if(input$brush_action == "F") {
+    #   input$user_brush_flags
+    # } else {
+    #   NA
+    # }
 
     brush_boxes <- map_dfr(
       brushed_areas()[seq(1, length(brushed_areas()), by = 2)],
@@ -922,8 +975,8 @@ server <- function(input, output, session) {
             #Flag
             between(DT_round, xmin_DT, xmax_DT) &
               between(mean, ymin_mean, ymax_mean) &
-              user_brush_select == "F" ~ paste(as.character(flag_choices), sep = "\n"),
-            #Omit
+              user_brush_select == "F" ~ paste(input$user_brush_flags, collapse = ";\n"),
+            #omit
             between(DT_round, xmin_DT, xmax_DT) &
               between(mean, ymin_mean, ymax_mean) &
               user_brush_select == "O" ~ user_flag,
@@ -960,8 +1013,7 @@ server <- function(input, output, session) {
   })
 
 
-
-# # To Do: Add week reset button to undo brush submissions
+# Resets data to remove all brush inputs and weekly decisions
   observeEvent(input$reset_week, {
 
     req(selected_data(), current_week())
@@ -982,9 +1034,6 @@ server <- function(input, output, session) {
 
   })
 
-
-
-
 #### Weekly Decision ####
 
   # UI for weekly decision radio buttons
@@ -995,7 +1044,7 @@ server <- function(input, output, session) {
 
     radioButtons(
       "weekly_decision",
-      label = NULL,
+      label = "Make Weekly Decision:",
       choices = c("Accept ALL" = "aa",
                   "Accept Non Omit" = "ano",
                   "Keep Flags" = "kf",
@@ -1027,7 +1076,7 @@ server <- function(input, output, session) {
     )
   })
 
-  # Update data on backend with submitted decision
+# Update selected_data() on backend with submitted decision
   observeEvent(input$submit_decision, {
     req(input$weekly_decision != "s", selected_data())
     #update backend data
@@ -1159,13 +1208,17 @@ vline_dates <- seq(start_date, end_date, by = "week")
 #add 3 days to each vertical line to center the week
 week_dates <- vline_dates + days(3)
 
+final_status_colors <- c("PASS" = "#008a18",
+                         "OMIT" = "#ff1100",
+                         "FLAGGED" = "#ff8200",
+                         "NA" = "grey")
 
-final_status_colors <- c(
-  "PASS" = "green",
-  "FLAGGED" = "yellow",
-  "OMIT" = "red",
-  "NA" = "gray"  # Assign a color for NA values
-)
+# final_status_colors <- c(
+#   "PASS" = "green",
+#   "FLAGGED" = "yellow",
+#   "OMIT" = "red",
+#   "NA" = "gray"  # Assign a color for NA values
+# )
 #browser()
 # Replace NA values in final_status (this will not affect the actual saved data, just for plotting)
 final_plot_data$final_status <- ifelse(is.na(final_plot_data$final_status), "NA", final_plot_data$final_status)
