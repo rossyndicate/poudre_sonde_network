@@ -14,163 +14,38 @@ library(fs)
 library(shinyFiles)
 options(shiny.maxRequestSize = 1000 * 1024^2)
 
-##### Helper functions for data loading #####
+source(here("shiny_ver_tool", "ver_tool_v1", "R", "load_data.R"))
+source(here("shiny_ver_tool", "ver_tool_v1", "R", "selectors.R"))
 
-# TODO: once a user has submitted final decision for data put them back into the data selection tab
+#load in data
 
-load_data_directories <- function() {
-  list(
-    all_path = here("shiny_ver_tool", "ver_tool_v1", "data", "all_data_directory"),
-    pre_verification_path = here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory"),
-    intermediary_path = here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory"),
-    verified_path = here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")
-  )
-}
 
-load_all_datasets <- function(paths) {
-  list(
-    all_data = set_names(
-      map(list.files(paths$all_path, full.names = TRUE), read_rds),
-      list.files(paths$all_path)
-    ),
-    pre_verification_data = set_names(
-      map(list.files(paths$pre_verification_path, full.names = TRUE), read_rds),
-      list.files(paths$pre_verification_path)
-    ),
-    intermediary_data = set_names(
-      map(list.files(paths$intermediary_path, full.names = TRUE), read_rds),
-      list.files(paths$intermediary_path)
-    ),
-    verified_data = set_names(
-      map(list.files(paths$verified_path, full.names = TRUE), read_rds),
-      list.files(paths$verified_path)
-    )
-  )
-}
 
-# Helper functions for data processing
-get_sites <- function(datasets, directory) {
-  if (directory == "pre") {
-    names(datasets$pre_verification_data)%>%
-      str_split("-") %>%
-      map_chr(1) %>%
-      unique()
-  } else {
-    names(datasets$intermediary_data)%>%
-      str_split("-") %>%
-      map_chr(1) %>%
-      unique()
-  }
-}
-
-get_parameters <- function(datasets, directory, site) {
-  if (directory == "pre") {
-    data_list <- datasets$pre_verification_data
-  } else {
-    data_list <- datasets$intermediary_data
-  }
-
-  names(data_list) %>%
-    keep(str_detect(., paste0("^", site, "-"))) %>%
-    str_remove(paste0(site, "-"))
-}
-
-get_auto_parameters <- function(parameter) {
-  tryCatch({
-    read_csv("data/meta/parameter_autoselections.csv", show_col_types = F) %>%
-      filter(main_parameter == parameter) %>%
-      pull(sub_parameters) %>%
-      first() %>%
-      str_split(",", simplify = TRUE) %>%
-      as.character() %>%
-      str_trim() %>%
-      .[. != ""] # Remove any empty strings
-  }, error = function(e) character(0))
-}
-
-relevant_sonde_selector <- function(site_arg) {
-  if (site_arg == "joei") {
-    plot_filter <- c("cbri")
-  }
-  if (site_arg == "cbri") {
-    plot_filter <- c("joei", "chd")
-  }
-  if (site_arg == "chd") {
-    plot_filter <- c("cbri", "pfal")
-  }
-  if (site_arg == "pfal") {
-    plot_filter <- c("chd", "sfm")
-  }
-  if (site_arg == "sfm") {
-    plot_filter <- c("pfal", "pbd")
-  }
-  if (site_arg == "penn") {
-    plot_filter <- c("sfm")
-  }
-  if (site_arg == "lbea") {
-    plot_filter <- c("sfm")
-  }
-  if (site_arg == "pbd") {
-    plot_filter <- c("sfm", "tamasag")
-  }
-  if (site_arg == "tamasag") {
-    plot_filter <- c("pbd", "legacy")
-  }
-  if (site_arg == "legacy") {
-    plot_filter <- c("tamasag", "lincoln")
-  }
-  if (site_arg == "lincoln") {
-    plot_filter <- c("legacy", "timberline", "timberline virridy")
-  }
-  if (site_arg == "timberline") {
-    plot_filter <- c("lincoln", "timberline virridy", "prospect")
-  }
-  if (site_arg == "timberline virridy") {
-    plot_filter <- c("lincoln", "timberline", "prospect", "prospect virridy")
-  }
-  if (site_arg == "springcreek") {
-    plot_filter <- c("prospect virridy", "prospect")
-  }
-  if (site_arg == "prospect") {
-    plot_filter <- c("timberline", "prospect virridy", "boxelder")
-  }
-  if (site_arg == "prospect virridy") {
-    plot_filter <- c("timberline virridy", "prospect", "boxelder")
-  }
-  if (site_arg == "boxelder") {
-    plot_filter <- c("prospect",
-                     "prospect virridy",
-                     "archery",
-                     "archery virridy")
-  }
-  if (site_arg == "boxcreek") {
-    plot_filter <- c("archery", "archery virridy")
-  }
-  if (site_arg == "archery") {
-    plot_filter <- c("boxelder", "archery virridy", "river bluffs")
-  }
-  if (site_arg == "archery virridy") {
-    plot_filter <- c("boxelder", "archery", "river bluffs")
-  }
-  if (site_arg == "river bluffs") {
-    plot_filter <- c("archery", "archery virridy")
-  }
-  return(plot_filter)
-}
+##### Colors + parameters #####
 
 site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
                                     "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
                            color = c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC",
                                      "#117744", "#44AA77", "#88CCAA", "#777711", "#AAAA44","#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788"))
 
-final_status_colors <- c("PASS" = "green",
-                           "FLAGGED" = "yellow",
-                           "OMIT" = "red")
-# All available parameters for sub-parameter selection
+# final_status_colors <- c("PASS" = "#5e9c4d",
+#                            "FLAGGED" = "#d88e2f",
+#                            "OMIT" = "#ba0012")
+#
+# final_status_colors <- c("PASS" = "#008744",
+#                          "FLAGGED" = "#ffa700",
+#                          "OMIT" = "#d62d20")
+
+final_status_colors <- c("PASS" = "#008a18",
+                         "OMIT" = "#ff1100",
+                         "FLAGGED" = "#ff8200")
+
+
+#TODO: Create function that actually looks for available sites/parameters in the data
 available_parameters <- c("Specific Conductivity", "Temperature", "pH",
                           "Turbidity", "DO", "Depth")
 available_sites <- c("legacy", "lincoln", "timberline", "tamasag")
-#TO DO: This only has the primary datasets for testing purposes need to add (FDOM, CHLA, ORP)
+
 ###### End Helper Functions ######
 
 
@@ -505,6 +380,7 @@ server <- function(input, output, session) {
 
     # Get the appropriate dataset based on directory selection
     datasets <- all_datasets()
+
     working_data <- if(input$directory == "pre") {
       datasets$pre_verification_data
     } else {
@@ -588,139 +464,309 @@ server <- function(input, output, session) {
 
 ## Main plot
   output$main_plot <- renderPlot({
-    req(selected_data(), current_week(), input$weekly_decision)
+    req(selected_data(), current_week(), all_datasets())
 
+    all_data <- all_datasets()[["all_data"]]
+    pre_verification_data <- all_datasets()[["pre_verification_data"]]
+    intermediary_data <- all_datasets()[["intermediary_data"]]
+    verified_data <- all_datasets()[["verified_data"]]
 
     week_data <- selected_data() %>%
       filter(week == current_week())
 
+    year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
+    flag_day <- min(week_data$DT_round)
+
+
+#This isn't being sourced correctly in the shiny app
+    #picking the correct name of the data frame
+    retrieve_relevant_data_name <- function(df_name_arg, year_week_arg = NULL) {
+
+      if (df_name_arg %in% names(verified_data) & any(year_week_arg %in% verified_data[[df_name_arg]]$y_w)) {
+        return("verified_data")
+      }
+      if (df_name_arg %in% names(intermediary_data) & any(year_week_arg %in% intermediary_data[[df_name_arg]]$y_w)) {
+        return("intermediary_data")
+      }
+      if (df_name_arg %in% names(pre_verification_data) & any(year_week_arg %in% pre_verification_data[[df_name_arg]]$y_w)) {
+        return("pre_verification_data")
+      }
+      if (df_name_arg %in% names(all_data) & any(year_week_arg %in% all_data[[df_name_arg]]$y_w)) {
+        return("all_data")
+      }
+
+    }
+
+    # site = "timberline"
+    # parameter_arg = "Temperature"
+    plot_filter <- relevant_sonde_selector(site_arg = input$site)
+    # Get the relevant sonde data
+    relevant_sondes <- map(plot_filter, ~ {
+      sonde_name <- paste0(.x, "-", input$parameter)
+      data_source <- NULL
+      sonde_df <- NULL
+
+      # Determine which directory to pull data from
+      tryCatch({
+        data_source <- retrieve_relevant_data_name(sonde_name, year_week)
+        # cat("Data for",sonde_name,"will be pulled from",data_source,"\n")
+      }, error = function(err) {
+        cat("Data for",sonde_name,"not found.\n")
+        return(NULL)  # Return NULL if data source can't be determined
+      })
+
+      # Only try to pull in the data if data_source was successfully determined
+      if (!is.null(data_source)) {
+        tryCatch({
+          sonde_df <- get(data_source)[[sonde_name]] %>%
+            filter(y_w == year_week)
+        }, error = function(err) {
+          #cat("Sonde", sonde_name, "not found.\n")
+          return(NULL)  # Return NULL if sonde data can't be retrieved
+        })
+      }
+
+      # Only return a list if both data_source and sonde_df are available
+      if (!is.null(data_source) & !is.null(sonde_df)) {
+        return(list(sonde_df = sonde_df, data_source = data_source))
+      } else {
+        return(NULL)  # Return NULL if either data_source or sonde_df is NULL
+      }
+
+    })
+
+    # Remove any NULL results from the list
+    relevant_sondes <- compact(relevant_sondes)
+
+    # # append site_df to relevant sonde list, clean list, and bind dfs
+    # # to find plot info
+    # relevant_dfs <- map(relevant_sondes, ~.x[[1]])
+    # week_plot_data <- append(relevant_dfs, list(site_df)) %>% # how to relevant sondes here
+    #   keep(~ !is.null(.)) %>%
+    #   keep(~ nrow(.)>0) %>%
+    #   bind_rows() %>%
+    #   arrange(day)
+#
+#     week_plot <- add_threshold_lines(plot = week_plot,
+#                                      plot_data = week_plot_data,
+#                                      site_arg = site_arg,
+#                                      parameter_arg = parameter_arg)
+
+
+
     # Check the decision and create appropriate plot
     if (input$weekly_decision != "s") {
-#Q: not sure if this is necessary?
-        #weekly_decision <- input$weekly_decision
 
-  #TO DO: Update matrix with final decisions
 
+      #TODO: Update matrix with final decisions
       week_choice_data <- week_data %>%
         mutate(
           final_decision = case_when(
-          #AA:Pass all data
-          input$weekly_decision == "aa"  ~ "PASS",
-          #ANO: Accept Non Omit
-          input$weekly_decision == "ano" & !omit ~ "PASS", # pass data that is not user select omit
-          #KF: Keep Flags, data becomes flagged but kept in dataset (mildly sus)
-          input$weekly_decision == "kf" & is.na(user_flag) & !omit ~ "PASS", # pass data that is not user select omit
-          input$weekly_decision == "kf" & !is.na(user_flag) & !omit ~ "FLAGGED", # tag data that is flagged
-          #OF: Omit Flagged
-          input$weekly_decision == "of" & is.na(user_flag) & !omit ~ "PASS", # pass data that is not user select omit
-          input$weekly_decision == "of" & !is.na(user_flag) & !omit ~ "OMIT", # omit data that is flagged
-          #OA: Omit All
-          input$weekly_decision == "oa"  ~ "OMIT",
-          # Omit any user selected omit data (assuming AA was not the choice)
-          input$weekly_decision != "aa" & omit ~ "OMIT"))
-#Remove omitted data (user or from weekly decision)
+            #AA:Pass all data
+            input$weekly_decision == "aa"  ~ "PASS",
+            #ANO: Accept Non Omit
+            input$weekly_decision == "ano" & !omit ~ "PASS", # pass data that is not user select omit
+            #KF: Keep Flags, data becomes flagged but kept in dataset (mildly sus)
+            input$weekly_decision == "kf" & is.na(user_flag) & !omit ~ "PASS", # pass data that is not user select omit
+            input$weekly_decision == "kf" & !is.na(user_flag) & !omit ~ "FLAGGED", # tag data that is flagged
+            #OF: Omit Flagged
+            input$weekly_decision == "of" & is.na(user_flag) & !omit ~ "PASS", # pass data that is not user select omit
+            input$weekly_decision == "of" & !is.na(user_flag) & !omit ~ "OMIT", # omit data that is flagged
+            #OA: Omit All
+            input$weekly_decision == "oa"  ~ "OMIT",
+            # Omit any user selected omit data (assuming AA was not the choice)
+            input$weekly_decision != "aa" & omit ~ "OMIT"))
+      #Remove omitted data (user or from weekly decision)
       if (input$remove_omit) {
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "OMIT")
       }
-#To Do: Add in other sites + other information
+      #To Do: Add in other sites + other information
       p <- ggplot(week_choice_data, aes(x = DT_round)) +
-        geom_point(aes(y = mean, color = final_decision))+
+        map(relevant_sondes, function(sonde_data) {
+          add_data <- sonde_data[[1]]
+          data_source <- sonde_data[[2]]
+
+          y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
+
+          geom_line(data = add_data, aes(x = DT_round, y = .data[[y_column]], color = site), linewidth = 1)
+        }) +
+        geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2)+
+        scale_fill_manual(values = final_status_colors)+
+        scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site))+
         labs(
-          title = paste0("Weekly Data for:", input$site, "-", input$parameter),
+          title = paste0(str_to_title(input$site), " ", input$parameter, " (", format(flag_day, "%B %d, %Y"), ")"),
           x = "Date",
           y = input$parameter,
-          color = "Preview of Final Decision")+
-        scale_color_manual(values = final_status_colors)+
-        theme_bw()
+          fill = "Preview of Final Decision",
+          color = "Sites" )+
+      theme_bw(base_size = 14)
 
-      plot(p)
+      p
     } else {
-  #TO DO: Swap with create weekly plot function call, adding in other sites, etc
+      #TO DO: Swap with create weekly plot function call, adding in other sites, etc
       if(input$remove_omit){
         week_data <- week_data %>%
           filter(!omit)
       }
 
-   p <- ggplot(week_data, aes(x = DT_round)) +
-      geom_point(aes(y = mean, color = user_flag))+
-     #Add Omitted data in red
-      geom_point(data = week_data %>%filter(omit == TRUE),aes(y = mean), color = "red1")+
-      labs(
-        title = paste0("Weekly Data for:", input$site, "-", input$parameter),
-        x = "Date",
-        y = input$parameter,
-        color = "Flags")+
-     theme_bw()
+      p <-ggplot(week_data, aes(x = DT_round)) +
+        map(relevant_sondes, function(sonde_data) {
+          add_data <- sonde_data[[1]]
+          data_source <- sonde_data[[2]]
 
-   # Check if there are any brushed areas
-   if(length(brushed_areas()) > 0) {
-     #browser()
-     # Create a data frame of all brush boundaries
-       brush_boxes <- map_dfr(
-         brushed_areas()[seq(1, length(brushed_areas()), by = 2)], #for some reason this likes to duplicate values so just grabbing half of them
-         ~data.frame(
-           xmin_DT = .x$brush_dt_min,
-           xmax_DT = .x$brush_dt_max,
-           ymin_mean = .x$brush_mean_min,
-           ymax_mean = .x$brush_mean_max
-         )
-       )
-   #
-   #   # Add rectangles for all brushed areas
-     p <- p +
-       geom_rect(data = brush_boxes,
-                 aes(xmin = xmin_DT,
-                     xmax = xmax_DT,
-                     ymin = ymin_mean,
-                     ymax = ymax_mean),
-                 fill = NA,
-                 color = "blue",
-                 alpha = 0.3, inherit.aes = F)+
-       theme_bw()
+          y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
 
-   }
- #create plot
-   p
-}
+          geom_line(data = add_data, aes(x = DT_round, y = .data[[y_column]], color = site), linewidth = 1)
+        }) +
+        geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+
+        #Add Omitted data in red
+        geom_point(data = week_data %>%filter(omit == TRUE),aes(y = mean),shape = 21, stroke = 0, fill = "red1")+
+      scale_color_manual(
+          name = "Sites",
+          values = setNames(site_color_combo$color, site_color_combo$site)) +
+        # Scale for points (flag-based colors)
+        scale_fill_viridis_d(
+          name = "Flags",
+          option = "plasma",
+          begin = 0.1,
+          end = 0.9,
+          na.value = "#A0A0A0" )+
+        labs(
+          title = paste0(str_to_title(input$site), " ", input$parameter, " (", format(flag_day, "%B %d, %Y"), ")"),
+          x = "Date",
+          y = input$parameter,
+          color = "Sites",
+          fill = "Flags")+
+        theme_bw(base_size = 14)
+
+      # Check if there are any brushed areas
+      if(length(brushed_areas()) > 0) {
+        #browser()
+        # Create a data frame of all brush boundaries
+        brush_boxes <- map_dfr(
+          brushed_areas()[seq(1, length(brushed_areas()), by = 2)], #for some reason this likes to duplicate values so just grabbing half of them
+          ~data.frame(
+            xmin_DT = .x$brush_dt_min,
+            xmax_DT = .x$brush_dt_max,
+            ymin_mean = .x$brush_mean_min,
+            ymax_mean = .x$brush_mean_max
+          )
+        )
+        #
+        #   # Add rectangles for all brushed areas
+        p <- p +
+          geom_rect(data = brush_boxes,
+                    aes(xmin = xmin_DT,
+                        xmax = xmax_DT,
+                        ymin = ymin_mean,
+                        ymax = ymax_mean),
+                    fill = NA,
+                    color = "blue",
+                    alpha = 0.3, inherit.aes = F)
+
+      }
+      #create plot
+      p
+    }
   })
 
 ## Sub plots output
   output$sub_plots <- renderPlot({
     req(all_datasets(), current_week(), input$site, input$sub_parameters, input$sub_sites)
-#TODO: correctly grab the appropriate file (ver prefered, int (remove omitted), or pre)
-    datasets <- all_datasets()
-    working_data <- if(input$directory == "pre") {
-      datasets$pre_verification_data
-    } else {
-      datasets$intermediary_data
+
+
+    all_data <- all_datasets()[["all_data"]]
+    pre_verification_data <- all_datasets()[["pre_verification_data"]]
+    intermediary_data <- all_datasets()[["intermediary_data"]]
+    verified_data <- all_datasets()[["verified_data"]]
+
+    week_data <- selected_data() %>%
+      filter(week == current_week())
+
+    year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
+    #flag_day <- min(week_data$DT_round)
+    all_sub_sites <- c(input$site, input$sub_sites)
+    #picking the correct name of the data frame
+    retrieve_relevant_data_name <- function(df_name_arg, year_week_arg = NULL) {
+
+      if (df_name_arg %in% names(verified_data) & any(year_week_arg %in% verified_data[[df_name_arg]]$y_w)) {
+        return("verified_data")
+      }
+      if (df_name_arg %in% names(intermediary_data) & any(year_week_arg %in% intermediary_data[[df_name_arg]]$y_w)) {
+        return("intermediary_data")
+      }
+      if (df_name_arg %in% names(pre_verification_data) & any(year_week_arg %in% pre_verification_data[[df_name_arg]]$y_w)) {
+        return("pre_verification_data")
+      }
+      if (df_name_arg %in% names(all_data) & any(year_week_arg %in% all_data[[df_name_arg]]$y_w)) {
+        return("all_data")
+      }
+
     }
+
 
     # Create individual plots for each sub parameter
     plots <- map(input$sub_parameters, function(param) {
-      # Get main site data
-      main_site_param_name <- paste0(input$site, "-", param)
-      main_site_data <- working_data[[main_site_param_name]]
-      main_week_data <- filter(main_site_data, week == current_week())
 
-      # Get sub sites data
-      sub_sites_data <- map_dfr(input$sub_sites, function(sub_site) {
-        site_param_name <- paste0(sub_site, "-", param)
-        site_data <- working_data[[site_param_name]]
-        week_data <- filter(site_data, week == current_week())
-        week_data$site <- sub_site  # Add site identifier
-        return(week_data)
+      all_sub_plot_data <- map_dfr(all_sub_sites, function(sub_site) {
+
+        # Get the relevant sonde data
+        relevant_sondes <- map(sub_site, ~ {
+          sonde_name <- paste0(.x, "-", param)
+          data_source <- NULL
+          sonde_df <- NULL
+
+          # Determine which directory to pull data from
+          tryCatch({
+            data_source <- retrieve_relevant_data_name(sonde_name, year_week)
+            # cat("Data for",sonde_name,"will be pulled from",data_source,"\n")
+          }, error = function(err) {
+            #cat("Data for",sonde_name,"not found.\n")
+            return(NULL)  # Return NULL if data source can't be determined
+          })
+
+          # Only try to pull in the data if data_source was successfully determined
+          if (!is.null(data_source)) {
+            tryCatch({
+              sonde_df <- get(data_source)[[sonde_name]] %>%
+                filter(y_w == year_week)
+#TODO: correctly filter omit/flag data as needed by data source
+            }, error = function(err) {
+              #cat("Sonde", sonde_name, "not found.\n")
+              return(NULL)  # Return NULL if sonde data can't be retrieved
+            })
+          }
+
+          # Only return a list if both data_source and sonde_df are available
+          if (!is.null(data_source) & !is.null(sonde_df)) {
+            return(sonde_df)
+          } else {
+            return(NULL)  # Return NULL if either data_source or sonde_df is NULL
+          }
+
+        })
+
+        # Remove any NULL results from the list
+        relevant_sondes <- compact(relevant_sondes)
+        if(length(relevant_sondes) == 0) {
+          return(NULL)
+        }else{
+          relevant_sondes
+        }
+
       })
-     #
+
+
       # Create plot
       p <- ggplot() +
         # Add main site as grey points
-        geom_point(data = main_week_data,
+        geom_point(data = all_sub_plot_data%>%filter(site == input$site),
                    aes(x = DT_round, y = mean),
                    color = "grey40",
                    size = 2) +
         # Add sub sites as colored lines
-        geom_line(data = sub_sites_data,
+        geom_line(data = all_sub_plot_data%>%filter(site %in% input$sub_sites),
                   aes(x = DT_round, y = mean, color = site),
                   linewidth = 1) +
         scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site)) +
@@ -729,12 +775,8 @@ server <- function(input, output, session) {
              #title = param,
              color = "Sites") +
         theme_minimal() +
-        theme(
-          axis.title.x = element_blank(),
-          axis.text.x = element_blank()
-          #plot.title = element_text(hjust = 0.5),
-          #legend.position = "top"
-          )
+        theme(axis.title.x = element_blank())
+
 
       return(p)
     }) %>%
@@ -806,7 +848,7 @@ server <- function(input, output, session) {
   output$brush_submit_ui <- renderUI({
     can_submit <- FALSE
 
-    if (!is.null(input$brush_action) & !is.null(input$plot_brush) & !is.null(input$brush_action)) {
+    if (!is.null(input$plot_brush) & !is.null(input$brush_action)) {
 
       if(input$brush_action != "F"){
         can_submit = TRUE
@@ -837,6 +879,7 @@ server <- function(input, output, session) {
   observeEvent(input$submit_brush, {
     req(brushed_areas(), input$brush_action, selected_data())
 
+#browser()
     user_brush_select <- input$brush_action
 
     flag_choices <- if(input$brush_action == "F") {
@@ -944,6 +987,7 @@ server <- function(input, output, session) {
 
 #### Weekly Decision ####
 
+  # UI for weekly decision radio buttons
   output$weekly_decision_radio <- renderUI({
 
    week_data <-  selected_data()%>%
@@ -959,13 +1003,14 @@ server <- function(input, output, session) {
                   "Omit ALL" = "oa",
                   "Skip" = "s"),
 
-      selected = ifelse(all(is.na(week_data$week_decision)), "s", unique(week_data$week_decision)[1]),
+      selected = ifelse(all(is.na(week_data$week_decision)), "s", unique(week_data$week_decision)[1]), # If a week has an existing decision made, it will show up first here
       inline = TRUE
     )
   })
 
 
   # Submit decision button UI
+  # Toggles on (green) if user has correctly selected a decision
   output$submit_decision_ui <- renderUI({
     req(input$weekly_decision)
     can_submit <- FALSE
@@ -988,7 +1033,6 @@ server <- function(input, output, session) {
     #update backend data
 
       #weekly_decision <- input$weekly_decision
-#TO DO: Update matrix with final decisions
     updated_week_data <- selected_data() %>%
         filter(week == current_week())%>%
         mutate(
@@ -1000,7 +1044,7 @@ server <- function(input, output, session) {
             TRUE ~ omit),
           final_status = case_when(
             #AA:Pass all data
-            input$weekly_decision == "aa"  ~ "PASS",
+            input$weekly_decision  == "aa"  ~ "PASS",
             #ANO: Accept Non Omit
             input$weekly_decision == "ano" & !omit ~ "PASS", # pass data that is not user select omit
             #KF: Keep FLagged, retain flag into final data (sus but on the edge)
@@ -1039,13 +1083,15 @@ server <- function(input, output, session) {
       updateTabsetPanel(session, inputId = "tabs", selected = "Finalize Data")
       }else{
       if(idx == length(weeks)){
+        # Find min week where is_verified is NA
+        week_min <- selected_data()%>%filter(is.na(is_verified))%>%pull(week)%>%min()
+        idx <- which(weeks == week_min)
+        current_week(weeks[idx])
 
         showNotification(
-          "No more weeks to verify. Click Final Verification to see unverified weeks",
+          "No more weeks to verify. Moving to earliest unverified week",
           type = "warning")
-        current <- current_week()
-        idx <- which(weeks == current)
-        current_week(weeks[idx])
+
       }else{
         current_week(weeks[idx + 1])
       }
