@@ -211,24 +211,35 @@ create_precip_plot <- function(start_date, end_date, grouping){
   
   
   if(grouping == "ws"){
+    #count the number of sites per watershed
+    # precip_trim <- larimer_precip %>% 
+    #   filter(DT_mst >= start_date & DT_mst <= end_date & p_in > 0 )%>% 
+    #   group_by(watershed,name) %>%
+    #   summarise(
+    #     num_sites = n_distinct(name),
+    #     .groups = "drop")
+      
+    
     precip_trim <- larimer_precip %>% 
       filter(DT_mst >= start_date & DT_mst <= end_date & p_in > 0 )%>% 
-      group_by(date, watershed) %>%
+      mutate(DT_round = round_date(DT_mst, "day"))%>%
+      group_by(DT_round, watershed) %>%
     summarise(
-      total_precip = sum(p_in),
-      num_sites = n_distinct(site),
-      avg_daily_precip = total_precip / num_sites,
+      total_precip = sum(p_in)*2.54,
+      num_sites = n_distinct(name),
+      avg_hourly_precip = total_precip / num_sites,
       .groups = "drop")
     
     #make a histogram bar plot with dt mst as X axis and color by name
-ggplot(precip_trim, aes(x = date,y = avg_daily_precip, fill = watershed))+
-  geom_col()+
-    # add a geom rect around each date
- # geom_rect(aes(xmin = date - 0.5, xmax = date + 0.5, ymin = 0, ymax = max(avg_daily_precip)), fill = NA, color = "black")+
-  labs(title = 'Larimer County Precipitation',
-       x = 'Date',
-       y = 'Precip (WS daily precip/sites)')+
-  theme_bw()
+ggplot(precip_trim, aes(x = DT_round,y = avg_hourly_precip, fill = watershed))+
+  #put the bars next to each other
+  geom_col(linewidth = 2, position = "dodge")+
+  scale_y_reverse()+
+  labs(x = 'Date',
+       y = 'Precipitation \n(cm/day)', 
+       color = "Watershed")+
+  theme_bw(base_size = 18)+
+  theme(legend.position = "bottom")
     
   }else{
     precip_trim <- larimer_precip %>%
@@ -251,11 +262,12 @@ ggplot(precip_trim, aes(x = date,y = avg_daily_precip, fill = name))+
   
 
 }
+#aug_storm <- 
+  create_precip_plot(start_date = as.Date("2024-08-09"), end_date = as.Date("2024-08-15"), grouping = "ws")
+  scale_y_reverse()
 
-ggplotly(create_precip_plot(start_date = as.Date("2024-05-01"), end_date = as.Date("2024-08-29"), grouping = "site"))
 
-
-
+ggsave("aug_storm.png", aug_storm, width = 14, height = 6, units = "in")
 
 
 
@@ -275,7 +287,7 @@ create_precip_map <- function(date_sel){
     filtered_data <- larimer_precip  %>%
       filter(date == date_sel) %>%
       group_by(name, date, lat, long) %>%
-      summarise(daily_precip = sum(p_in), .groups = "drop")%>%
+      summarise(daily_precip = sum(p_in)*2.54, .groups = "drop")%>%
       st_as_sf(coords = c('long', "lat"), crs = 4326)
 
     if(nrow(filtered_data) == 0){
@@ -295,32 +307,37 @@ palfunc <- function(n, alpha = 1, begin = 0, end = 1, direction = 1){
   colorRampPalette(colors, alpha = alpha)(n)
 }
 
-at_10 = c(0.01, 0.05, 0.1, 0.2,  0.25, 0.5, 0.75, 1, 1.25, 1.5, 2)
+at_10 = c(0, 0.5, 1, 2, 5)
+at_limited = range(at_10)  # Extracts only min and max values
 
-
-      # Modified mapview call
-      if(nrow(non_zero_data) > 0){
-        map <- mapview::mapview(non_zero_data,
-          zcol = "daily_precip",
-          layer.name = paste0("Daily Precipitation on ", date_sel),
-          col.regions = palfunc, 
-          at = at_10)
-      }
-      if(nrow(non_zero_data) == 0){
-        map <- mapview::mapview(zero_data, zcol = "daily_precip",
-          layer_name = "No Precip",
-          col.regions = "grey")
-      }
-      if(nrow(zero_data) > 0){
-       map + mapview::mapview(zero_data, zcol = "daily_precip",
-                         layer_name = "No Precip",
-                         col.regions = "grey")
-      }else{
-        map
-      }
+colors <- magma(11, direction = -1)
+# Modified mapview call
+if(nrow(non_zero_data) > 0){
+  map <- mapview::mapview(non_zero_data,
+                        cex = 8,
+    zcol = "daily_precip",
+    layer.name = paste0("Daily Precipitation (cm) on ", date_sel),
+    col.regions = palfunc, 
+    at = at_10)  # Use only min and max for the legend
 }
 
-create_precip_map("2024-08-16")
+if(nrow(non_zero_data) == 0){
+  # map <- mapview::mapview(zero_data, zcol = "daily_precip",
+  #   layer_name = "No Precip",
+  #   col.regions = "grey")
+}
+
+if(nrow(zero_data) > 0){
+  # map + mapview::mapview(zero_data, zcol = "daily_precip",
+  #                  layer.name = "No Precip",
+  #                  col.regions = "grey")
+  map
+}else{
+  map
+}
+}
+
+create_precip_map("2024-08-10")
 dates <- seq(as.Date("2024-04-01"), as.Date("2024-12-31"), by = "day")
 
 list_of_maps <- lapply(dates, create_precip_map)%>%
