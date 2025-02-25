@@ -156,6 +156,8 @@ ui <- page_navbar(
                   status = "success"
                 )
               ),
+              div(
+                class = "d-flex flex-column gap-2",
                 materialSwitch(
                   inputId = "incl_thresholds",
                   label = "Thresholds",
@@ -163,6 +165,14 @@ ui <- page_navbar(
                   width = "200px",
                   status = "success"
                 ),
+                materialSwitch(
+                  inputId = "incl_ex_days",
+                  label = "Extra Data",
+                  value = TRUE,
+                  width = "200px",
+                  status = "success"
+                )
+              ),
                 actionButton("prev_week","← Previous Week", class = "btn-secondary", style = "width: 200px;"),
                 actionButton("next_week","Next Week →", class = "btn-secondary", style = "width: 200px;"),
                 actionButton("reset_week", "Reset Data", class = "btn-danger")
@@ -518,6 +528,14 @@ server <- function(input, output, session) {
     week_data <- selected_data() %>%
       filter(week == current_week())
 
+    week_min_day = min(week_data$DT_round, na.rm = T)
+    week_max_day = max(week_data$DT_round, na.rm = T)
+    #grab two days on either end of the week
+    week_plus_data <- selected_data() %>%
+      filter(DT_round >= week_min_day - days(2) & DT_round <= week_max_day + days(2))
+      #remove data from the week
+
+
     year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
     flag_day <- min(week_data$DT_round)
 
@@ -562,7 +580,7 @@ server <- function(input, output, session) {
       if (!is.null(data_source)) {
         tryCatch({
           sonde_df <- get(data_source)[[sonde_name]] %>%
-            filter(y_w == year_week)
+            filter(DT_round >= week_min_day - days(2) & DT_round <= week_max_day + days(2))
         }, error = function(err) {
           #cat("Sonde", sonde_name, "not found.\n")
           return(NULL)  # Return NULL if sonde data can't be retrieved
@@ -583,7 +601,8 @@ server <- function(input, output, session) {
 
      # append week_data to relevant sonde list, clean list, and bind dfs
      relevant_dfs <- map(relevant_sondes, ~.x[[1]])
-     week_plot_data <- append(relevant_dfs, list(week_data)) %>% #
+     week_plot_data <- append(relevant_dfs, list(week_data)) %>%
+       append(., list(week_plus_data)) %>%
        keep(~ !is.null(.)) %>%
        keep(~ nrow(.)>0) %>%
        bind_rows() %>%
@@ -615,17 +634,44 @@ server <- function(input, output, session) {
       if (input$remove_omit) {
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "OMIT")
+
+        week_plus_data <- week_plus_data %>%
+          filter(final_status != "OMIT"| is.na(final_status))
       }
 #Remove flagged data if user desired
       if(input$remove_flag){
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "FLAGGED")
+
+        week_plus_data <- week_plus_data %>%
+          filter(final_status != "FLAGGED"| is.na(final_status))
       }
+      week_min_check <- week_plus_data %>%
+        filter(week < current_week())
+
+      week_max_check <- week_plus_data %>%
+        filter(week > current_week())
+
 
 
 # Create plot for preview of weekly decision
-      p <- ggplot(week_choice_data, aes(x = DT_round)) +
-        map(relevant_sondes, function(sonde_data) {
+      p <- ggplot(week_choice_data, aes(x = DT_round))
+
+      if (nrow(week_min_check) > 0) {
+
+        week_plus_min <- week_min_check %>%
+          summarise(xmin = min(DT_round), xmax = max(DT_round))
+
+        p <- p + annotate(geom = "rect", xmin = week_plus_min$xmin, xmax = week_plus_min$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+      }
+      if (nrow(week_max_check) > 0) {
+        week_plus_max <- week_max_check %>%
+          summarise(xmin = min(DT_round), xmax = max(DT_round))
+
+        p <- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+      }
+        p <- p +
+          map(relevant_sondes, function(sonde_data) {
           add_data <- sonde_data[[1]]
           data_source <- sonde_data[[2]]
 
@@ -634,7 +680,9 @@ server <- function(input, output, session) {
           geom_line(data = add_data, aes(x = DT_round, y = .data[[y_column]], color = site), linewidth = 1)
         }) + #plot other sites
         geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching final decision
-        scale_fill_manual(values = final_status_colors)+ #set fill colors to weekly status colors
+        geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean, fill = final_status), shape = 21, stroke = 0, size = 1.5, alpha = 0.5)+ #add two extra days on the side
+        #add a grey box from the end of week_data to the end of week plus data on both sides of week data
+        scale_fill_manual(values = final_status_colors, na.value = "grey")+ #set fill colors to weekly status colors
         scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site))+ #set other colors for add sites
         labs(
           title = paste0(str_to_title(input$site), " ", input$parameter, " (", format(flag_day, "%B %d, %Y"), ")"),
@@ -644,12 +692,32 @@ server <- function(input, output, session) {
           color = "Sites" )+
       theme_bw(base_size = 14)
 
+
       if(input$incl_thresholds){
         p <- add_threshold_lines(plot = p,
                                          plot_data = week_plot_data,
                                          site_arg = input$site,
                                          parameter_arg = input$parameter)
       }
+        if(input$incl_ex_days){
+          p <- p +
+            scale_x_datetime(
+              limits = c(min(week_plus_data$DT_round, na.rm = TRUE),
+                         max(week_plus_data$DT_round, na.rm = TRUE)),
+              expand = c(0, 0), # Remove extra white space
+              date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
+              date_breaks = "1 day" # Remove extra white space
+            )
+        }else{
+          p <- p +
+            scale_x_datetime(
+              limits = c(min(week_choice_data$DT_round, na.rm = TRUE),
+                         max(week_choice_data$DT_round, na.rm = TRUE)),
+              expand = c(0, 0), # Remove extra white space
+              date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
+              date_breaks = "1 day" # Remove extra white space
+            )
+        }
 
       p
     } else {
@@ -657,13 +725,40 @@ server <- function(input, output, session) {
       if(input$remove_omit){
         week_data <- week_data %>%
           filter(!brush_omit)
+
+        week_plus_data <- week_plus_data %>%
+          filter(final_status != "OMIT"| is.na(final_status))
       }
       if(input$remove_flag){
         week_data <- week_data %>%
           filter(is.na(user_flag))
+
+        week_plus_data <- week_plus_data %>%
+          filter(final_status != "FLAGGED"| is.na(final_status))
       }
 
-      p <-ggplot(week_data, aes(x = DT_round)) +
+      week_min_check <- week_plus_data %>%
+        filter(week < current_week())
+
+      week_max_check <- week_plus_data %>%
+        filter(week > current_week())
+
+      p <-ggplot(week_data, aes(x = DT_round))
+
+      if (nrow(week_min_check) > 0) {
+
+        week_plus_min <- week_min_check %>%
+          summarise(xmin = min(DT_round), xmax = max(DT_round))
+
+        p <- p + annotate(geom = "rect", xmin = week_plus_min$xmin, xmax = week_plus_min$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+      }
+      if (nrow(week_max_check) > 0) {
+        week_plus_max <- week_max_check %>%
+          summarise(xmin = min(DT_round), xmax = max(DT_round))
+
+        p <- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+      }
+      p <- p +
         map(relevant_sondes, function(sonde_data) {
           add_data <- sonde_data[[1]]
           data_source <- sonde_data[[2]]
@@ -672,6 +767,7 @@ server <- function(input, output, session) {
 
           geom_line(data = add_data, aes(x = DT_round, y = .data[[y_column]], color = site), linewidth = 1)
         }) + # add other sites
+        geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean),fill = "black",shape = 21, stroke = 0, size = 1.5, alpha = 0.5)+ #add two extra days on the side
         geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching  user flag column
         #Add Omitted data in red
         geom_point(data = week_data %>%filter(brush_omit == TRUE),aes(y = mean),shape = 21, stroke = 0, size = 2, fill = "#ff1100")+
@@ -695,7 +791,7 @@ server <- function(input, output, session) {
 
       # Check if there are any brushed areas
       if(length(brushed_areas()) > 0) {
-        #browser()
+
         # Create a data frame of all brush boundaries
         brush_boxes <- map_dfr(
           brushed_areas()[seq(1, length(brushed_areas()), by = 2)], #for some reason this likes to duplicate values so just grabbing half of them
@@ -724,6 +820,25 @@ server <- function(input, output, session) {
                                  site_arg = input$site,
                                  parameter_arg = input$parameter)
       }
+      if(input$incl_ex_days){
+        p <- p +
+          scale_x_datetime(
+            limits = c(min(week_plus_data$DT_round, na.rm = TRUE),
+                       max(week_plus_data$DT_round, na.rm = TRUE)),
+            expand = c(0, 0), # Remove extra white space
+            date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
+            date_breaks = "1 day" # Remove extra white space
+          )
+      }else{
+        p <- p +
+          scale_x_datetime(
+            limits = c(min(week_data$DT_round, na.rm = TRUE),
+                       max(week_data$DT_round, na.rm = TRUE)),
+            date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
+            date_breaks = "1 day" # Remove extra white space
+          )
+      }
+
       p
     }
   })
@@ -1195,7 +1310,7 @@ final_status_colors <- c("PASS" = "#008a18",
 #   "OMIT" = "red",
 #   "NA" = "gray"  # Assign a color for NA values
 # )
-#browser()
+
 # Replace NA values in final_status (this will not affect the actual saved data, just for plotting)
 final_plot_data$final_status <- ifelse(is.na(final_plot_data$final_status), "NA", final_plot_data$final_status)
 # This seems to be important for the plotly to work
