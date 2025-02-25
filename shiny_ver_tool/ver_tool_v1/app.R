@@ -37,14 +37,18 @@ site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea"
 #                          "FLAGGED" = "#ffa700",
 #                          "OMIT" = "#d62d20")
 
-final_status_colors <- c("PASS" = "#008a18",
-                         "OMIT" = "#ff1100",
-                         "FLAGGED" = "#ff8200")
+# final_status_colors <- c("PASS" = "#008a18",
+#                          "OMIT" = "#ff1100",
+#                          "FLAGGED" = "#ff8200")
+final_status_colors <- c("PASS" = "green",
+                         "OMIT" = "red",
+                         "FLAGGED" = "orange")
 
 
-#TODO: Create function that actually looks for available sites/parameters in the data
+#TODO: Create function that actually looks for available parameters in the data
 available_parameters <- c("Specific Conductivity", "Temperature", "pH",
                           "Turbidity", "DO", "Depth")
+#TODO: Create function that actually looks for available sites in the data
 available_sites <- site_color_combo$site
 
 ###### End Helper Functions ######
@@ -52,11 +56,13 @@ available_sites <- site_color_combo$site
 
 # UI Definition
 ui <- page_navbar(
-  #useShinyjs(),
-#To Do: remove header to save space? it shouldnt need to be used by users
   title = "Data Processing Pipeline",
   id = "tabs",
-  theme = bs_theme(version = 5, bootswatch  = "zephyr"),
+  nav_item(
+    input_dark_mode(id = "dark_mode", mode = "light") #Toggle light vs dark mode
+  ),
+  #theme = bs_theme(version = 5, bootswatch  = "zephyr")
+  theme = bs_theme(preset = "bootstrap"),
 
 # #Tab 0: For future version to be shared open source
 # nav_panel(
@@ -128,9 +134,10 @@ ui <- page_navbar(
             div(
               class = "d-flex justify-content-between gap-3", # Use space-between instead of evenly
                 class = "d-flex gap-3",
-                selectInput("add_sites", "Additional Sites:",
+                selectizeInput("add_sites", "Additional Sites:",
                             choices = available_sites,
                             multiple = TRUE,
+                            options = list(plugins = "remove_button"),
                             width = "300px"),
               div(
                 class = "d-flex flex-column gap-2",
@@ -195,12 +202,14 @@ ui <- page_navbar(
             ),
           card_body(
             # Sub parameter selection
-              selectInput("sub_parameters", "Select Parameters:",
+              selectizeInput("sub_parameters", "Select Parameters:",
                           choices = available_parameters,
-                          multiple = TRUE),
-              selectInput("sub_sites", "Select Sites:",
+                          multiple = TRUE,
+                          options = list(plugins = "remove_button")),
+              selectizeInput("sub_sites", "Select Sites:",
                           choices = available_sites,
-                          multiple = TRUE),
+                          multiple = TRUE,
+                          options = list(plugins = "remove_button")),
               div(
                 style = "height: 600px; overflow-y: auto;",  # Make this div scrollable
                 plotOutput("sub_plots", width = "100%", height = "100%")
@@ -226,13 +235,14 @@ ui <- page_navbar(
                            inline = TRUE),  # This makes the radio buttons horizontal
               actionButton("clear_brushes", "Clear Brushes")
             ),
-
-            selectInput("user_brush_flags", "Select Flags:",
+#TODO: Update this so that it comes from a list of user defined flags
+            selectizeInput("user_brush_flags", "Select Flags:",
                         choices = c("sv" = "sv",
                                     "suspect data" = "suspect",
                                     "sensor malfunction" = "malfunction",
                                     "drift" = "drift"),
-                        multiple = TRUE),
+                        multiple = TRUE,
+                        options = list(plugins = "remove_button")),
 
             # Conditional submit button
             uiOutput("brush_submit_ui")
@@ -266,7 +276,7 @@ nav_panel(
         actionButton("goto_final_week", "Return to Selected Week",
                      class = "btn-primary w-100 mb-3"),
         hr(),
-        actionButton("submit_final", "Submit Final Changes",
+        actionButton("submit_final", "Submit Finalized Dataset",
                      class = "btn-success w-100")
       ),
       card_footer(
@@ -342,11 +352,6 @@ server <- function(input, output, session) {
 #     })
 #### Not used in internal version ####
 
-
-
-
-
-
 #### Reactive values ####
   data <- reactiveVal(NULL)
   current_week <- reactiveVal(NULL) #controlled by next/prev week buttons, and submit weekly decision
@@ -410,6 +415,7 @@ server <- function(input, output, session) {
 
 
   # Load data when button is clicked
+#TODO: This will need to be updated to match new site/param names on backend, as long as the data is loaded to selected_data(), everything should work downstream
   observeEvent(input$load_data, {
     req(input$directory, input$site, input$parameter, input$sub_parameters, all_datasets())
 
@@ -417,6 +423,7 @@ server <- function(input, output, session) {
     site_param_name <- paste0(input$site, "-", input$parameter)
 
     # Get the appropriate dataset based on directory selection
+#TODO: This loads all data and is probably inefficient, should be updated to only load the data needed
     datasets <- all_datasets()
 
     working_data <- if(input$directory == "pre") {
@@ -436,14 +443,12 @@ server <- function(input, output, session) {
 
 #TODO: check additional columns (verification status, etc ) to match with old ver system
       processed <- sel_data%>%
-        #FOR TESTING PURPOSES ONLY
-        mutate(user_flag = flag,
-               omit = FALSE,
-               user = NA,
-               final_status = NA,
-               week_decision = NA,
-               is_verified = NA)
-
+        mutate(user_flag = flag, # Keep Auto flags in flag column, user added flags/alterations live in user flag
+               brush_omit = FALSE, # User Brush Omit instances, default to FALSE
+               user = NA, #User initials
+               final_status = NA, # Final status of the data point after weekly decision
+               week_decision = NA, #store weekly decision
+               is_verified = NA) # Store if the data point is verified
 
       # Store the processed data
       selected_data(processed)
@@ -504,6 +509,7 @@ server <- function(input, output, session) {
   output$main_plot <- renderPlot({
     req(selected_data(), current_week(), all_datasets())
 
+#TODO:See previous note, this should be loaded only once rather than each time the plot updates
     all_data <- all_datasets()[["all_data"]]
     pre_verification_data <- all_datasets()[["pre_verification_data"]]
     intermediary_data <- all_datasets()[["intermediary_data"]]
@@ -517,6 +523,7 @@ server <- function(input, output, session) {
 
 
 #This isn't being sourced correctly in the shiny app
+#TODO: Source this correctly
     #picking the correct name of the data frame
     retrieve_relevant_data_name <- function(df_name_arg, year_week_arg = NULL) {
 
@@ -535,8 +542,6 @@ server <- function(input, output, session) {
 
     }
 
-    # site = "timberline"
-    # parameter_arg = "Temperature"
     plot_filter <- input$add_sites
     # Get the relevant sonde data
     relevant_sondes <- map(plot_filter, ~ {
@@ -576,8 +581,7 @@ server <- function(input, output, session) {
     # Remove any NULL results from the list
     relevant_sondes <- compact(relevant_sondes)
 
-     # append site_df to relevant sonde list, clean list, and bind dfs
-     # to find plot info
+     # append week_data to relevant sonde list, clean list, and bind dfs
      relevant_dfs <- map(relevant_sondes, ~.x[[1]])
      week_plot_data <- append(relevant_dfs, list(week_data)) %>% #
        keep(~ !is.null(.)) %>%
@@ -586,43 +590,40 @@ server <- function(input, output, session) {
        arrange(day)
 
 
-
-
-
-
     # Check the decision and create appropriate plot
     if (input$weekly_decision != "s") {
-
-
-      #TODO: Update matrix with final decisions
+# Show final decision to user to preview weekly decision
       week_choice_data <- week_data %>%
         mutate(
           final_decision = case_when(
             #AA:Pass all data
             input$weekly_decision == "aa"  ~ "PASS",
             #ANO: Accept Non Omit
-            input$weekly_decision == "ano" & !omit ~ "PASS", # pass data that is not user select omit
+            input$weekly_decision == "ano" & !brush_omit ~ "PASS", # pass data that is not user select omit
             #KF: Keep Flags, data becomes flagged but kept in dataset (mildly sus)
-            input$weekly_decision == "kf" & is.na(user_flag) & !omit ~ "PASS", # pass data that is not user select omit
-            input$weekly_decision == "kf" & !is.na(user_flag) & !omit ~ "FLAGGED", # tag data that is flagged
+            input$weekly_decision == "kf" & is.na(user_flag) & !brush_omit ~ "PASS", # pass data that is not user select omit
+            input$weekly_decision == "kf" & !is.na(user_flag) & !brush_omit ~ "FLAGGED", # tag data that is flagged
             #OF: Omit Flagged
-            input$weekly_decision == "of" & is.na(user_flag) & !omit ~ "PASS", # pass data that is not user select omit
-            input$weekly_decision == "of" & !is.na(user_flag) & !omit ~ "OMIT", # omit data that is flagged
+            input$weekly_decision == "of" & is.na(user_flag) & !brush_omit ~ "PASS", # pass data that is not user select omit
+            input$weekly_decision == "of" & !is.na(user_flag) & !brush_omit ~ "OMIT", # omit data that is flagged
             #OA: Omit All
             input$weekly_decision == "oa"  ~ "OMIT",
             # Omit any user selected omit data (assuming AA was not the choice)
-            input$weekly_decision != "aa" & omit ~ "OMIT"))
-      #Remove omitted data (user or from weekly decision)
+            input$weekly_decision != "aa" & brush_omit ~ "OMIT"))
+
+#Remove omitted data (user or from weekly decision)
       if (input$remove_omit) {
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "OMIT")
       }
+#Remove flagged data if user desired
       if(input$remove_flag){
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "FLAGGED")
       }
 
 
+# Create plot for preview of weekly decision
       p <- ggplot(week_choice_data, aes(x = DT_round)) +
         map(relevant_sondes, function(sonde_data) {
           add_data <- sonde_data[[1]]
@@ -631,10 +632,10 @@ server <- function(input, output, session) {
           y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
 
           geom_line(data = add_data, aes(x = DT_round, y = .data[[y_column]], color = site), linewidth = 1)
-        }) +
-        geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2)+
-        scale_fill_manual(values = final_status_colors)+
-        scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site))+
+        }) + #plot other sites
+        geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching final decision
+        scale_fill_manual(values = final_status_colors)+ #set fill colors to weekly status colors
+        scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site))+ #set other colors for add sites
         labs(
           title = paste0(str_to_title(input$site), " ", input$parameter, " (", format(flag_day, "%B %d, %Y"), ")"),
           x = "Date",
@@ -655,7 +656,7 @@ server <- function(input, output, session) {
       #TO DO: Swap with create weekly plot function call, adding in other sites, etc
       if(input$remove_omit){
         week_data <- week_data %>%
-          filter(!omit)
+          filter(!brush_omit)
       }
       if(input$remove_flag){
         week_data <- week_data %>%
@@ -670,10 +671,10 @@ server <- function(input, output, session) {
           y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
 
           geom_line(data = add_data, aes(x = DT_round, y = .data[[y_column]], color = site), linewidth = 1)
-        }) +
-        geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+
+        }) + # add other sites
+        geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching  user flag column
         #Add Omitted data in red
-        geom_point(data = week_data %>%filter(omit == TRUE),aes(y = mean),shape = 21, stroke = 0, size = 2, fill = "#ff1100")+
+        geom_point(data = week_data %>%filter(brush_omit == TRUE),aes(y = mean),shape = 21, stroke = 0, size = 2, fill = "#ff1100")+
       scale_color_manual(
           name = "Sites",
           values = setNames(site_color_combo$color, site_color_combo$site)) +
@@ -702,11 +703,9 @@ server <- function(input, output, session) {
             xmin_DT = .x$brush_dt_min,
             xmax_DT = .x$brush_dt_max,
             ymin_mean = .x$brush_mean_min,
-            ymax_mean = .x$brush_mean_max
-          )
+            ymax_mean = .x$brush_mean_max)
         )
-        #
-        #   # Add rectangles for all brushed areas
+        #   # Add rectangles to plot for all brushed areas
         p <- p +
           geom_rect(data = brush_boxes,
                     aes(xmin = xmin_DT,
@@ -885,6 +884,7 @@ server <- function(input, output, session) {
         brush_mean_max = max(brushed$mean, na.rm = TRUE),
         brush_mean_min = min(brushed$mean, na.rm = TRUE)
       )
+#TODO: This creates duplicates for some reason but does work...
       existing_brushes <- brushed_areas()
       brushed_areas(c(existing_brushes, list(current_brush)))
         }
@@ -904,6 +904,7 @@ server <- function(input, output, session) {
   output$brush_submit_ui <- renderUI({
     can_submit <- FALSE
 
+#Can only click button if there is a brush selection and a decision has been made
     if (!is.null(input$plot_brush) & !is.null(input$brush_action)) {
 
       if(input$brush_action != "F"){
@@ -918,10 +919,9 @@ server <- function(input, output, session) {
       }
     }
 
-
     actionButton(
       "submit_brush",
-      "Submit Selection",
+      "Submit Brush Decision",
       class = ifelse(can_submit, "btn-success", "btn-secondary"),
       disabled = !can_submit
     )
@@ -934,70 +934,46 @@ server <- function(input, output, session) {
     req(brushed_areas(), input$brush_action, selected_data())
 
     user_brush_select <- input$brush_action
-
-    # flag_choices <- if(input$brush_action == "F") {
-    #   input$user_brush_flags
-    # } else {
-    #   NA
-    # }
-
-    brush_boxes <- map_dfr(
-      brushed_areas()[seq(1, length(brushed_areas()), by = 2)],
-      ~data.frame(
-        xmin_DT = .x$brush_dt_min,
-        xmax_DT = .x$brush_dt_max,
-        ymin_mean = .x$brush_mean_min,
-        ymax_mean = .x$brush_mean_max
-      )
-    )
-
     # Initialize updated data with current data
     updated_data <- selected_data()
 
-    # Process each brushed area
-    for(i in 1:nrow(brush_boxes)) {
-      # Get points within current brush area
-      brush <- brush_boxes %>% slice(i)
-
-      xmin_DT <- pull(brush, xmin_DT)
-      xmax_DT <- pull(brush, xmax_DT)
-      ymin_mean <- pull(brush, ymin_mean)
-      ymax_mean <- pull(brush, ymax_mean)
-
-      # Update data for current brush area
-      updated_data <- updated_data %>%
-        mutate(
-          user_flag = case_when(
-            #Accept
-            between(DT_round, xmin_DT, xmax_DT) &
-              between(mean, ymin_mean, ymax_mean) &
-              user_brush_select == "A" ~ as.character(NA),
-            #Flag
-            between(DT_round, xmin_DT, xmax_DT) &
-              between(mean, ymin_mean, ymax_mean) &
-              user_brush_select == "F" ~ paste(input$user_brush_flags, collapse = ";\n"),
-            #omit
-            between(DT_round, xmin_DT, xmax_DT) &
-              between(mean, ymin_mean, ymax_mean) &
-              user_brush_select == "O" ~ user_flag,
-            TRUE ~ user_flag),
-
-          omit = case_when(
-            between(DT_round, xmin_DT, xmax_DT) &
-              between(mean, ymin_mean, ymax_mean) &
-              user_brush_select == "O" ~ TRUE,
-            #Accept
-            between(DT_round, xmin_DT, xmax_DT) &
-              between(mean, ymin_mean, ymax_mean) &
-              user_brush_select %in% c("A","F")  ~ FALSE,
-            TRUE ~ omit),
-
-          user = ifelse(between(DT_round, xmin_DT, xmax_DT) &
-                          between(mean, ymin_mean, ymax_mean),
-                        input$user,
-                        user)
-        )
-    }
+    #go through brushed areas and apply user flags, brush omit or user id as needed
+    updated_data <- reduce(
+      brushed_areas()[seq(1, length(brushed_areas()), by = 2)], #skip everyother to reduce duplicates
+      function(data, brush) {
+        data %>%
+          mutate(
+            user_flag = case_when(
+              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                user_brush_select == "A" ~ as.character(NA),
+              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                user_brush_select == "F" ~ paste(input$user_brush_flags, collapse = ";\n"),
+              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                user_brush_select == "O" ~ user_flag,
+              TRUE ~ user_flag
+            ),
+            brush_omit = case_when(
+              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                user_brush_select == "O" ~ TRUE,
+              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                user_brush_select %in% c("A", "F") ~ FALSE,
+              TRUE ~ brush_omit
+            ),
+            user = ifelse(
+              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                between(mean, brush$brush_mean_min, brush$brush_mean_max),
+              input$user,
+              user
+            )
+          )
+      },
+      .init = updated_data
+    )
 
     # Update the data
     selected_data(updated_data)
@@ -1021,7 +997,7 @@ server <- function(input, output, session) {
     updated_data <- selected_data() %>%
       filter(week == current_week())%>%
       mutate(user_flag = flag,
-             omit = FALSE,
+             brush_omit = FALSE,
              user = NA,
              final_status = NA,
              week_decision = NA,
@@ -1085,27 +1061,28 @@ server <- function(input, output, session) {
     updated_week_data <- selected_data() %>%
         filter(week == current_week())%>%
         mutate(
-          omit = case_when(
-            #removing all flags if user selects accept all
-            input$weekly_decision == "aa" ~ FALSE,
-            input$weekly_decision == "oa" ~ TRUE,
-            input$weekly_decision == "of" & !is.na(user_flag) ~ TRUE,
-            TRUE ~ omit),
+          # No longer saving omit decision in brush_omit only in final status so that it can be easily overwritten
+          # brush_omit = case_when(
+          #   #removing all flags if user selects accept all
+          #   input$weekly_decision == "aa" ~ FALSE,
+          #   input$weekly_decision == "oa" ~ TRUE,
+          #   input$weekly_decision == "of" & !is.na(user_flag) ~ TRUE,
+          #   TRUE ~ omit),
           final_status = case_when(
             #AA:Pass all data
             input$weekly_decision  == "aa"  ~ "PASS",
             #ANO: Accept Non Omit
-            input$weekly_decision == "ano" & !omit ~ "PASS", # pass data that is not user select omit
+            input$weekly_decision == "ano" & !brush_omit ~ "PASS", # pass data that is not user select omit
             #KF: Keep FLagged, retain flag into final data (sus but on the edge)
-            input$weekly_decision == "kf" & is.na(user_flag) & !omit ~ "PASS", # pass data that is not user select omit
-            input$weekly_decision == "kf" & !is.na(user_flag) & !omit ~ "FLAGGED", # tag data that is flagged
+            input$weekly_decision == "kf" & is.na(user_flag) & !brush_omit ~ "PASS", # pass data that is not user select omit
+            input$weekly_decision == "kf" & !is.na(user_flag) & !brush_omit ~ "FLAGGED", # tag data that is flagged
             #OF: Omit Flagged
-            input$weekly_decision == "of" & is.na(user_flag) & !omit ~ "PASS", # pass data that is not user select omit
-            input$weekly_decision == "of" & !is.na(user_flag) & !omit ~ "OMIT", # omit data that is flagged
+            input$weekly_decision == "of" & is.na(user_flag) & !brush_omit ~ "PASS", # pass data that is not user select omit
+            input$weekly_decision == "of" & !is.na(user_flag) & !brush_omit ~ "OMIT", # omit data that is flagged
             #OA: Omit All
             input$weekly_decision == "oa"  ~ "OMIT",
             # Omit any user selected omit data (assuming AA was not the choice)
-            input$weekly_decision != "aa" & omit ~ "OMIT"),
+            input$weekly_decision != "aa" & brush_omit ~ "OMIT"),
           user_flag = case_when(
             #removing all flags if user selects accept all
             input$weekly_decision == "aa" ~ NA,
@@ -1118,7 +1095,8 @@ server <- function(input, output, session) {
         filter(week != current_week())
 
       selected_data(bind_rows(other_data, updated_week_data)%>%arrange(DT_round))
-#TO DO: save to int directory/general save data function
+#TODO: save to int directory/general save data function
+#Syncfolder/update_int function
 
     # Get all weeks and current week
     weeks <- unique(selected_data()$week)
@@ -1141,12 +1119,11 @@ server <- function(input, output, session) {
           "No more weeks to verify. Moving to earliest unverified week",
           type = "warning")
 
-      }else{
+      }else{ #move to next week, if this is verified, user should probably just move to final data tab to see what remains
         current_week(weeks[idx + 1])
       }
 
     }
-#To Do: If next week has been reviewed, move to closest week without verified data
 
     # Show notification of submission
     showNotification(
@@ -1187,9 +1164,8 @@ server <- function(input, output, session) {
 
     if (input$remove_omit_finalplot) {
 
-  #To Do: Update if omit is T/F not T vs NA
       final_plot_data <- final_plot_data %>%
-        filter(!omit)
+        filter(final_status != "OMIT")
     }
 
 
