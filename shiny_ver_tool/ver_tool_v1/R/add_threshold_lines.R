@@ -21,6 +21,7 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
   seasonal_thresholds <- seasonal_thresholds %>%
     filter(season %in% unique_seasons)
 
+
   if (nrow(seasonal_thresholds) > 1) { # make sure this works
 
     season_1 <- case_when(
@@ -55,115 +56,83 @@ add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
 
     if (!all(is.na(site_data$mean))) {
       # Lower bound
-      #if ( # !is.infinite(min(site_data$mean, na.rm = TRUE)) &
-       # (min(site_data$mean, na.rm = TRUE) <= seasonal_threshold_s1_quantiles[1] | min(site_data$mean, na.rm = TRUE) <= seasonal_threshold_s2_quantiles[1])) {
-
         # Xs
-        start_x_s1 <- min(slice_data$DT_round)
 
-        transition_date <- slice_data %>%
+      lower_bounds <- tibble(
+        start_x_s1 = min(slice_data$DT_round),
+
+        transition_date = slice_data %>%
           filter(season == season_2) %>%
-          pull(DT_round)
+          arrange(DT_round) %>%
+          pull(DT_round),
 
-        end_x_s2 <- ceiling_date(max(plot_data$DT_round), "day")
+        end_x_s2  = ceiling_date(max(plot_data$DT_round), "day"),
 
         #Ys
-        y_lower_s1 <- seasonal_thresholds %>%
+        y_lower_s1 =  seasonal_thresholds %>%
           filter(season == season_1) %>%
-          pull(t_mean01)
+          pull(t_mean01),
 
-        y_lower_s2 <- seasonal_thresholds %>%
+        y_lower_s2 =  seasonal_thresholds %>%
           filter(season == season_2) %>%
           pull(t_mean01)
+      )
+        # #Testing
+        # annotate(geom = "segment", x = start_x_s1, xend = transition_date, y = y_lower_s1, yend = y_lower_s1, linetype = 2)+
+        #   annotate(geom = "segment", x = transition_date, xend = end_x_s2, y = y_lower_s2, yend = y_lower_s2, linetype = 2)
 
         plot <- plot +
           # season 1
           ## lower bound
-          geom_segment(aes(x = start_x_s1, y = y_lower_s1,
+          geom_segment(data = lower_bounds, aes(x = start_x_s1, y = y_lower_s1,
                            xend = transition_date, yend = y_lower_s1,
-                           color = "Seasonal Min", linetype = "Seasonal Min")) +
+                           color = "Seasonal Min: 1", linetype = "Seasonal Min 1")) +
           # season 2
           ## lower bound
-          geom_segment(aes(x = transition_date, y = y_lower_s2,
+          geom_segment(data = lower_bounds, aes(x = transition_date, y = y_lower_s2,
                            xend = end_x_s2, yend = y_lower_s2,
-                           color = "Seasonal Min", linetype = "Seasonal Min"))+
-          labs(linetype = "Thresholds")
-
-     # }
+                           color = "Seasonal Min: 2", linetype = "Seasonal Min 2"))
 
       # Upper bound
-      #if (# !is.infinite(max(site_data$mean, na.rm = TRUE)) &
-       # (max(site_data$mean, na.rm = TRUE) >= seasonal_threshold_s1_quantiles[2] | max(site_data$mean, na.rm = TRUE) >= seasonal_threshold_s2_quantiles[2])) {
-
         # Xs
-        start_x_s1 <- min(slice_data$DT_round)
-
-
-        transition_date <- slice_data %>%
+        upper_bound <- tibble(
+        start_x_s1 =  min(slice_data$DT_round),
+        transition_date =  slice_data %>%
           filter(season == season_2) %>%
-          pull(DT_round)
-
-        end_x_s2 <- ceiling_date(max(plot_data$DT_round), "day")
-
+          arrange(DT_round) %>%
+          pull(DT_round),
+        end_x_s2 = ceiling_date(max(plot_data$DT_round), "day"),
         #Ys
-        y_upper_s1 <- seasonal_thresholds %>%
+        y_upper_s1 =  seasonal_thresholds %>%
           filter(season == season_1) %>%
-          pull(t_mean99)
-
-        y_upper_s2 <- seasonal_thresholds %>%
+          pull(t_mean99),
+        y_upper_s2 =  seasonal_thresholds %>%
           filter(season == season_2) %>%
           pull(t_mean99)
+        )
+
+
 
         plot <- plot +
           # season 1
-          ## lower bound
-          geom_segment(aes(x = start_x_s1, y = y_upper_s1,
+          ## upper Bound
+          geom_segment(data = upper_bound, aes(x = start_x_s1, y = y_upper_s1,
                            xend = transition_date, yend = y_upper_s1,
-                           color = "Seasonal Max", linetype = "Seasonal Max")) +
+                           color = "Seasonal Max: 1", linetype = "Seasonal Max 1")) +
           # season 2
-          ## lower bound
-          geom_segment(aes(x = transition_date, y = y_upper_s2,
+          ## Upper Bound
+          geom_segment(data = upper_bound, aes(x = transition_date, y = y_upper_s2,
                            xend = end_x_s2, yend = y_upper_s2,
-                           color = "Seasonal Max", linetype = "Seasonal Max"))
-
-      #}
-
-      # # real thresholds
-      # real_thresholds_quantiles <- unname(quantile(c(real_thresholds$min, real_thresholds$max), c(0.1, 0.9)))
-      #
-      # if (#!is.infinite(min(site_data$mean, na.rm = TRUE))  &
-      #   (min(site_data$mean, na.rm = TRUE) <= real_thresholds_quantiles[1])) {
-      #   plot <- plot +
-      #     geom_hline(aes(yintercept = real_thresholds$min,
-      #                    color = "Real Min",
-      #                    linetype = "Real"))
-      # }
-      # if (#!is.infinite(max(site_data$mean, na.rm = TRUE)) &
-      #   (max(site_data$mean, na.rm = TRUE) >= real_thresholds_quantiles[2])) {
-      #   plot <- plot +
-      #     geom_hline(aes(yintercept = real_thresholds$max,
-      #                    color = "Real Max",
-      #                    linetype = "Real"))
-      # }
-
-      # sensor thresholds
-      #sensor_thresholds_quantiles <- unname(quantile(c(sensor_thresholds$min, sensor_thresholds$max), c(0.1, 0.9)))
-
-      # if ((min(site_data$mean, na.rm = TRUE) <= sensor_thresholds_quantiles[1])) {
-      #   plot <- plot +
-      #     geom_hline(aes(yintercept = sensor_thresholds$mix, # *** this needs to be min
-      #                    color = "Sensor Min",
-      #                    linetype = "Sensor"))
-      # }
-#
-#       if ((max(site_data$mean, na.rm = TRUE) >= sensor_thresholds_quantiles[2])) {
-#         plot <- plot +
-#           geom_hline(aes(yintercept = sensor_thresholds$max,
-#                          color = "Sensor Max",
-#                          linetype = "Sensor"))
-#       }
-        plot <- plot+
+                           color = "Seasonal Max: 2", linetype = "Seasonal Max 2"))+
           labs(linetype = "Thresholds")
+          # plot <- plot +
+          # # season 1
+          # ## upper Bound
+          # annotate(geom = "segment", x = start_x_s1, xend = transition_date, y = y_upper_s1, yend = y_upper_s1, linetype = 1)+
+          # annotate(geom = "segment", x = transition_date, xend = end_x_s2, y = y_upper_s2, yend = y_upper_s2, linetype = 1) +
+          # scale_linetype_manual(values = c( "Seasonal Max", "Seasonal Min"))+
+          # labs(linetype = "Thresholds")
+
       return(plot)
     }
 
