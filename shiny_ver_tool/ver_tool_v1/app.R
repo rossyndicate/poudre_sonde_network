@@ -579,7 +579,7 @@ server <- function(input, output, session) {
      # append site_df to relevant sonde list, clean list, and bind dfs
      # to find plot info
      relevant_dfs <- map(relevant_sondes, ~.x[[1]])
-     week_plot_data <- append(relevant_dfs, list(week_data)) %>% # how to relevant sondes here
+     week_plot_data <- append(relevant_dfs, list(week_data)) %>% #
        keep(~ !is.null(.)) %>%
        keep(~ nrow(.)>0) %>%
        bind_rows() %>%

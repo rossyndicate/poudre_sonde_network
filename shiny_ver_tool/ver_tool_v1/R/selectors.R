@@ -111,3 +111,19 @@ get_auto_parameters <- function(parameter) {
 }
 
 
+retrieve_relevant_data_name <- function(df_name_arg, year_week_arg = NULL) {
+
+  if (df_name_arg %in% names(verified_data) & any(year_week_arg %in% verified_data[[df_name_arg]]$y_w)) {
+    return("verified_data")
+  }
+  if (df_name_arg %in% names(intermediary_data) & any(year_week_arg %in% intermediary_data[[df_name_arg]]$y_w)) {
+    return("intermediary_data")
+  }
+  if (df_name_arg %in% names(pre_verification_data) & any(year_week_arg %in% pre_verification_data[[df_name_arg]]$y_w)) {
+    return("pre_verification_data")
+  }
+  if (df_name_arg %in% names(all_data) & any(year_week_arg %in% all_data[[df_name_arg]]$y_w)) {
+    return("all_data")
+  }
+
+}
