@@ -1280,7 +1280,7 @@ server <- function(input, output, session) {
     if (input$remove_omit_finalplot) {
 
       final_plot_data <- final_plot_data %>%
-        filter(final_status != "OMIT")
+        filter(final_status != "OMIT"|is.na(final_status))
     }
 
 
