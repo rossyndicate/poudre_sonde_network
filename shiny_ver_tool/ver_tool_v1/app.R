@@ -402,7 +402,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
   #constantly updating file paths for shiny app
   all_filepaths <- reactive({
-
   #auto_refresh() #refresh every 30 sec
 
   get_filenames()%>%mutate(
@@ -429,7 +428,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       ) %>%
       arrange(site)
 
-    DT::datatable(files, options = list(pageLength = 25)) %>%
+    DT::datatable(files, options = list(pageLength = 25,
+                                        scrollY = "400px")) %>%
       DT::formatStyle(
         columns = names(files)[-1],  # All columns except the first (site)
         valueColumns = names(files)[-1],
@@ -456,7 +456,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       )
 
       # Force auto-refresh to update the UI
-      auto_refresh()
+      session$reload()
 
       # Show notification with the returned message
       showNotification(
@@ -468,7 +468,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   })
 
   #### Data Selection functions ####
-
 
   # Update site choices when directory changes
   observe({
@@ -527,7 +526,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   # Load data when button is clicked
 #TODO: This will need to be updated to match new site/param names on backend, as long as the data is loaded to selected_data(), everything should work downstream
   observeEvent(input$load_data, {
-    req(input$directory, input$site, input$parameter, input$sub_parameters)
+    req(input$directory, input$site, input$parameter)
     # Initialize data directories and load datasets
 
 #browser()
@@ -560,12 +559,18 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
       if(input$directory == "pre_verification") {
         site_param_df <- datasets$pre_verification_data[[site_param_name]]
+#browser()
+        if (is.null(site_param_df)) {
+          stop(paste("Dataset", site_param_name, "not found"))
+        }
+
+#TODO: Move data from pre_verification to intermediary function
+#refresh all_datafiles
       } else {
         site_param_df <- datasets$intermediary_data[[site_param_name]]
-      }
-
-      if (is.null(site_param_df)) {
-        stop(paste("Dataset", site_param_name, "not found"))
+        if (is.null(site_param_df)) {
+          stop(paste("Dataset", site_param_name, "not found"))
+        }
       }
 
 #
@@ -821,7 +826,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             scale_x_datetime(
               limits = c(min(week_plus_data$DT_round, na.rm = TRUE),
                          max(week_plus_data$DT_round, na.rm = TRUE)),
-              expand = c(0, 0), # Remove extra white space
+              #expand = c(0, 0), # Remove extra white space
               date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
               date_breaks = "1 day" # Remove extra white space
             )
@@ -830,7 +835,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             scale_x_datetime(
               limits = c(min(week_choice_data$DT_round, na.rm = TRUE),
                          max(week_choice_data$DT_round, na.rm = TRUE)),
-              expand = c(0, 0), # Remove extra white space
+              #expand = c(0, 0), # Remove extra white space
               date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
               date_breaks = "1 day" # Remove extra white space
             )
@@ -941,17 +946,17 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       if(input$incl_ex_days){
         p <- p +
           scale_x_datetime(
-            limits = c(min(week_plus_data$DT_round, na.rm = TRUE),
-                       max(week_plus_data$DT_round, na.rm = TRUE)),
-            expand = c(0, 0), # Remove extra white space
+            limits = c(min(week_plus_data$DT_round, na.rm = TRUE)-hours(1),
+                       max(week_plus_data$DT_round, na.rm = TRUE)+hours(1)),
+            #expand = c(0, 0), # Remove extra white space
             date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
             date_breaks = "1 day" # Remove extra white space
           )
       }else{
         p <- p +
           scale_x_datetime(
-            limits = c(min(week_data$DT_round, na.rm = TRUE),
-                       max(week_data$DT_round, na.rm = TRUE)),
+            limits = c(min(week_data$DT_round, na.rm = TRUE)-hours(1),
+                       max(week_data$DT_round, na.rm = TRUE)+hours(1)),
             date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
             date_breaks = "1 day" # Remove extra white space
           )
@@ -1227,13 +1232,13 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
     # Update the data
     selected_data(updated_data)
+#TODO: update_intermediary_data
 
     # Clear brushed areas after submission
     brushed_areas(list())
     session$resetBrush("plot_brush")
     #reset input$user_brush_flags to nothing
     updateRadioButtons(session, "user_brush_flags", selected = "")
-
 
     showNotification("Brush Changes saved.", type = "message")
     }
@@ -1258,6 +1263,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       filter(week != current_week())
 
     selected_data(rbind(updated_data, other_data))
+#TODO: update_intermediary_data
 
   })
 
@@ -1384,6 +1390,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     # Reset weekly decision back to "s"
     updateRadioButtons(session, "weekly_decision", selected = "s")
     updateCheckboxInput(session, "remove_omit", value = FALSE)
+#TODO: update_intermediary_data
+
   })
 
 
@@ -1528,20 +1536,23 @@ final_plot_data$final_status <- as.factor(final_plot_data$final_status)
   observeEvent(input$submit_final, {
     showNotification("Final changes submitted successfully!", type = "message")
     updateNavbarPage(session, inputId = "tabs", selected = "Data Selection")
+#TODO: move_file_to_verified_directory
+#TODO: sync_files()/reset all_datafiles
 
-#TODO: sync_files()/reset available data (load data)
 
   })
 
   #### Extras ####
   # Handle quit button
   observeEvent(input$quit_app, {
+    #TODO: update_intermediary_data
     stopApp()
   })
 
   # Add this to handle the keyboard shortcut
   observeEvent(input$q_key, {
     if (input$q_key == "q") {
+      #TODO: update_intermediary_data
       stopApp()
     }
   })
