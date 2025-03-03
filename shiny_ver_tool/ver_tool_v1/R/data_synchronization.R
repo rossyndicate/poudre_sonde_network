@@ -297,11 +297,11 @@ update_intermediary_data <- function(updated_df) {
   # Generate versioned filename
   timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
   data_hash <- digest::digest(updated_df)
-  new_filename <- glue("{site}_{parameter}_{timestamp}_{data_hash}.rds")
+  new_filename <- glue("{site}-{parameter}_{timestamp}_{data_hash}.rds")
 
   tryCatch({
     # Archive previous versions but keep last 3
-    existing_files <- list.files(int_dir_path, pattern = glue("^{site}_{parameter}"))
+    existing_files <- list.files(int_dir_path, pattern = glue("^{site}-{parameter}"))
     if(length(existing_files) > 3) {
       to_archive <- existing_files[1:(length(existing_files)-3)]
       archive_files(to_archive, "int_archive")
@@ -342,11 +342,11 @@ move_file_to_verified_directory <- function(int_to_fin_df) {
   file_meta <- split_filename(int_to_fin_df$source_file[1])
   timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
   data_hash <- digest::digest(int_to_fin_df)
-  new_filename <- glue("{file_meta$site}_{file_meta$parameter}_FINAL_{timestamp}_{data_hash}.rds")
+  new_filename <- glue("{file_meta$site}-{file_meta$parameter}_FINAL_{timestamp}_{data_hash}.rds")
 
   tryCatch({
     # Check for existing final versions
-    ver_files <- list.files(ver_dir_path, pattern = glue("^{file_meta$site}_{file_meta$parameter}"))
+    ver_files <- list.files(ver_dir_path, pattern = glue("^{file_meta$site}-{file_meta$parameter}"))
 
     if(length(ver_files) > 0) {
       # Use sync conflict resolution
