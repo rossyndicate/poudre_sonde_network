@@ -70,20 +70,7 @@ relevant_sonde_selector <- function(site_arg) {
 }
 
 
-# Get sites available from relevant directory
-get_sites <- function(datasets, directory) {
-  if (directory == "pre") {
-    names(datasets$pre_verification_data)%>%
-      str_split("-") %>%
-      map_chr(1) %>%
-      unique()
-  } else {
-    names(datasets$intermediary_data)%>%
-      str_split("-") %>%
-      map_chr(1) %>%
-      unique()
-  }
-}
+
 # Get parameters available for a site
 get_parameters <- function(datasets, directory, site) {
   if (directory == "pre") {
