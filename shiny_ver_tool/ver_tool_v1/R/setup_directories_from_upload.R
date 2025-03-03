@@ -3,6 +3,7 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   #for testing:setwd("~/Documents/fork_yeah/poudre_sonde_network/shiny_ver_tool/ver_tool_v1")
 
   testing_path = here("shiny_ver_tool", "ver_tool_v1")
+  data_path = here("shiny_ver_tool", "ver_tool_v1", "data")
   all_path = here("shiny_ver_tool", "ver_tool_v1", "data", "all_data_directory")
   pre_verification_path = here("shiny_ver_tool", "ver_tool_v1","data", "pre_verification_directory")
   intermediary_path = here("shiny_ver_tool", "ver_tool_v1","data", "intermediary_directory")
@@ -10,6 +11,7 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   raw_data_path = here("shiny_ver_tool", "ver_tool_v1","data", "raw_data")
 
   uploaded_file_type <- tools::file_ext(uploaded_file_path)
+  org_file_type <- uploaded_file_type
 
 
   #Check if zip file and unzip to main working directory, this should be a data folder that was previously created by the user
@@ -37,9 +39,9 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   }
 
   #check to see if data folder/sub folders exist
-  if(!dir.exists(here("shiny_ver_tool", "ver_tool_v1", "data"))){
-    dir.create(here("shiny_ver_tool", "ver_tool_v1","data"))
-  }else{
+    if(!dir.exists(data_path)){
+      dir.create(data_path)
+    }
     #check to see if data folder has all_data_directory
     if(!dir.exists(all_path)){
       dir.create(all_path)
@@ -59,11 +61,13 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
     #create raw data folder
     if(!dir.exists(raw_data_path)){
       dir.create(raw_data_path)
+      if(org_file_type != "zip"){
+        file.copy(uploaded_file_path, raw_data_path)
+      }
     }
     if(!dir.exists(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))){
       dir.create(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))
     }
-  }
 
   #this will read in the file based on its type and check to make sure there is no missing columns
   parse_raw_file <- function(file_path){
