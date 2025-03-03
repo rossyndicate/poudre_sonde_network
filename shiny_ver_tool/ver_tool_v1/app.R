@@ -13,14 +13,9 @@ library(digest)
 library(fs)
 library(shinyFiles)
 library(shinyWidgets)
-options(shiny.maxRequestSize = 1000 * 1024^2)
-
-#source(here("shiny_ver_tool", "ver_tool_v1", "R", "load_data.R"))
-#source(here("shiny_ver_tool", "ver_tool_v1", "R", "selectors.R"))
-
-#load in data
-
-
+library(glue)
+library(anytime)
+options(shiny.maxRequestSize = 10000 * 1024^2)
 
 ##### Colors + parameters #####
 
@@ -78,30 +73,15 @@ ui <- page_navbar(
 
 
   #### Tab 1: Data Selection ####
-  nav_panel(
-    title = "Data Selection",
-    card(
-      card_header("Select Your Data"),
-      card_body(
-        # Directory selection
-        radioButtons("directory", "Choose Directory:",
-                     choices = c("pre", "int"),
-                     selected = "pre",
-                     inline = TRUE),
-        selectInput("user", "Select User:",
-                    choices = c("SJS", "JDT", "CLM", "AS"), selected = "SJS"),
-        # Site selection
-        selectInput("site", "Select Site:",
-                    choices = NULL),
-
-        # Main parameter selection (single selection)
-        selectInput("parameter", "Select Parameter:",
-                    choices = NULL),
-
-        actionButton("load_data", "Load Data", class = "btn-primary")
-      )
+nav_panel(
+  title = "Data Selection",
+  card(
+    card_header("Select Your Data"),
+    card_body(
+      uiOutput("conditional_data_ui")
     )
-  ),
+  )
+),
 
 
   #### Tab 2: Data Verification ####
@@ -368,28 +348,148 @@ server <- function(input, output, session) {
   selected_data <- reactiveVal(NULL) # This is essentially site param df
   all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots?
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
+  #all_filepaths <- reactiveVal(NULL) # List of all filepaths in data
 
+auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
+
+  # Check if data folder exists and if data/all_data subfolder has files, if files are available, show table of available files and allow user selection
+  output$conditional_data_ui <- renderUI({
+    # Check if data folder exists and if data/all_data subfolder has files
+    data_folder_exists <- dir.exists(here("shiny_ver_tool", "ver_tool_v1", "data"))
+    all_data_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "all_data_directory")
+    all_data_subfolder_empty <- FALSE
+
+    if(data_folder_exists) {
+      all_data_subfolder_exists <- dir.exists(all_data_path)
+      if(!all_data_subfolder_exists | length(list.files(all_data_path)) == 0) {
+        all_data_subfolder_empty <- TRUE
+      }
+    }
+
+    if(!data_folder_exists|all_data_subfolder_empty){
+      # Show file upload and timezone input if conditions are met
+      tagList(
+        textInput("timezone", "Enter your timezone:", value = "MST"),
+        fileInput("data_upload", "Upload your data files:", multiple = FALSE,
+                  accept = c(".csv", ".xlsx", ".zip", ".feather", ".rds"))
+      )
+    } else {
+#Show regular UI if files are present
+      tagList(
+
+        # Display files in data folder as a table
+        h4("Files in data folder:"),
+        DT::dataTableOutput("data_files_table"),
+        # Directory selection
+        selectInput("directory", "Choose Directory:",
+                     choices = c("pre_verification", "intermediary"),
+                     selected = "pre_verification"),
+        selectInput("user", "Select User:",
+                    choices = c("SJS", "JDT", "CLM", "AS"), selected = "SJS"),
+        # Site selection
+        selectInput("site", "Select Site:",
+                    choices = NULL),
+
+        # Main parameter selection (single selection)
+        selectInput("parameter", "Select Parameter:",
+                    choices = NULL),
+
+        actionButton("load_data", "Load Data", class = "btn-primary"),
+
+      )
+    }
+  })
+
+  #constantly updating file paths for shiny app
+  all_filepaths <- reactive({
+
+  #auto_refresh() #refresh every 30 sec
+
+  get_filenames()%>%mutate(
+    site = map_chr(filename, ~ split_filename(.x)$site),
+    parameter = map_chr(filename, ~ split_filename(.x)$parameter))
+
+})
+
+
+#data table for available parameters and which folder they belong to
+  output$data_files_table <- renderDataTable({
+    files <- all_filepaths() %>%
+      filter(directory %in% c("pre_verification", "intermediary", "verified")) %>%
+      mutate(
+        site = map_chr(filename, ~ split_filename(.x)$site),
+        parameter = map_chr(filename, ~ split_filename(.x)$parameter)
+      ) %>%
+      select(-filename) %>%
+      distinct() %>%
+      pivot_wider(
+        names_from = parameter,
+        values_from = directory,
+        values_fill = NA
+      ) %>%
+      arrange(site)
+
+    DT::datatable(files, options = list(pageLength = 25)) %>%
+      DT::formatStyle(
+        columns = names(files)[-1],  # All columns except the first (site)
+        valueColumns = names(files)[-1],
+        backgroundColor = DT::styleEqual(
+          c("pre_verification", "intermediary", "verified"),
+          c("#D3D3D3", "#FFA500", "#90EE90")
+        )
+      )
+  })
+
+  # Observer to handle data uploads and timezone input
+  observeEvent(input$data_upload, {
+    req(input$data_upload, input$timezone)
+
+    # Check if both data_upload has files and timezone has a value
+    if (!is.null(input$data_upload) & !is.null(input$timezone) & input$timezone != "") {
+
+      upload_path <- input$data_upload$datapath
+      # Call the setup function with the uploaded files and timezone
+      # and capture its return value
+      result_message <- setup_directories_from_upload(
+        uploaded_file_path = upload_path,
+        timezone = input$timezone
+      )
+
+      # Force auto-refresh to update the UI
+      auto_refresh()
+
+      # Show notification with the returned message
+      showNotification(
+        result_message,
+        type = "message",
+        duration = 5
+      )
+    }
+  })
 
   #### Data Selection functions ####
-  # Initialize data directories and load datasets
-  observe({
-    paths <- load_data_directories()
-    datasets <- load_all_datasets(paths)
-    all_datasets(datasets)
-  })
+
 
   # Update site choices when directory changes
   observe({
-    req(input$directory, all_datasets())
-    sites <- get_sites(all_datasets(), input$directory)
+    req(input$directory, all_filepaths())
+    sites <- all_filepaths() %>%
+      filter(directory == input$directory) %>%
+      pull(site) %>%
+      unique()
+
     updateSelectInput(session, "site",
                       choices = sites) #based on directory
   })
 
   # Update parameter choices when site changes
   observe({
-    req(input$directory, input$site, all_datasets())
-    parameters <- get_parameters(all_datasets(), input$directory, input$site)
+    req(input$directory, input$site, all_filepaths())
+
+    parameters <- all_filepaths() %>% filter(directory == input$directory & site == input$site)%>%
+      pull(parameter) %>%
+      unique()
+
     updateSelectInput(session, "parameter",
                       choices = parameters) #based on site and directory
   })
@@ -406,12 +506,12 @@ server <- function(input, output, session) {
                       choices = available_parameters,
                       selected = auto_params)
   })
-  # Show/hide and update additional sites UI based on site selection
+  #Show/hide and update additional sites UI based on site selection
   observe({
     req(input$site)
 
     # Get auto-selected parameters for the chosen parameter
-    auto_sites <- relevant_sonde_selector(input$site)
+    auto_sites <- relevant_sonde_selector(site_arg = input$site)
 
     # Update sub-parameters selection
     updateSelectInput(session, "sub_sites",
@@ -427,45 +527,63 @@ server <- function(input, output, session) {
   # Load data when button is clicked
 #TODO: This will need to be updated to match new site/param names on backend, as long as the data is loaded to selected_data(), everything should work downstream
   observeEvent(input$load_data, {
-    req(input$directory, input$site, input$parameter, input$sub_parameters, all_datasets())
+    req(input$directory, input$site, input$parameter, input$sub_parameters)
+    # Initialize data directories and load datasets
+
+#browser()
+#TODO: This loads all data and is probably inefficient, should be updated to only load the data needed
+      datasets <- load_all_datasets()
+      # Get the site-parameter name using split_filename on the name of each list
+      datasets <- map(datasets, function(data_list) {
+        #if data_list is empty, return data_list immideatly
+        if(is_empty(data_list)){
+          return(data_list)
+        }
+
+        file_names <- map(names(data_list), split_filename) %>%
+          bind_rows() %>%
+          mutate(site_param = paste(site, parameter, sep = "-"))
+
+        # Assign new names to the list
+        names(data_list) <- file_names$site_param
+        return(data_list)
+      })
+
+      all_datasets(datasets)
 
     # Get the site-parameter name
     site_param_name <- paste0(input$site, "-", input$parameter)
 
-    # Get the appropriate dataset based on directory selection
-#TODO: This loads all data and is probably inefficient, should be updated to only load the data needed
-    datasets <- all_datasets()
 
-    working_data <- if(input$directory == "pre") {
-      datasets$pre_verification_data
-    } else {
-      datasets$intermediary_data
-    }
     # Try to get the specific dataset
     tryCatch({
-      site_param_df <- working_data[[site_param_name]]
+
+      if(input$directory == "pre_verification") {
+        site_param_df <- datasets$pre_verification_data[[site_param_name]]
+      } else {
+        site_param_df <- datasets$intermediary_data[[site_param_name]]
+      }
 
       if (is.null(site_param_df)) {
         stop(paste("Dataset", site_param_name, "not found"))
       }
 
-      sel_data <- working_data[[site_param_name]]
-
-#TODO: check additional columns (verification status, etc ) to match with old ver system
-      processed <- sel_data%>%
-        mutate(user_flag = flag, # Keep Auto flags in flag column, user added flags/alterations live in user flag
-               brush_omit = FALSE, # User Brush Omit instances, default to FALSE
-               user = NA, #User initials
-               final_status = NA, # Final status of the data point after weekly decision
-               week_decision = NA, #store weekly decision
-               is_verified = NA) # Store if the data point is verified
+#
+# #TODO: check additional columns (verification status, etc ) to match with old ver system
+#       processed <- sel_data%>%
+#         mutate(user_flag = flag, # Keep Auto flags in flag column, user added flags/alterations live in user flag
+#                brush_omit = FALSE, # User Brush Omit instances, default to FALSE
+#                user = NA, #User initials
+#                final_status = NA, # Final status of the data point after weekly decision
+#                week_decision = NA, #store weekly decision
+#                is_verified = NA) # Store if the data point is verified
 
       # Store the processed data
-      selected_data(processed)
+      selected_data(site_param_df)
 
       # Set initial week
 #TODO: This should update to first week with unverified data if possible
-      current_week(min(processed$week))
+      current_week(min(site_param_df$week))
 
     }, error = function(e) {
       showNotification(
@@ -517,10 +635,9 @@ server <- function(input, output, session) {
 
 ## Main plot
   output$main_plot <- renderPlot({
-    req(selected_data(), current_week(), all_datasets())
+    req(selected_data(), current_week(), all_datasets(), input$weekly_decision)
 
 #TODO:See previous note, this should be loaded only once rather than each time the plot updates
-    all_data <- all_datasets()[["all_data"]]
     pre_verification_data <- all_datasets()[["pre_verification_data"]]
     intermediary_data <- all_datasets()[["intermediary_data"]]
     verified_data <- all_datasets()[["verified_data"]]
@@ -789,6 +906,7 @@ server <- function(input, output, session) {
           fill = "Flags")+
         theme_bw(base_size = 14)
 
+
       # Check if there are any brushed areas
       if(length(brushed_areas()) > 0) {
 
@@ -1052,6 +1170,23 @@ server <- function(input, output, session) {
     # Initialize updated data with current data
     updated_data <- selected_data()
 
+
+    #deal with empty brush areas
+    if(is_empty(brushed_areas())){
+      # Update the data
+      selected_data(updated_data)
+
+      # Clear brushed areas after submission
+      brushed_areas(list())
+      session$resetBrush("plot_brush")
+      #reset input$user_brush_flags to nothing
+      updateRadioButtons(session, "user_brush_flags", selected = "")
+
+
+      showNotification("No Points Brushed, no changes applied", type = "message")
+
+    }else{
+
     #go through brushed areas and apply user flags, brush omit or user id as needed
     updated_data <- reduce(
       brushed_areas()[seq(1, length(brushed_areas()), by = 2)], #skip everyother to reduce duplicates
@@ -1101,6 +1236,7 @@ server <- function(input, output, session) {
 
 
     showNotification("Brush Changes saved.", type = "message")
+    }
   })
 
 
