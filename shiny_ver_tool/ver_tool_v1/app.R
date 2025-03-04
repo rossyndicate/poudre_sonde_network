@@ -247,7 +247,7 @@ nav_panel(
 nav_panel(
   title = "Finalize Data",
   layout_columns(
-    col_widths = c(8, 4),
+    col_widths = c(10, 2),
 
     # Main Plot Card
 #To Do: Convert to plotly object for better data vis
@@ -260,25 +260,16 @@ nav_panel(
 
     # Week Selection and Actions Card
     card(
-      card_header("Modify Verification"),
-      card_body(
-        selectInput("final_week_selection", "Select Week:", choices = NULL),
-        actionButton("goto_final_week", "Return to Selected Week",
-                     class = "btn-primary w-100 mb-3"),
-        hr(),
-        actionButton("submit_final", "Submit Finalized Dataset",
-                     class = "btn-success w-100")
-      ),
-      card_footer(
-        div(
-          class = "d-flex justify-content-between",
-          div(
-            checkboxInput("remove_omit_finalplot", "Remove omitted data from plot", value = FALSE),
-            style = "margin: auto"
-          )
-        )
-      )
-    )
+        card_header("Modify Verification"),
+        card_body(
+          checkboxInput("remove_omit_finalplot", "Remove omitted data from plot", value = FALSE),
+          selectInput("final_week_selection", "Select Week:", choices = NULL),
+          actionButton("goto_final_week", "Return to Selected Week",
+                       class = "btn-primary w-100 mb-3"),
+      hr(),
+      uiOutput("submit_final_button") # Replaced the direct button with a dynamic UI output
+  )
+)
   )
 )
 
@@ -349,6 +340,7 @@ server <- function(input, output, session) {
   all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots?
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
   #all_filepaths <- reactiveVal(NULL) # List of all filepaths in data
+  selected_data_cur_filename <- reactiveVal(NULL) # Current filename of selected data, to be updated as filename is saved
 
 auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
@@ -402,11 +394,13 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
   #constantly updating file paths for shiny app
   all_filepaths <- reactive({
-  #auto_refresh() #refresh every 30 sec
+
+  sync_file_system()
 
   get_filenames()%>%mutate(
     site = map_chr(filename, ~ split_filename(.x)$site),
-    parameter = map_chr(filename, ~ split_filename(.x)$parameter))
+    parameter = map_chr(filename, ~ split_filename(.x)$parameter),
+    datetime = map_chr(filename, ~ split_filename(.x)$datetime))
 
 })
 
@@ -415,10 +409,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   output$data_files_table <- renderDataTable({
     files <- all_filepaths() %>%
       filter(directory %in% c("pre_verification", "intermediary", "verified")) %>%
-      mutate(
-        site = map_chr(filename, ~ split_filename(.x)$site),
-        parameter = map_chr(filename, ~ split_filename(.x)$parameter)
-      ) %>%
       select(-filename) %>%
       distinct() %>%
       pivot_wider(
@@ -529,7 +519,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     req(input$directory, input$site, input$parameter)
     # Initialize data directories and load datasets
 
-#browser()
+    sync_file_system()
+
 #TODO: This loads all data and is probably inefficient, should be updated to only load the data needed
       datasets <- load_all_datasets()
       # Get the site-parameter name using split_filename on the name of each list
@@ -553,42 +544,43 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     # Get the site-parameter name
     site_param_name <- paste0(input$site, "-", input$parameter)
 
-
     # Try to get the specific dataset
     tryCatch({
 
       if(input$directory == "pre_verification") {
         site_param_df <- datasets$pre_verification_data[[site_param_name]]
-#browser()
+
         if (is.null(site_param_df)) {
           stop(paste("Dataset", site_param_name, "not found"))
         }
 
-#TODO: Move data from pre_verification to intermediary function
+          predata_file_name <- all_filepaths() %>%
+          filter(site == input$site & parameter == input$parameter & directory == input$directory) %>%
+          pull(filename)
+
+        selected_data_cur_filename(move_file_to_intermediary_directory(pre_to_int_filename = predata_file_name, pre_to_int_df = site_param_df))
+
 #refresh all_datafiles
       } else {
         site_param_df <- datasets$intermediary_data[[site_param_name]]
+
         if (is.null(site_param_df)) {
           stop(paste("Dataset", site_param_name, "not found"))
         }
-      }
 
-#
-# #TODO: check additional columns (verification status, etc ) to match with old ver system
-#       processed <- sel_data%>%
-#         mutate(user_flag = flag, # Keep Auto flags in flag column, user added flags/alterations live in user flag
-#                brush_omit = FALSE, # User Brush Omit instances, default to FALSE
-#                user = NA, #User initials
-#                final_status = NA, # Final status of the data point after weekly decision
-#                week_decision = NA, #store weekly decision
-#                is_verified = NA) # Store if the data point is verified
+        int_file <- all_filepaths() %>%
+          filter(site == input$site & parameter == input$parameter & directory == input$directory) %>%
+          pull(filename)
+
+         selected_data_cur_filename(update_intermediary_data(int_file, site_param_df))
+      }
 
       # Store the processed data
       selected_data(site_param_df)
 
-      # Set initial week
-#TODO: This should update to first week with unverified data if possible
-      current_week(min(site_param_df$week))
+      # Set initial week to earliest week with missing final_status values (unverified)
+      current_week(site_param_df$week[which.min(is.na(site_param_df$final_status))])
+
 
     }, error = function(e) {
       showNotification(
@@ -1232,7 +1224,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
     # Update the data
     selected_data(updated_data)
-#TODO: update_intermediary_data
+
+    selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
 
     # Clear brushed areas after submission
     brushed_areas(list())
@@ -1263,7 +1256,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       filter(week != current_week())
 
     selected_data(rbind(updated_data, other_data))
-#TODO: update_intermediary_data
+    #update int file and save new filename to selected_data_cur_filename
+    selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
 
   })
 
@@ -1318,13 +1312,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     updated_week_data <- selected_data() %>%
         filter(week == current_week())%>%
         mutate(
-          # No longer saving omit decision in brush_omit only in final status so that it can be easily overwritten
-          # brush_omit = case_when(
-          #   #removing all flags if user selects accept all
-          #   input$weekly_decision == "aa" ~ FALSE,
-          #   input$weekly_decision == "oa" ~ TRUE,
-          #   input$weekly_decision == "of" & !is.na(user_flag) ~ TRUE,
-          #   TRUE ~ omit),
           final_status = case_when(
             #AA:Pass all data
             input$weekly_decision  == "aa"  ~ "PASS",
@@ -1346,26 +1333,37 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             TRUE ~ user_flag),
           user = input$user,
           week_decision = input$weekly_decision,
-          is_verified = TRUE)
+          is_verified = TRUE,
+#TODO: verification status seems to have a different role in the previous version
+          verification_status = final_status,
+          #Omit flagged and omitted data from mean_verified
+          mean_verified = case_when(
+            final_status == "PASS" ~ mean,
+            TRUE ~ NA_real_)
+          )
 
       other_data <- selected_data() %>%
         filter(week != current_week())
 
       selected_data(bind_rows(other_data, updated_week_data)%>%arrange(DT_round))
-#TODO: save to int directory/general save data function
-#Syncfolder/update_int function
+
+      #update int file and save new filename to selected_data_cur_filename
+      selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
 
     # Get all weeks and current week
     weeks <- unique(selected_data()$week)
     current <- current_week()
     idx <- which(weeks == current)
 
+
     # Move to next week if available
     if(all(!is.na(selected_data()$final_status))){
 
       showNotification("All weeks have been reviewed.", type = "message")
       updateTabsetPanel(session, inputId = "tabs", selected = "Finalize Data")
+
       }else{
+
       if(idx == length(weeks)){
         # Find min week where is_verified is NA
         week_min <- selected_data()%>%filter(is.na(is_verified))%>%pull(week)%>%min()
@@ -1390,12 +1388,13 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     # Reset weekly decision back to "s"
     updateRadioButtons(session, "weekly_decision", selected = "s")
     updateCheckboxInput(session, "remove_omit", value = FALSE)
-#TODO: update_intermediary_data
+
 
   })
 
 
 ##### Final Verification Tab ####
+  # get weeks for final week selection select input
   observe({
     req(selected_data())
     weeks <- selected_data() %>%
@@ -1532,27 +1531,54 @@ final_plot_data$final_status <- as.factor(final_plot_data$final_status)
 
   })
 
+  output$submit_final_button <- renderUI({
+    # Check if all selected data is verified
+    all_verified <- FALSE
+    if (!is.null(selected_data())) {
+      all_verified <- all(!is.na(selected_data()$final_status))
+    }
+
+    # Create the button, disabled if not all data is verified
+    if(all_verified) {
+      actionButton("submit_final", "Submit Finalized Dataset",
+                   class = "btn-success w-100")
+    } else {
+      actionButton("submit_final", "Submit Finalized Dataset",
+                   class = "btn-success w-100 disabled",
+                   disabled = TRUE)
+    }
+  })
+
+
   # Handle final submission
   observeEvent(input$submit_final, {
-    showNotification("Final changes submitted successfully!", type = "message")
-    updateNavbarPage(session, inputId = "tabs", selected = "Data Selection")
-#TODO: move_file_to_verified_directory
-#TODO: sync_files()/reset all_datafiles
 
+    #set is_finalized in selected_data() to true
+    update_finalized <- selected_data()%>%
+      mutate(is_finalized = TRUE)
+
+    final_name <- move_file_to_verified_directory(int_to_fin_filename = selected_data_cur_filename(), int_to_fin_df = update_finalized)
+
+    showNotification(paste0(input$site, "-", input$parameter," finalized and saved to ", final_name ), type = "message")
+    updateNavbarPage(session, inputId = "tabs", selected = "Data Selection")
+
+    session$reload()
 
   })
 
   #### Extras ####
   # Handle quit button
   observeEvent(input$quit_app, {
-    #TODO: update_intermediary_data
+    #update int file and save new filename to selected_data_cur_filename
+    selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
     stopApp()
   })
 
   # Add this to handle the keyboard shortcut
   observeEvent(input$q_key, {
     if (input$q_key == "q") {
-      #TODO: update_intermediary_data
+      #update int file and save new filename to selected_data_cur_filename
+      selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
       stopApp()
     }
   })
