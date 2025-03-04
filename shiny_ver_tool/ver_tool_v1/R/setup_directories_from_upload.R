@@ -7,6 +7,7 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   all_path = here("shiny_ver_tool", "ver_tool_v1", "data", "all_data_directory")
   pre_verification_path = here("shiny_ver_tool", "ver_tool_v1","data", "pre_verification_directory")
   intermediary_path = here("shiny_ver_tool", "ver_tool_v1","data", "intermediary_directory")
+  int_archive_path = here("shiny_ver_tool", "ver_tool_v1","data", "int_archive")
   verified_path = here("shiny_ver_tool", "ver_tool_v1","data", "verified_directory")
   raw_data_path = here("shiny_ver_tool", "ver_tool_v1","data", "raw_data")
 
@@ -22,21 +23,55 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
     if (dir.exists(macosx_path) & !is_empty(macosx_path)){
       unlink(macosx_path, recursive = TRUE)  # Remove the folder and its contents
     }
-    #Since this was previously created by the user, we can assume that the all_data and raw data folders exist, if they do not, the user will be prompted to create them
-    if(!dir.exists(all_path)|length(list.files(all_path)) == 0){
-      #check to see if raw_data folder exists
-      if(dir.exists(raw_data_path) & length(list.files(raw_data_path)) > 0){
-        #change uploaded data & type to data in raw_data folder
+    #check/ create all necessary folders
+    if(!dir.exists(all_path)){
+      dir.create(all_path)
+    }
+    #check to see if data folder has pre_verification_directory
+    if(!dir.exists(pre_verification_path)){
+      dir.create(pre_verification_path)
+    }
+    #check to see if data folder has intermediary_directory
+    if(!dir.exists(intermediary_path)){
+      dir.create(intermediary_path)
+    }
+    #check if int_archive exists
+    if(!dir.exists(int_archive_path)){
+      dir.create(int_archive_path)
+    }
+    #check to see if data folder has verified_directory
+    if(!dir.exists(verified_path)){
+      dir.create(verified_path)
+    }
+    #create raw data folder
+    if(!dir.exists(raw_data_path)){
+      dir.create(raw_data_path)
+      if(org_file_type != "zip"){
+        file.copy(uploaded_file_path, raw_data_path)
+      }
+    }
+    if(!dir.exists(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))){
+      dir.create(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))
+    }
+
+    #if a user uploads a zip file, the data will be loaded from the zip file. If there is no data in the all path, check the raw data folder for a file to fill the all path
+    if(length(list.files(all_path)) == 0){
+      #check to see if raw_data folder contains a file
+      if(length(list.files(raw_data_path)) > 0){
+        #change uploaded data to data in raw_data folder to be processessed downstream
         uploaded_file_path <- list.files(raw_data_path, full.names = TRUE)
-        #print("Raw Data selected")
       }else{
         return("No data found in all_data_directory and no raw_data folder found")
       }
     }else{
-      #TODO: probably not the best way to overwrite things like this?
-      return("Data is loaded from zip file and contains all_data_directory data. To add new data, please remove data from all_data_directory and ensure that all orignial data is in raw_data folder")
+      #if no data exists in the pre_data folder but does exist in the all data folder, copy from all data directory
+      if(length(list.files(pre_verification_path)) == 0){
+        R.utils::copyDirectory(all_path, pre_verification_path)
+        return("Data loaded from zip, no files found in pre directory, copied from all_data_directory")
+        }
+      }
+      return("Data is loaded from zip file and contains pre and all_data_directory data.")
     }
-  }
 
   #check to see if data folder/sub folders exist
     if(!dir.exists(data_path)){
@@ -54,6 +89,10 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
     if(!dir.exists(intermediary_path)){
       dir.create(intermediary_path)
     }
+  #check if int_archive exists
+    if(!dir.exists(int_archive_path)){
+      dir.create(int_archive_path)
+    }
     #check to see if data folder has verified_directory
     if(!dir.exists(verified_path)){
       dir.create(verified_path)
@@ -62,7 +101,9 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
     if(!dir.exists(raw_data_path)){
       dir.create(raw_data_path)
       if(org_file_type != "zip"){
-        file.copy(uploaded_file_path, raw_data_path)
+        raw_data_filename <- here(raw_data_path, paste0("raw_data.", org_file_type))
+
+        file.copy(uploaded_file_path, raw_data_filename)
       }
     }
     if(!dir.exists(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))){
@@ -130,7 +171,8 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
                                 brush_omit = FALSE, # User Brush Omit instances, default to FALSE
                                 user = NA, #User initials
                                 final_status = NA, # Final status of the data point after weekly decision
-                                week_decision = NA) #store weekly decision
+                                week_decision = NA,  #store weekly decision
+                                is_finalized = FALSE) #Only TRUE if user submits final decision button
   )
 
   rm(flagged_list) #save some memory here
