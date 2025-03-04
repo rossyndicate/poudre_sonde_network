@@ -1,8 +1,8 @@
 sync_file_system <- function() {
 
-  pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "scratch_data")# pre_verification_path
-  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "scratch_data")# intermediary_path
-  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "scratch_data")# verified_path
+  pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory")# pre_verification_path
+  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory")# intermediary_path
+  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")# verified_path
 
   pre_dir_names <- list.files(pre_dir_path)
   int_dir_names <- list.files(int_dir_path)
@@ -12,6 +12,7 @@ sync_file_system <- function() {
   # Check if there are files that have duplicates, if there are any, run the file duplicate fixer
   duplicate_dfs_list <- list(pre_dir_names, int_dir_names, ver_dir_names) %>%
     set_names(c("pre", "int", "ver")) %>%
+    keep(~length(.x) > 0) %>%
     imap(~{
 
       directory_path <- case_when(
@@ -21,7 +22,7 @@ sync_file_system <- function() {
       )
 
       file_duplicate_alert_df <- map(.x, split_filename) %>%
-        bind_rows() %>%
+        bind_rows()%>%
         mutate(full_file_path = here(directory_path, filename)) %>%
         select(!filename)
 
@@ -62,7 +63,16 @@ sync_file_system <- function() {
 
 # check pre verification directory (this is redundant, just double checking)
 check_pre_ver_dir <- function(pre_file_name) {
-  tryCatch({
+
+  pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory")# pre_verification_path
+  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory")# intermediary_path
+  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")# verified_path
+
+  pre_dir_names <- list.files(pre_dir_path)
+  int_dir_names <- list.files(int_dir_path)
+  ver_dir_names <- list.files(ver_dir_path)
+
+   tryCatch({
     if (length(int_dir_names) > 0 & pre_file_name %in% int_dir_names) {
       file.remove(here(pre_dir_path, pre_file_name))
       cat("removed file ", i, " from ", int_dir_path, "\n")
@@ -78,13 +88,22 @@ check_pre_ver_dir <- function(pre_file_name) {
 
 # Check intermediary verification directory
 check_int_ver_dir <- function(int_file_name) {
+
+  pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory")# pre_verification_path
+  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory")# intermediary_path
+  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")# verified_path
+
+  pre_dir_names <- list.files(pre_dir_path)
+  int_dir_names <- list.files(int_dir_path)
+  ver_dir_names <- list.files(ver_dir_path)
+
   tryCatch({
     # Only read in the verification columns
     df <- read_rds(here(int_dir_path, int_file_name)) %>%
-      select(verification_status, is_verified)
+      select(verification_status, is_verified, is_finalized)
 
     # Check conditions without storing full data
-    if (!any(df$verification_status == 'SKIP') & all(df$is_verified)) {
+    if (!any(df$verification_status == 'SKIP') & all(df$is_verified) & all(df$is_finalized)) {
       # Parse filename to get site and parameter
       file_info <- split_filename(int_file_name)
 
@@ -124,6 +143,15 @@ check_int_ver_dir <- function(int_file_name) {
 
 # Check final verified directory
 check_fin_ver_dir <- function(ver_file_name) {
+
+  pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory")# pre_verification_path
+  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory")# intermediary_path
+  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")# verified_path
+
+  pre_dir_names <- list.files(pre_dir_path)
+  int_dir_names <- list.files(int_dir_path)
+  ver_dir_names <- list.files(ver_dir_path)
+
   tryCatch({
     # Only read verification columns
     df <- read_rds(here(ver_dir_path, ver_file_name)) %>%
@@ -237,23 +265,33 @@ fix_duplicate_files <- function(dataframe_with_duplicate_info, directory){
 
 # Move file from pre to int directory after a user has made the decision to
 # use a pre file and has made a weekly decision.
-move_file_to_intermediary_directory <- function(pre_to_int_df) {
+move_file_to_intermediary_directory <- function(pre_to_int_filename, pre_to_int_df) {
+
+  pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory")# pre_verification_path
+  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory")# intermediary_path
+  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")# verified_path
+
+  pre_dir_names <- list.files(pre_dir_path)
+  int_dir_names <- list.files(int_dir_path)
+  ver_dir_names <- list.files(ver_dir_path)
+
+
   # Run initial sync to resolve pre-existing duplicates
   sync_file_system()
 
   # Extract identifiers and validate
-  file_meta <- split_filename(pre_to_int_df$source_file[1]) # TODO: this won't work on pre directory file names
+  file_meta <- split_filename(pre_to_int_filename)
   site <- file_meta$site
   parameter <- file_meta$parameter
 
   # Generate conflict-safe filename
   timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
   data_hash <- digest::digest(pre_to_int_df)
-  new_filename <- glue("{site}_{parameter}_{timestamp}_{data_hash}.rds")
+  new_filename <- glue("{site}-{parameter}_{timestamp}_{data_hash}.rds")
 
   tryCatch({
     # Check for existing intermediary versions
-    existing_files <- list.files(int_dir_path, pattern = glue("^{site}_{parameter}"))
+    existing_files <- list.files(int_dir_path, pattern = glue("^{site}-{parameter}"))
 
     if(length(existing_files) > 0) {
       # Use sync logic to resolve conflicts
@@ -274,7 +312,7 @@ move_file_to_intermediary_directory <- function(pre_to_int_df) {
     # Post-sync validation
     sync_file_system()
 
-    return(list(success = TRUE, new_file = new_filename))
+    return(new_filename)
   }, error = function(e) {
     # Rollback and sync
     if(file.exists(file.path(int_dir_path, new_filename))) {
@@ -286,11 +324,20 @@ move_file_to_intermediary_directory <- function(pre_to_int_df) {
 }
 
 # Update intermediary data. Needs to be able to update the file and rename the file
-# with an updated datetime and hash. file name structure is: `site_parameter_DT_hash`.
+# with an updated datetime and hash. file name structure is: `site-parameter_DT_hash`.
 # the file should be an RDS
-update_intermediary_data <- function(updated_df) {
+update_intermediary_data <- function(int_df_filename, updated_df) {
+
+   pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory")# pre_verification_path
+  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory")# intermediary_path
+  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")# verified_path
+
+  pre_dir_names <- list.files(pre_dir_path)
+  int_dir_names <- list.files(int_dir_path)
+  ver_dir_names <- list.files(ver_dir_path)
+
   # Get current file metadata
-  file_meta <- split_filename(updated_df$source_file[1])
+  file_meta <- split_filename(int_df_filename)
   site <- file_meta$site
   parameter <- file_meta$parameter
 
@@ -301,10 +348,12 @@ update_intermediary_data <- function(updated_df) {
 
   tryCatch({
     # Archive previous versions but keep last 3
-    existing_files <- list.files(int_dir_path, pattern = glue("^{site}-{parameter}"))
+    existing_files <- list.files(int_dir_path, pattern = glue("^{site}-{parameter}"), full.names = T)
+#TODO: Why is do we want to keep three files?
     if(length(existing_files) > 3) {
       to_archive <- existing_files[1:(length(existing_files)-3)]
-      archive_files(to_archive, "int_archive")
+      file.copy(to_archive, here("shiny_ver_tool", "ver_tool_v1", "data", "int_archive"))
+      file.remove(to_archive)
     }
 
     # Save new version
@@ -314,11 +363,11 @@ update_intermediary_data <- function(updated_df) {
     sync_file_system()
 
     # Validate verification status
-    if(all(updated_df$is_verified)) {
-      check_int_ver_dir(new_filename)
-    }
+    # if(all(updated_df$is_verified)&all(updated_df$is_finalized == TRUE) ) {
+    #   check_int_ver_dir(new_filename)
+    # }
 
-    return(list(success = TRUE, new_version = new_filename))
+    return(new_filename)
   }, error = function(e) {
     # Rollback to previous version
     if(file.exists(file.path(int_dir_path, new_filename))) {
@@ -331,7 +380,16 @@ update_intermediary_data <- function(updated_df) {
 
 # Move file from int to final directory after a user has made the final decision
 # on an int file.
-move_file_to_verified_directory <- function(int_to_fin_df) {
+move_file_to_verified_directory <- function(int_to_fin_filename, int_to_fin_df) {
+
+  pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory")# pre_verification_path
+  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory")# intermediary_path
+  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")# verified_path
+
+  pre_dir_names <- list.files(pre_dir_path)
+  int_dir_names <- list.files(int_dir_path)
+  ver_dir_names <- list.files(ver_dir_path)
+
   # Pre-move validation
   if(any(int_to_fin_df$verification_status == 'SKIP') ||
      any(!int_to_fin_df$is_verified)) {
@@ -339,7 +397,7 @@ move_file_to_verified_directory <- function(int_to_fin_df) {
   }
 
   # Generate final filename
-  file_meta <- split_filename(int_to_fin_df$source_file[1])
+  file_meta <- split_filename(int_to_fin_filename)
   timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
   data_hash <- digest::digest(int_to_fin_df)
   new_filename <- glue("{file_meta$site}-{file_meta$parameter}_FINAL_{timestamp}_{data_hash}.rds")
@@ -358,15 +416,17 @@ move_file_to_verified_directory <- function(int_to_fin_df) {
     }
 
     # Move and validate
-    file.copy(file.path(int_dir_path, int_to_fin_df$source_file[1]),
-              file.path(ver_dir_path, new_filename))
-    file.remove(file.path(int_dir_path, int_to_fin_df$source_file[1]))
+    saveRDS(int_to_fin_df, file.path(ver_dir_path, new_filename))
+    #remove all old int files that match the site-param
+    int_files <- list.files(int_dir_path, pattern = glue("^{file_meta$site}-{file_meta$parameter}"), full.names = T)
+    file.remove(int_files)
 
     # Post-move sync and validation
     sync_file_system()
+#Q: Reduncant? check_fin_ver_dir is already called in sync_file_system call. Doesn't result in any errors, just repeats in console.
     check_fin_ver_dir(new_filename)
 
-    return(list(success = TRUE, final_file = new_filename))
+    return(new_filename)
   }, error = function(e) {
     # Rollback move
     if(file.exists(file.path(ver_dir_path, new_filename))) {
