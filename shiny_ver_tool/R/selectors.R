@@ -71,22 +71,22 @@ relevant_sonde_selector <- function(site_arg) {
 
 
 
-# Get parameters available for a site
-get_parameters <- function(datasets, directory, site) {
-  if (directory == "pre") {
-    data_list <- datasets$pre_verification_data
-  } else {
-    data_list <- datasets$intermediary_data
-  }
-
-  names(data_list) %>%
-    keep(str_detect(., paste0("^", site, "-"))) %>%
-    str_remove(paste0(site, "-"))
-}
+# # Get parameters available for a site
+# get_parameters <- function(datasets, directory, site) {
+#   if (directory == "pre_verification") {
+#     data_list <- datasets$pre_verification_data
+#   } else {
+#     data_list <- datasets$intermediary_data
+#   }
+#
+#   names(data_list) %>%
+#     keep(str_detect(., paste0("^", site, "-"))) %>%
+#     str_remove(paste0(site, "-"))
+# }
 
 get_auto_parameters <- function(parameter) {
   tryCatch({
-    read_csv(here("data", "meta", "parameter_autoselections.csv"), show_col_types = F) %>%
+     read_csv(here("shiny_ver_tool", "data", "meta", "parameter_autoselections.csv"), show_col_types = F) %>%
       filter(main_parameter == parameter) %>%
       pull(sub_parameters) %>%
       first() %>%
