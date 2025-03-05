@@ -331,8 +331,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   # Check if data folder exists and if data/all_data subfolder has files, if files are available, show table of available files and allow user selection
   output$conditional_data_ui <- renderUI({
     # Check if data folder exists and if data/all_data subfolder has files
-    data_folder_exists <- dir.exists(here("shiny_ver_tool", "ver_tool_v1", "data"))
-    all_data_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "all_data_directory")
+    data_folder_exists <- dir.exists(here("shiny_ver_tool",  "data"))
+    all_data_path <- here("shiny_ver_tool",  "data", "all_data_directory")
     all_data_subfolder_empty <- FALSE
 
     if(data_folder_exists) {

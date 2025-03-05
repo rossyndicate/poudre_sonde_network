@@ -1,8 +1,8 @@
 get_filenames <- function(){
-  all_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "all_data_directory")# all_data_path
-  pre_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "pre_verification_directory")# pre_verification_path
-  int_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "intermediary_directory")# intermediary_path
-  ver_dir_path <- here("shiny_ver_tool", "ver_tool_v1", "data", "verified_directory")# verified_path
+  all_dir_path <- here("shiny_ver_tool",  "data", "all_data_directory")# all_data_path
+  pre_dir_path <- here("shiny_ver_tool",  "data", "pre_verification_directory")# pre_verification_path
+  int_dir_path <- here("shiny_ver_tool",  "data", "intermediary_directory")# intermediary_path
+  ver_dir_path <- here("shiny_ver_tool",  "data", "verified_directory")# verified_path
 
   all_dir_names <- list.files(all_dir_path)
   pre_dir_names <- list.files(pre_dir_path)
@@ -24,9 +24,9 @@ get_filenames <- function(){
 
 load_all_datasets <- function() {
 
-  pre_verification_path = here("shiny_ver_tool", "ver_tool_v1","data", "pre_verification_directory")
-  intermediary_path = here("shiny_ver_tool", "ver_tool_v1","data", "intermediary_directory")
-  verified_path = here("shiny_ver_tool", "ver_tool_v1","data", "verified_directory")
+  pre_verification_path = here("shiny_ver_tool", "data", "pre_verification_directory")
+  intermediary_path = here("shiny_ver_tool", "data", "intermediary_directory")
+  verified_path = here("shiny_ver_tool", "data", "verified_directory")
 
   list(
     # all_data = set_names(

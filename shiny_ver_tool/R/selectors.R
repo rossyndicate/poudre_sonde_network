@@ -86,7 +86,7 @@ get_parameters <- function(datasets, directory, site) {
 
 get_auto_parameters <- function(parameter) {
   tryCatch({
-    read_csv("data/meta/parameter_autoselections.csv", show_col_types = F) %>%
+    read_csv(here("data", "meta", "parameter_autoselections.csv"), show_col_types = F) %>%
       filter(main_parameter == parameter) %>%
       pull(sub_parameters) %>%
       first() %>%

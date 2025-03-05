@@ -3,13 +3,13 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   #for testing:setwd("~/Documents/fork_yeah/poudre_sonde_network/shiny_ver_tool/ver_tool_v1")
 
   testing_path = here("shiny_ver_tool", "ver_tool_v1")
-  data_path = here("shiny_ver_tool", "ver_tool_v1", "data")
-  all_path = here("shiny_ver_tool", "ver_tool_v1", "data", "all_data_directory")
-  pre_verification_path = here("shiny_ver_tool", "ver_tool_v1","data", "pre_verification_directory")
-  intermediary_path = here("shiny_ver_tool", "ver_tool_v1","data", "intermediary_directory")
-  int_archive_path = here("shiny_ver_tool", "ver_tool_v1","data", "int_archive")
-  verified_path = here("shiny_ver_tool", "ver_tool_v1","data", "verified_directory")
-  raw_data_path = here("shiny_ver_tool", "ver_tool_v1","data", "raw_data")
+  data_path = here("shiny_ver_tool",  "data")
+  all_path = here("shiny_ver_tool",  "data", "all_data_directory")
+  pre_verification_path = here("shiny_ver_tool", "data", "pre_verification_directory")
+  intermediary_path = here("shiny_ver_tool", "data", "intermediary_directory")
+  int_archive_path = here("shiny_ver_tool", "data", "int_archive")
+  verified_path = here("shiny_ver_tool", "data", "verified_directory")
+  raw_data_path = here("shiny_ver_tool", "data", "raw_data")
 
   uploaded_file_type <- tools::file_ext(uploaded_file_path)
   org_file_type <- uploaded_file_type
@@ -50,8 +50,8 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
         file.copy(uploaded_file_path, raw_data_path)
       }
     }
-    if(!dir.exists(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))){
-      dir.create(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))
+    if(!dir.exists(here("shiny_ver_tool", "data", "meta"))){
+      dir.create(here("shiny_ver_tool", "data", "meta"))
     }
 
     #if a user uploads a zip file, the data will be loaded from the zip file. If there is no data in the all path, check the raw data folder for a file to fill the all path
@@ -106,8 +106,8 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
         file.copy(uploaded_file_path, raw_data_filename)
       }
     }
-    if(!dir.exists(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))){
-      dir.create(here("shiny_ver_tool", "ver_tool_v1","data", "meta"))
+    if(!dir.exists(here("shiny_ver_tool", "data", "meta"))){
+      dir.create(here("shiny_ver_tool", "data", "meta"))
     }
 
   #this will read in the file based on its type and check to make sure there is no missing columns

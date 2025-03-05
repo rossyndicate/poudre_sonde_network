@@ -1,13 +1,13 @@
 add_threshold_lines <- function(plot, plot_data, site_arg, parameter_arg) {
 
   # pull in threshold data
-  # real_thresholds <- read_csv(here("shiny_ver_tool", "ver_tool_v1", "data","meta", "realistic_thresholds.csv"), show_col_types = FALSE) %>%
+  # real_thresholds <- read_csv(here("shiny_ver_tool",  "data","meta", "realistic_thresholds.csv"), show_col_types = FALSE) %>%
   #   filter(parameter == parameter_arg)
   #
-  # sensor_thresholds <- yaml::read_yaml(here("shiny_ver_tool", "ver_tool_v1", "data","meta", "sensor_spec_thresholds.yml"))[[parameter_arg]] %>%
+  # sensor_thresholds <- yaml::read_yaml(here("shiny_ver_tool",  "data","meta", "sensor_spec_thresholds.yml"))[[parameter_arg]] %>%
   #   bind_rows()
 
-  seasonal_thresholds <- read_csv(here("shiny_ver_tool", "ver_tool_v1", "data","meta", 'seasonal_thresholds.csv'), show_col_types = FALSE) %>%
+  seasonal_thresholds <- read_csv(here("shiny_ver_tool",  "data","meta", 'seasonal_thresholds.csv'), show_col_types = FALSE) %>%
     # to do: Check to make sure seasonal thresholds csv is not necessary
     #bind_rows(read_csv(here('data', 'qaqc', 'seasonal_thresholds.csv'), show_col_type = FALSE),
     distinct(site, parameter, season, .keep_all = TRUE) %>%
