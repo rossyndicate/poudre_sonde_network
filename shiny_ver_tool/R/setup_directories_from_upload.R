@@ -167,6 +167,13 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
                                 y_w = paste(year, "-", week),
                                 day = yday(DT_round),
                                 y_d = paste(year, "-", day),
+                                #based on Colorado Hydrology, should be removed for DS version
+                                season = case_when(
+                                  month(DT_round) %in% c(12, 1, 2, 3, 4) ~ "winter_baseflow",
+                                  month(DT_round) %in% c(5, 6) ~ "snowmelt",
+                                  month(DT_round) %in% c(7, 8, 9) ~ "monsoon",
+                                  month(DT_round) %in% c(10, 11) ~ "fall_baseflow"
+                                ),
                                 user_flag = flag, # Keep Auto flags in flag column, user added flags/alterations live in user flag
                                 brush_omit = FALSE, # User Brush Omit instances, default to FALSE
                                 user = NA, #User initials
