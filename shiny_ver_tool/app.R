@@ -708,7 +708,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     # Remove any NULL results from the list
     relevant_sondes <- compact(relevant_sondes)
 
- # browser()
      # append week_data to relevant sonde list, clean list, and bind dfs
      relevant_dfs <- map(relevant_sondes, ~.x[[1]])
      week_plot_data <- append(relevant_dfs, list(week_data)) %>%
@@ -958,8 +957,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   output$sub_plots <- renderPlot({
     req(all_datasets(), current_week(), input$site, input$sub_parameters, input$sub_sites)
 
-
-    #all_data <- all_datasets()[["all_data"]]
     pre_verification_data <- all_datasets()[["pre_verification_data"]]
     intermediary_data <- all_datasets()[["intermediary_data"]]
     verified_data <- all_datasets()[["verified_data"]]
@@ -982,9 +979,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       if (df_name_arg %in% names(pre_verification_data) & any(year_week_arg %in% pre_verification_data[[df_name_arg]]$y_w)) {
         return("pre_verification_data")
       }
-      # if (df_name_arg %in% names(all_data) & any(year_week_arg %in% all_data[[df_name_arg]]$y_w)) {
-      #   return("all_data")
-      # }
+
 
     }
 
@@ -1014,7 +1009,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             tryCatch({
               sonde_df <- get(data_source)[[sonde_name]] %>%
                 filter(y_w == year_week)
-#TODO: correctly filter omit/flag data as needed by data source
             }, error = function(err) {
               #cat("Sonde", sonde_name, "not found.\n")
               return(NULL)  # Return NULL if sonde data can't be retrieved
@@ -1042,7 +1036,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
 
       # Create plot
-      p <- ggplot() +
+      p <-
+        ggplot() +
         # Add main site as grey points
         geom_point(data = all_sub_plot_data%>%filter(site == input$site),
                    aes(x = DT_round, y = mean_verified),
@@ -1076,10 +1071,11 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
               axis.text.x = element_text())
 
       # Combine plots with specific heights
-      wrap_plots(plots, ncol = 1)+
+     all_plot <-  wrap_plots(plots, ncol = 1)+
         #heights = rep(plot_height/800, length(plots))) +
         plot_layout(guides = "collect") &
         theme(legend.position='top')
+      all_plot
     }
 
 
