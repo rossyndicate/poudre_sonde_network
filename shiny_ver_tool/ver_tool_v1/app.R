@@ -339,7 +339,6 @@ server <- function(input, output, session) {
   selected_data <- reactiveVal(NULL) # This is essentially site param df
   all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots?
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
-  #all_filepaths <- reactiveVal(NULL) # List of all filepaths in data
   selected_data_cur_filename <- reactiveVal(NULL) # Current filename of selected data, to be updated as filename is saved
 
 auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
@@ -409,7 +408,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   output$data_files_table <- renderDataTable({
     files <- all_filepaths() %>%
       filter(directory %in% c("pre_verification", "intermediary", "verified")) %>%
-      select(-filename) %>%
+      select(-filename, -datetime) %>%
       distinct() %>%
       pivot_wider(
         names_from = parameter,
