@@ -24,27 +24,23 @@ site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea"
                            color = c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC",
                                      "#117744", "#44AA77", "#88CCAA", "#777711", "#AAAA44","#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788"))
 
-# final_status_colors <- c("PASS" = "#5e9c4d",
-#                            "FLAGGED" = "#d88e2f",
-#                            "OMIT" = "#ba0012")
-#
-# final_status_colors <- c("PASS" = "#008744",
-#                          "FLAGGED" = "#ffa700",
-#                          "OMIT" = "#d62d20")
 
-# final_status_colors <- c("PASS" = "#008a18",
-#                          "OMIT" = "#ff1100",
-#                          "FLAGGED" = "#ff8200")
 final_status_colors <- c("PASS" = "green",
                          "OMIT" = "red",
                          "FLAGGED" = "orange")
 
 
 #TODO: Create function that actually looks for available parameters in the data
-available_parameters <- c("Specific Conductivity", "Temperature", "pH",
-                          "Turbidity", "DO", "Depth")
+available_parameters <- get_filenames()%>%mutate(
+  parameter = map_chr(filename, ~ split_filename(.x)$parameter))%>%
+  pull(parameter)%>%
+  unique()
+
 #TODO: Create function that actually looks for available sites in the data
-available_sites <- site_color_combo$site
+available_sites <- get_filenames()%>%mutate(
+  site = map_chr(filename, ~ split_filename(.x)$site))%>%
+  pull(site)%>%
+  unique()
 
 ###### End Helper Functions ######
 
@@ -59,17 +55,6 @@ ui <- page_navbar(
   #theme = bs_theme(version = 5, bootswatch  = "zephyr")
   theme = bs_theme(preset = "bootstrap"),
 
-# #Tab 0: For future version to be shared open source
-# nav_panel(
-#   title = "Data Setup",
-#   card(
-#     card_header("Data Upload"),
-#     card_body(
-#       fileInput("upload", "Upload a file", accept = c(".zip")),
-#       tableOutput("uploaded_files")
-#     )
-#   )
-# ),
 
 
   #### Tab 1: Data Selection ####
@@ -409,6 +394,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     files <- all_filepaths() %>%
       filter(directory %in% c("pre_verification", "intermediary", "verified")) %>%
       select(-filename, -datetime) %>%
+      mutate(parameter = gsub("_FINAL", "", parameter) )%>% #remove _FINAL from parameter names to make it play nice with final directory
       distinct() %>%
       pivot_wider(
         names_from = parameter,
@@ -513,7 +499,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
 
   # Load data when button is clicked
-#TODO: This will need to be updated to match new site/param names on backend, as long as the data is loaded to selected_data(), everything should work downstream
   observeEvent(input$load_data, {
     req(input$directory, input$site, input$parameter)
     # Initialize data directories and load datasets
@@ -522,21 +507,32 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
 #TODO: This loads all data and is probably inefficient, should be updated to only load the data needed
       datasets <- load_all_datasets()
-      # Get the site-parameter name using split_filename on the name of each list
+
       datasets <- map(datasets, function(data_list) {
-        #if data_list is empty, return data_list immideatly
-        if(is_empty(data_list)){
+        # Return immediately if data_list is empty
+        if (is_empty(data_list)) {
           return(data_list)
         }
 
-        file_names <- map(names(data_list), split_filename) %>%
-          bind_rows() %>%
-          mutate(site_param = paste(site, parameter, sep = "-"))
+        # Extract filenames from list names and maintain their original order
+        file_names <- tibble(list_name = names(data_list)) %>%
+          mutate(split_data = map(list_name, split_filename)) %>%
+          unnest_wider(split_data) %>%
+          mutate(parameter = gsub("_FINAL", "", parameter) )%>% #remove _FINAL from parameter names to make it play nice with final directory
+          mutate(site_param = paste(site, parameter, sep = "-")) %>%
+          group_by(site_param) %>%
+          arrange(desc(datetime)) %>%  # Sort so the latest entry remains unchanged
+          mutate(site_param = if_else(row_number() == 1, site_param, paste0(site_param, "_backup"))) %>%
+          ungroup()
 
-        # Assign new names to the list
-        names(data_list) <- file_names$site_param
+        # Ensure names are applied in the correct order by matching filenames
+        names(data_list) <- file_names$site_param[match(names(data_list), file_names$filename)]
+
         return(data_list)
       })
+
+
+
 
       all_datasets(datasets)
 
@@ -569,6 +565,9 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
         int_file <- all_filepaths() %>%
           filter(site == input$site & parameter == input$parameter & directory == input$directory) %>%
+          #grab the most recent version!
+          arrange(desc(datetime))%>%
+          slice(1)%>%
           pull(filename)
 
          selected_data_cur_filename(update_intermediary_data(int_file, site_param_df))
@@ -578,7 +577,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       selected_data(site_param_df)
 
       # Set initial week to earliest week with missing final_status values (unverified)
-      current_week(site_param_df$week[which.min(is.na(site_param_df$final_status))])
+      current_week(site_param_df$week[min(which(is.na(site_param_df$final_status)))])
 
 
     }, error = function(e) {
@@ -667,9 +666,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       if (df_name_arg %in% names(pre_verification_data) & any(year_week_arg %in% pre_verification_data[[df_name_arg]]$y_w)) {
         return("pre_verification_data")
       }
-      if (df_name_arg %in% names(all_data) & any(year_week_arg %in% all_data[[df_name_arg]]$y_w)) {
-        return("all_data")
-      }
 
     }
 
@@ -712,6 +708,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     # Remove any NULL results from the list
     relevant_sondes <- compact(relevant_sondes)
 
+ # browser()
      # append week_data to relevant sonde list, clean list, and bind dfs
      relevant_dfs <- map(relevant_sondes, ~.x[[1]])
      week_plot_data <- append(relevant_dfs, list(week_data)) %>%
@@ -962,7 +959,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     req(all_datasets(), current_week(), input$site, input$sub_parameters, input$sub_sites)
 
 
-    all_data <- all_datasets()[["all_data"]]
+    #all_data <- all_datasets()[["all_data"]]
     pre_verification_data <- all_datasets()[["pre_verification_data"]]
     intermediary_data <- all_datasets()[["intermediary_data"]]
     verified_data <- all_datasets()[["verified_data"]]
@@ -985,9 +982,9 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       if (df_name_arg %in% names(pre_verification_data) & any(year_week_arg %in% pre_verification_data[[df_name_arg]]$y_w)) {
         return("pre_verification_data")
       }
-      if (df_name_arg %in% names(all_data) & any(year_week_arg %in% all_data[[df_name_arg]]$y_w)) {
-        return("all_data")
-      }
+      # if (df_name_arg %in% names(all_data) & any(year_week_arg %in% all_data[[df_name_arg]]$y_w)) {
+      #   return("all_data")
+      # }
 
     }
 
@@ -1048,12 +1045,12 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       p <- ggplot() +
         # Add main site as grey points
         geom_point(data = all_sub_plot_data%>%filter(site == input$site),
-                   aes(x = DT_round, y = mean),
+                   aes(x = DT_round, y = mean_verified),
                    color = "grey40",
                    size = 2) +
         # Add sub sites as colored lines
         geom_line(data = all_sub_plot_data%>%filter(site %in% input$sub_sites),
-                  aes(x = DT_round, y = mean, color = site),
+                  aes(x = DT_round, y = mean_verified, color = site),
                   linewidth = 1) +
         scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site)) +
         labs(x = "Date",
@@ -1283,7 +1280,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     )
   })
 
-
   # Submit decision button UI
   # Toggles on (green) if user has correctly selected a decision
   output$submit_decision_ui <- renderUI({
@@ -1337,7 +1333,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           verification_status = final_status,
           #Omit flagged and omitted data from mean_verified
           mean_verified = case_when(
-            final_status == "PASS" ~ mean,
+            final_status %in%c("PASS", "FLAG") ~ mean,
             TRUE ~ NA_real_)
           )
 
