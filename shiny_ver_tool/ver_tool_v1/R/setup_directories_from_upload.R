@@ -158,7 +158,7 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
                             x %>%
                               mutate(
                                 mean = value, # actual data for DS use
-                                mean_verified = NA, # if verification status pass, this is mean
+                                mean_verified = mean, # if verification status pass or flag, this is mean. set default to mean so that it can be used in the app
                                 is_verified = FALSE, # whether or not the data has been verified
                                 verification_status = NA, # can only be pass/fail/skip
                                 year = year(DT_round),
