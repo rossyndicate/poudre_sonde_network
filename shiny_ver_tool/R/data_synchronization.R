@@ -347,14 +347,9 @@ update_intermediary_data <- function(int_df_filename, updated_df) {
   new_filename <- glue("{site}-{parameter}_{timestamp}_{data_hash}.rds")
 
   tryCatch({
-    # Archive previous versions but keep last 3
-    existing_files <- list.files(int_dir_path, pattern = glue("^{site}-{parameter}"), full.names = T)
-#TODO: Why is do we want to keep three files?
-    if(length(existing_files) > 3) {
-      to_archive <- existing_files[1:(length(existing_files)-3)]
-      file.copy(to_archive, here("shiny_ver_tool",  "data", "int_archive"))
-      file.remove(to_archive)
-    }
+    # Archive previous versions
+    existing_files <- list.files(int_dir_path, pattern = glue("^{site}-{parameter}"), full.names = TRUE)
+    file.remove(existing_files)
 
     # Save new version
     saveRDS(updated_df, file.path(int_dir_path, new_filename))
