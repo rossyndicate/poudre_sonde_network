@@ -30,16 +30,21 @@ final_status_colors <- c("PASS" = "green",
                          "FLAGGED" = "orange")
 
 
-#TODO: Create function that actually looks for available parameters in the data
+
 available_parameters <- get_filenames()%>%mutate(
   parameter = map_chr(filename, ~ split_filename(.x)$parameter))%>%
   pull(parameter)%>%
   unique()
 
-#TODO: Create function that actually looks for available sites in the data
+
 available_sites <- get_filenames()%>%mutate(
   site = map_chr(filename, ~ split_filename(.x)$site))%>%
   pull(site)%>%
+  unique()
+
+#TODO: Automate for public version or ask for user input
+available_flags <- read_csv(here("shiny_ver_tool", "data", "meta", "available_flags.csv"), show_col_types = F)%>%
+  pull(flags)%>%
   unique()
 
 ###### End Helper Functions ######
@@ -52,7 +57,6 @@ ui <- page_navbar(
   nav_item(
     input_dark_mode(id = "dark_mode", mode = "light") #Toggle light vs dark mode
   ),
-  #theme = bs_theme(version = 5, bootswatch  = "zephyr")
   theme = bs_theme(preset = "bootstrap"),
 
 
@@ -126,6 +130,13 @@ nav_panel(
                 materialSwitch(
                   inputId = "incl_thresholds",
                   label = "Thresholds",
+                  value = FALSE,
+                  width = "200px",
+                  status = "success"
+                ),
+                materialSwitch(
+                  inputId = "plot_log10",
+                  label = "Log 10",
                   value = FALSE,
                   width = "200px",
                   status = "success"
@@ -210,12 +221,8 @@ nav_panel(
                            inline = TRUE),  # This makes the radio buttons horizontal
               actionButton("clear_brushes", "Clear Brushes")
             ),
-#TODO: Update this so that it comes from a list of user defined flags
             selectizeInput("user_brush_flags", "Select Flags:",
-                        choices = c("sv" = "sv",
-                                    "suspect data" = "suspect",
-                                    "sensor malfunction" = "malfunction",
-                                    "drift" = "drift"),
+                        choices = available_flags,
                         multiple = TRUE,
                         options = list(plugins = "remove_button")),
 
@@ -237,7 +244,6 @@ nav_panel(
     # Main Plot Card
 #To Do: Convert to plotly object for better data vis
     card(
-      card_header("Final Data Overview"),
       card_body(
         plotlyOutput("final_plot", height = "100%", width = "100%")
       )
@@ -247,7 +253,13 @@ nav_panel(
     card(
         card_header("Modify Verification"),
         card_body(
-          checkboxInput("remove_omit_finalplot", "Remove omitted data from plot", value = FALSE),
+          materialSwitch(
+            inputId = "remove_omit_finalplot",
+            label = "Remove omitted data from plot",
+            value = FALSE,
+            width = "200px",
+            status = "success"
+          ),
           selectInput("final_week_selection", "Select Week:", choices = NULL),
           actionButton("goto_final_week", "Return to Selected Week",
                        class = "btn-primary w-100 mb-3"),
@@ -352,9 +364,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     } else {
 #Show regular UI if files are present
       tagList(
-
-        # Display files in data folder as a table
-        h4("Files in data folder:"),
         DT::dataTableOutput("data_files_table"),
         # Directory selection
         selectInput("directory", "Choose Directory:",
@@ -828,6 +837,10 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             )
         }
 
+        if(input$plot_log10){
+          p <- p + scale_y_log10()
+        }
+
       p
     } else {
       #TO DO: Swap with create weekly plot function call, adding in other sites, etc
@@ -949,6 +962,10 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           )
       }
 
+      if(input$plot_log10){
+        p <- p + scale_y_log10()
+      }
+
       p
     }
   })
@@ -965,7 +982,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       filter(week == current_week())
 
     year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
-    #flag_day <- min(week_data$DT_round)
     all_sub_sites <- c(input$site, input$sub_sites)
     #picking the correct name of the data frame
     retrieve_relevant_data_name <- function(df_name_arg, year_week_arg = NULL) {
@@ -1418,18 +1434,18 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     }
 
 
-
+#browser()
 #start & end of period (still not tested on multiyear datasets)
 min_year <- min(selected_data()$year)
 max_year <- max(selected_data()$year)
-#Find start of week (even if it is before the start of the week)
-start_week <- min(selected_data()$week)
-start_date <- parse_date_time(paste(min_year, start_week, 0, sep="/"),'Y/W/w')
-#Find end of last week (even if it is after the end of the data)
-end_week <- max(selected_data()$week)
-end_date <- parse_date_time(paste(max_year, end_week, 6, sep="/"),'Y/W/w')
-#create vertical lines to seperate each week
-vline_dates <- seq(start_date, end_date, by = "week")
+# Find the first day of the minimum week in the data
+start_date <- parse_date_time(paste(min_year, min(selected_data()$week), 1, sep="/"), 'Y/U/u')
+# Find the last day of the maximum week in the data
+end_date <- parse_date_time(paste(max_year, max(selected_data()$week), 7, sep="/"), 'Y/U/u')
+# Create vertical lines at the beginning of each week
+vline_dates <- seq(start_date,
+                   end_date,
+                   by = "week")
 #add 3 days to each vertical line to center the week
 week_dates <- vline_dates + days(3)
 
@@ -1437,13 +1453,6 @@ final_status_colors <- c("PASS" = "#008a18",
                          "OMIT" = "#ff1100",
                          "FLAGGED" = "#ff8200",
                          "NA" = "grey")
-
-# final_status_colors <- c(
-#   "PASS" = "green",
-#   "FLAGGED" = "yellow",
-#   "OMIT" = "red",
-#   "NA" = "gray"  # Assign a color for NA values
-# )
 
 # Replace NA values in final_status (this will not affect the actual saved data, just for plotting)
 final_plot_data$final_status <- ifelse(is.na(final_plot_data$final_status), "NA", final_plot_data$final_status)
@@ -1547,12 +1556,12 @@ final_plot_data$final_status <- as.factor(final_plot_data$final_status)
     #set is_finalized in selected_data() to true
     update_finalized <- selected_data()%>%
       mutate(is_finalized = TRUE)
-
+# Move the dataset to the finalized directory and print the file name for users to see
     final_name <- move_file_to_verified_directory(int_to_fin_filename = selected_data_cur_filename(), int_to_fin_df = update_finalized)
 
     showNotification(paste0(input$site, "-", input$parameter," finalized and saved to ", final_name ), type = "message")
     updateNavbarPage(session, inputId = "tabs", selected = "Data Selection")
-
+#reload the session to update the data displayed in the data selection tab and reset all reactive elements
     session$reload()
 
   })
