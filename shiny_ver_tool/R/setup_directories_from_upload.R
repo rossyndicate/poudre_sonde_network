@@ -7,7 +7,6 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   all_path = here("shiny_ver_tool",  "data", "all_data_directory")
   pre_verification_path = here("shiny_ver_tool", "data", "pre_verification_directory")
   intermediary_path = here("shiny_ver_tool", "data", "intermediary_directory")
-  int_archive_path = here("shiny_ver_tool", "data", "int_archive")
   verified_path = here("shiny_ver_tool", "data", "verified_directory")
   raw_data_path = here("shiny_ver_tool", "data", "raw_data")
 
@@ -35,10 +34,7 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
     if(!dir.exists(intermediary_path)){
       dir.create(intermediary_path)
     }
-    #check if int_archive exists
-    if(!dir.exists(int_archive_path)){
-      dir.create(int_archive_path)
-    }
+
     #check to see if data folder has verified_directory
     if(!dir.exists(verified_path)){
       dir.create(verified_path)
@@ -88,10 +84,6 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
     #check to see if data folder has intermediary_directory
     if(!dir.exists(intermediary_path)){
       dir.create(intermediary_path)
-    }
-  #check if int_archive exists
-    if(!dir.exists(int_archive_path)){
-      dir.create(int_archive_path)
     }
     #check to see if data folder has verified_directory
     if(!dir.exists(verified_path)){
