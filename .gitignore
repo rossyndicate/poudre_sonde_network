@@ -31,3 +31,5 @@ _targets/
 #Sam testing script
 scratch/sjs_scratch.Rmd
 timelapse_data
+#testing data for shiny app
+shiny_ver_tool/ver_tool_v1/data/
