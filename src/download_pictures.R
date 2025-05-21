@@ -14,7 +14,9 @@ download_pictures <- function(){
 
   all_notes_cleaned <- load_mWater_notes()
   # Find all the downloaded pictures
-  all_file_names <- tolower(list.files(path = "data/field_pics/", recursive = TRUE))
+  all_file_names <- tolower(list.files(path = "data/field_pics/", recursive = TRUE, full.names = T))
+  # basic path to field pics
+  path <- "data/field_pics//sampling_pics/"
   #grab notes
   sampling_photos <- all_notes_cleaned%>%
     #grab needed columns
@@ -26,19 +28,19 @@ download_pictures <- function(){
       yyyymmdd = format(start_dt, "%Y%m%d"),
       #create filenames ONLY if there is a URL associated with the site visit
       upstream_filename = case_when(
-        !is.na(upstream_pic) ~ paste0(site, "_", yyyymmdd, "_upstream.jpg"),
+        !is.na(upstream_pic) ~ paste0(path, site, "_", yyyymmdd, "_upstream.jpg"),
         TRUE ~ NA_character_
       ),
       downstream_filename = case_when(
-        !is.na(downstream_pic) ~ paste0(site, "_", yyyymmdd, "_downstream.jpg"),
+        !is.na(downstream_pic) ~ paste0(path, site, "_", yyyymmdd, "_downstream.jpg"),
         TRUE ~ NA_character_
       ),
       clarity_filename = case_when(
-        !is.na(clarity) ~ paste0(site, "_", yyyymmdd, "_clarity.jpg"),
+        !is.na(clarity) ~ paste0(path, site, "_", yyyymmdd, "_clarity.jpg"),
         TRUE ~ NA_character_
       ),
       filter_filename = case_when(
-        !is.na(filter_pic) ~ paste0(site, "_", yyyymmdd, "_filter.jpg"),
+        !is.na(filter_pic) ~ paste0(path, site, "_", yyyymmdd, "_filter.jpg"),
         TRUE ~ NA_character_
       ),
       # check to see if the photo is already downloaded to folder
@@ -63,30 +65,31 @@ download_pictures <- function(){
         TRUE ~ FALSE
       )
     )
-# basic path to field pics
-path <- "data/field_pics/sampling_pics/"
+
 
 
   # loop thru dataset and download the photo ONLY if it is not yet downloaded and not NA
   for (i in 1:nrow(sampling_photos)) {
     if (!is.na(sampling_photos$upstream_downloaded[i]) && !sampling_photos$upstream_downloaded[i]) {
       #print(sampling_photos$upstream_filename[i])
-      download.file(sampling_photos$upstream_pic[i], destfile = paste0(path,sampling_photos$upstream_filename[i]))
+      download.file(sampling_photos$upstream_pic[i], destfile = paste0(sampling_photos$upstream_filename[i]))
     }
 
     if (!is.na(sampling_photos$downstream_downloaded[i]) && !sampling_photos$downstream_downloaded[i]) {
       #print(sampling_photos$downstream_filename[i])
-      download.file(sampling_photos$downstream_pic[i], destfile = paste0(path, sampling_photos$downstream_filename[i]))
+      download.file(sampling_photos$downstream_pic[i], destfile = paste0(sampling_photos$downstream_filename[i]))
     }
     if (!is.na(sampling_photos$clarity_downloaded[i]) && !sampling_photos$clarity_downloaded[i]) {
       #print(sampling_photos$clarity_filename[i])
-      download.file(sampling_photos$clarity[i], destfile = paste0(path, sampling_photos$clarity_filename[i]))
+      download.file(sampling_photos$clarity[i], destfile = paste0(sampling_photos$clarity_filename[i]))
     }
     if (!is.na(sampling_photos$filter_downloaded[i]) && !sampling_photos$filter_downloaded[i]) {
       #print(sampling_photos$filter_filename[i])
-      download.file(sampling_photos$filter_pic[i], destfile = paste0(path, sampling_photos$filter_filename[i]))
+      download.file(sampling_photos$filter_pic[i], destfile = paste0(sampling_photos$filter_filename[i]))
     }
   }
+
+  path <- "data/field_pics//"
 
   #grab notes for sites with other pictures
   other_photos <- all_notes_cleaned%>%
@@ -109,7 +112,7 @@ path <- "data/field_pics/sampling_pics/"
     select(site, start_dt,yyyymmdd, other_pic = other_pic_sep, other_pic_descriptor = other_descriptor_sep)%>%
     # make descriptor lower case and remove any spaces in the name
     mutate(other_pic_descriptor = tolower(str_replace_all(other_pic_descriptor, " ", "_")),
-           other_filename = case_when(!is.na(other_pic) ~ paste0(site, "_", yyyymmdd, "_", other_pic_descriptor, ".jpg")),
+           other_filename = case_when(!is.na(other_pic) ~ paste0(path, site, "_", yyyymmdd, "_", other_pic_descriptor, ".jpg")),
            # Check to see if photo has already been downloaded
            other_downloaded = case_when(
              is.na(other_filename) ~ NA,
@@ -117,12 +120,12 @@ path <- "data/field_pics/sampling_pics/"
              TRUE ~ FALSE
            ))
 
-  path <- "data/field_pics/"
+
   # loop thru dataset and download the photo ONLY if it is not yet downloaded and not NA
   for (i in 1:nrow(other_photos)) {
     if (!is.na(other_photos$other_downloaded[i]) && !other_photos$other_downloaded[i]) {
       #print(other_photos$other_filename[i])
-      download.file(other_photos$other_pic[i], destfile = paste0(path,other_photos$other_filename[i]))
+      download.file(other_photos$other_pic[i], destfile = paste0(other_photos$other_filename[i]))
     }}
 
 cat("\nAll Available Pictures Downloaded\n")
