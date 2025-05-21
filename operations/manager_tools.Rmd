@@ -26,6 +26,21 @@ files_missing()
 
 ```
 
+## Current Sensor Locations
+
+Goal: 
+- Track sensor locations & SNs using most recent calibration reports
+- update the sensor tracking sheet with site and sonde SN
+
+
+```{r}
+source("src/current_sensor_locations.R")
+
+current_sensor_locations()
+
+```
+
+
 ## Water Sampling Data:
 
 Goal:
@@ -69,6 +84,8 @@ source("src/download_pictures.R")
 
 download_pictures()
 ```
+
+
 
 # Remove extra objects not needed in QAQC pipeline
 ```{r}
