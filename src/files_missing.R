@@ -30,7 +30,11 @@ files_missing <- function(){
   logs_simple <- str_extract(list.files(path = paste0("data/sensor_data/", field_season), recursive = TRUE), "\\w+_\\d{8}_(vulink|troll)")%>%tolower()
 
 
-
+  # Find relevant sonde SN
+  active_sns <- readxl::read_xlsx(here("data", "metadata", "2025_sensor_tracking.xlsx"), sheet = "station_info")%>%
+    select(site = site_code, sn = Current_sonde_sn)%>%
+    filter(!is.na(sn))%>%
+    mutate(site = tolower(site))
 
   #grab sensor notes that have logs or cal reports that should be  downloaded
   sensor_files <- all_notes_cleaned%>%
@@ -98,7 +102,8 @@ files_missing <- function(){
         is.na(cal_report_collected) ~ FALSE,
         cal_report_name %nin% cal_reports_simple ~ TRUE,
         TRUE ~ FALSE)
-      )
+      )%>%
+    left_join(active_sns, by = "site")
 
 
 
@@ -111,7 +116,7 @@ files_missing <- function(){
     }
     #if log missing print out missing logs or cal reports
     if(sensor_files$cal_missing[i]){
-      cat("\nCal Missing: ", sensor_files$full_cal_name[i]," \nContact: ", sensor_files$crew[i], "\n")
+      cat("\nCal Missing: ", sensor_files$full_cal_name[i],"\nSonde SN: ", sensor_files$sn[i], " \nContact: ", sensor_files$crew[i], "\n")
     }
 
 
