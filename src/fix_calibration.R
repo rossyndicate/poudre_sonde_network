@@ -25,8 +25,6 @@ fix_calibration <- function(df, cal_errors = readxl::read_excel("data/calibratio
   # first "bad" depth is forced to equal the last "good" depth and I offset all
   # subsequent "bad" depth values by the difference between them.
 
-  if(df_parameter == "Depth"){
-
     if(!"Depth" %in% df$parameter){
 
       nope <- df %>% dplyr::mutate(cal_fix = NA)
@@ -34,6 +32,12 @@ fix_calibration <- function(df, cal_errors = readxl::read_excel("data/calibratio
       return(nope)
 
     }
+
+  if(df_parameter == "Depth"){
+
+
+    df <- df %>%
+      mutate(raw = mean)
 
     if("Depth" %in% df$parameter & "archery" %in% df$site){
 
