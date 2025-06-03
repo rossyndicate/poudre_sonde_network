@@ -19,8 +19,8 @@ options(shiny.maxRequestSize = 10000 * 1024^2)
 
 ##### Colors + parameters #####
 
-site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","tamasag","legacy", "lincoln", "timberline virridy", "timberline",
-                                    "prospect virridy", "prospect","boxelder",  "archery virridy", "archery", "boxcreek", "springcreek", "river bluffs"),
+site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","bellvue","salyer", "udall", "riverbend_virridy", "riverbend",
+                                    "cottonwood_virridy", "cottonwood","elc",  "archery_virridy", "archery", "boxcreek", "springcreek", "riverbluffs"),
                            color = c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC",
                                      "#117744", "#44AA77", "#88CCAA", "#777711", "#AAAA44","#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788"))
 
@@ -370,7 +370,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
                      choices = c("pre_verification", "intermediary"),
                      selected = "pre_verification"),
         selectInput("user", "Select User:",
-                    choices = c("SJS", "JDT", "CLM", "AS"), selected = "SJS"),
+                    choices = c("SJS",  "KH","JDT", "KW", "BS"), selected = "SJS"),
         # Site selection
         selectInput("site", "Select Site:",
                     choices = NULL),
@@ -539,8 +539,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
         return(data_list)
       })
-
-
 
 
       all_datasets(datasets)
