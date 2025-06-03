@@ -22,49 +22,52 @@ relevant_sonde_selector <- function(site_arg) {
     plot_filter <- c("sfm")
   }
   if (site_arg == "pbd") {
-    plot_filter <- c("sfm", "tamasag")
+    plot_filter <- c("sfm", "bellvue")
   }
-  if (site_arg == "tamasag") {
-    plot_filter <- c("pbd", "legacy")
+  if (site_arg == "bellvue") {
+    plot_filter <- c("pbd", "salyer")
   }
-  if (site_arg == "legacy") {
-    plot_filter <- c("tamasag", "lincoln")
+  if (site_arg == "salyer") {
+    plot_filter <- c("bellvue", "udall")
   }
-  if (site_arg == "lincoln") {
-    plot_filter <- c("legacy", "timberline", "timberline virridy")
+  if (site_arg == "udall") {
+    plot_filter <- c("salyer", "riverbend", "riverbend_virridy")
   }
-  if (site_arg == "timberline") {
-    plot_filter <- c("lincoln", "timberline virridy", "prospect")
+  if (site_arg == "riverbend") {
+    plot_filter <- c("udall", "riverbend_virridy", "cottonwood")
   }
-  if (site_arg == "timberline virridy") {
-    plot_filter <- c("lincoln", "timberline", "prospect", "prospect virridy")
+  if (site_arg == "riverbend_virridy") {
+    plot_filter <- c("udall", "riverbend", "cottonwood", "cottonwood_virridy")
   }
   if (site_arg == "springcreek") {
-    plot_filter <- c("prospect virridy", "prospect")
+    plot_filter <- c("cottonwood_virridy", "cottonwood")
   }
-  if (site_arg == "prospect") {
-    plot_filter <- c("timberline", "prospect virridy", "boxelder")
+  if (site_arg == "cottonwood") {
+    plot_filter <- c("riverbend", "cottonwood virridy", "elc")
   }
-  if (site_arg == "prospect virridy") {
-    plot_filter <- c("timberline virridy", "prospect", "boxelder")
+  if (site_arg == "cottonwood_virridy") {
+    plot_filter <- c("riverbend_virridy", "cottonwood", "elc")
   }
-  if (site_arg == "boxelder") {
-    plot_filter <- c("prospect",
-                     "prospect virridy",
+  if (site_arg == "elc") {
+    plot_filter <- c("cottonwood",
+                     "cottonwood_virridy",
                      "archery",
-                     "archery virridy")
+                     "archery_virridy")
   }
   if (site_arg == "boxcreek") {
-    plot_filter <- c("archery", "archery virridy")
+    plot_filter <- c("archery", "archery_virridy")
   }
   if (site_arg == "archery") {
-    plot_filter <- c("boxelder", "archery virridy", "river bluffs")
+    plot_filter <- c("elc", "archery_virridy", "riverbluffs")
   }
-  if (site_arg == "archery virridy") {
-    plot_filter <- c("boxelder", "archery", "river bluffs")
+  if (site_arg == "archery_virridy") {
+    plot_filter <- c("elc", "archery", "riverbluffs")
   }
-  if (site_arg == "river bluffs") {
-    plot_filter <- c("archery", "archery virridy")
+  if (site_arg == "riverbluffs") {
+    plot_filter <- c("archery", "archery_virridy")
+  }
+  if (site_arg == "mtncampus") {
+    plot_filter <- c("sfm")
   }
   return(plot_filter)
 }

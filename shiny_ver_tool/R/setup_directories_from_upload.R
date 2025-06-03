@@ -54,7 +54,7 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
     if(length(list.files(all_path)) == 0){
       #check to see if raw_data folder contains a file
       if(length(list.files(raw_data_path)) > 0){
-        #change uploaded data to data in raw_data folder to be processessed downstream
+        #change uploaded data to data in raw_data folder to be processed downstream
         uploaded_file_path <- list.files(raw_data_path, full.names = TRUE)
       }else{
         return("No data found in all_data_directory and no raw_data folder found")

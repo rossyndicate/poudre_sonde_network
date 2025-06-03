@@ -24,11 +24,14 @@ invisible(
            "RcppRoll",
            "yaml",
            "here",
-           "fcw.qaqc",
+           #"fcw.qaqc",
            "furrr"
   ),
   package_loader)
 )
+
+#manually load in fcw_qaqc functions
+walk(list.files('fcw_QAQC_func/', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
 
 # Set up parallel processing
 num_workers <- min(availableCores() - 1, 4) # Use at most 4 workers
@@ -62,12 +65,12 @@ fix_sites <- function(df) {
 }
 
 # Establishing directory paths.
-staging_directory <- here("data", "hydrovu_2024_data", "raw")
-flagged_directory <- here("data", "hydrovu_2024_data", "flagged")
+staging_directory <- here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "raw_sam")
+flagged_directory <- here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged")
 
 # Read in the threshold data first
-sensor_thresholds <- read_yaml(here("data", "hydrovu_2024_data", "thresholds", "sensor_spec_thresholds.yml"))
-season_thresholds <- read_csv(here("data", "hydrovu_2024_data", "thresholds", "outdated_seasonal_thresholds.csv"), show_col_types = FALSE) %>%
+sensor_thresholds <- read_yaml(here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "thresholds", "sensor_spec_thresholds.yml"))
+season_thresholds <- read_csv(here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "thresholds", "outdated_seasonal_thresholds.csv"), show_col_types = FALSE) %>%
   fix_sites()
 
 # Read in credentials
@@ -91,26 +94,52 @@ mst_start <- ymd_hms("2024-01-01 00:00:00", tz = "America/Denver")
 mst_end <- ymd_hms("2024-12-31 23:59:59", tz = "America/Denver")
 
 # Upload the hv data
-sites <- c("archery", "bellvue", "boxcreek", "boxelder", "cbri", "chd", "cottonwood", "elc",
-           "joei", "lbea", "legacy", "lincoln", "mtncampus", "pbd", "pbr", "penn",
-           "pfal", "pman", "prospect", "river bluffs", "riverbluffs", "riverbend",
-           "salyer", "sfm", "springcreek", "tamasag", "timberline", "udall")
+# sites <- c("archery","bellvue","boxcreek", "boxelder", "cbri", "chd", "cottonwood", "elc",
+#            "joei", "lbea", "legacy", "lincoln", "mtncampus", "pbd", "pbr", "penn",
+#            "pfal", "pman", "prospect", "river bluffs", "riverbluffs", "riverbend",
+#            "salyer", "sfm", "springcreek", "tamasag", "timberline", "udall")
+sites <- c("sfm")
 
 walk(sites,
      function(site) {
        message("Requesting HV data for: ", site)
        api_puller(
          site = site,
+        network = "all",
          start_dt = with_tz(mst_start, tzone = "UTC"),
          end_dt = with_tz(mst_end, tzone = "UTC"),
          api_token = hv_token,
-         hv_sites_arg = hv_sites,
-         dump_dir = staging_directory,
-         synapse_env = FALSE,
-         fs = NULL
+         #hv_sites_arg = hv_sites,
+         dump_dir = staging_directory
+        #synapse_env = FALSE,
+         #fs = NULL
        )
      }
 )
+
+start_dt = with_tz(mst_start, tzone = "UTC")
+end_dt = with_tz(mst_end, tzone = "UTC")
+
+sfm_file <- list.files(staging_directory, pattern = "sfm", full.names = TRUE)
+#read in api data
+sfm_hydrovu <- read_parquet(sfm_file, as_data_frame = TRUE)
+
+# add non logged data from SFM to SFM data file
+sfm_livestream <- read_csv("data/manual_data_verification/2024_cycle/hydro_vu_pull/extra_data/SFM_2024-12-10_1430.csv",
+                           show_col_types = F)%>%
+  filter(parameter != "% Saturation O₂", !is.na(value))%>%
+  mutate(units = ifelse(parameter == "Temperature", "C", units))%>%
+  #only keep dates where data is not in sfm
+  filter(timestamp >= start_dt & timestamp <= end_dt)
+
+sfm_final <- bind_rows( sfm_hydrovu, sfm_livestream)
+
+#write to final file
+write_parquet(sfm_final,
+            here(staging_directory, paste0("sfm_", stringr::str_replace(stringr::str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".parquet")))
+
+
+
 
 # Load in all the raw files
 # Since the munge api data is different, we are going to do this with a "custom munge"
@@ -126,13 +155,13 @@ data_2024 <- hv_data %>%
   select(-id) %>%
   mutate(units = as.character(units)) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
-  filter(!grepl("virridy", site, ignore.case = TRUE)) %>%
+  #filter(!grepl("virridy", site, ignore.case = TRUE)) %>%
   mutate(
     DT = timestamp,
     DT_round = round_date(DT, "15 minutes"),
     DT_join = as.character(DT_round),
     site = tolower(site),
-    site = ifelse(grepl("virridy", name, ignore.case = TRUE), paste0(site, "_virridy"), site)
+    site = ifelse(grepl("virridy", name, ignore.case = TRUE), str_replace(site, " virridy", "_virridy"), site)
   ) %>%
   select(-name) %>%
   fix_sites() %>%
@@ -156,7 +185,7 @@ combined_data <- tidy_data %>%
 
 # Add summary statistics
 summarized_data <- combined_data %>%
-  future_map(~generate_summary_statistics(.), .progress = TRUE)
+  map(~generate_summary_statistics(.))
 
 # Chunk the data for furrr
 summarized_data_chunks <- split(1:length(summarized_data),
@@ -277,11 +306,11 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
   }
 }
 # Let's temporarily save this data so i can remove everything else
-iwalk(intrasensor_flags_list, ~write_csv(.x, here("data", "hydrovu_2024_data", "flagged", paste0(.y, ".csv"))))
+iwalk(intrasensor_flags_list, ~write_csv(.x, here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged_temp", paste0(.y, ".csv"))))
 
 # Because we are pulling in all of the data for all of the sites, and the
 # network check to do that is not applicable, here we make a custom net work check function
-custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags) {
+custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags_list) {
 
   site_name <- unique(na.omit(df$site))
   parameter_name <- unique(na.omit(df$parameter))
@@ -305,13 +334,13 @@ custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags) 
   }
 
   if(site_name == "springcreek"){
-    sites_order <- c("timberline_virridy",
+    sites_order <- c("riverbend_virridy",
                      "springcreek",
-                     "prospect_virridy")
+                     "cottonwood_virridy")
   }
 
   if(site_name == "boxcreek"){
-    sites_order <- c("elc_virridy",
+    sites_order <- c("elc",
                      "boxcreek",
                      "archery_virridy")
   }
@@ -321,7 +350,7 @@ custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags) 
   }
 
   # exlcude virridy sites
-  if (site_name %in% c("springcreek_virridy","riverbend_virridy","cottonwood_virridy","boxcreek_virridy","timberline_virridy", "prospect_virridy", "elc_virridy", "archery_virridy")){
+  if (site_name %in% c("riverbend_virridy","cottonwood_virridy","timberline_virridy", "prospect_virridy", "elc", "archery_virridy")){
     return(df)
   }
 
@@ -419,20 +448,22 @@ custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags) 
 
 # I really don't understand how network check would work in parallel, so I don't.
 final_flags <- intrasensor_flags_list %>%
-  purrr::map(~custom_network_check(df = ., intrasensor_flags_arg = intrasensor_flags)) %>%
+  purrr::map(~custom_network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list)) %>%
   rbindlist(fill = TRUE) %>%
   tidy_flag_column() %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   purrr::map(~add_suspect_flag(.)) %>%
-  rbindlist(fill = TRUE) %>%
+  rbindlist(fill = TRUE)
+
+v_final_flags <- final_flags%>%
   dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA,
                                    ifelse(auto_flag == "suspect data" & is.na(lag(auto_flag, 1)) & is.na(lead(auto_flag, 1)), NA, auto_flag))) %>%
-  dplyr::select(c("DT_round", "DT_join", "site", "parameter", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved")) %>%
+  dplyr::select(c("DT_round", "DT_join", "site", "parameter", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit")) %>%
   dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
 
 # Save the data individually.
-iwalk(final_flags, ~write_csv(.x, here("data", "hydrovu_2024_data", "flagged", paste0(.y, ".csv"))))
+iwalk(v_final_flags, ~write_csv(.x, here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged_sam", paste0(.y, ".csv"))))
 
 # TODO: delete raw data files that are virridy_virridy
