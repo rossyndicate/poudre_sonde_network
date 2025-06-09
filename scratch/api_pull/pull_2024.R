@@ -65,8 +65,8 @@ fix_sites <- function(df) {
 }
 
 # Establishing directory paths.
-staging_directory <- here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "raw_sam")
-flagged_directory <- here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged")
+staging_directory <- here("data","sharing", "quartely_meetings", "2025_Q2", "raw_data")
+flagged_directory <- here("data","sharing", "quartely_meetings", "2025_Q2", "flagged_data")
 
 # Read in the threshold data first
 sensor_thresholds <- read_yaml(here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "thresholds", "sensor_spec_thresholds.yml"))
@@ -82,23 +82,29 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
 
 # Pulling in the data from mWater
 mWater_data <- load_mWater(creds = mWater_creds)
-all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)
-sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data)
+all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
+  mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
+         last_site_visit = with_tz(last_site_visit, tzone = "UTC"),
+         DT_join = as.character(DT_round))
+sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data)%>%
+  mutate(start_DT = with_tz(start_DT, tzone = "UTC"),
+         end_DT = with_tz(end_DT, tzone = "UTC"))
 
 # Pulling in the data from hydrovu
 # Making the list of sites that we need
 hv_sites <- hv_locations_all(hv_token) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE))
 
-mst_start <- ymd_hms("2024-01-01 00:00:00", tz = "America/Denver")
-mst_end <- ymd_hms("2024-12-31 23:59:59", tz = "America/Denver")
+mst_start <- ymd_hms("2025-03-01 00:00:00", tz = "America/Denver")
+mst_end <- ymd_hms("2025-06-01 23:59:59", tz = "America/Denver")
 
 # Upload the hv data
 # sites <- c("archery","bellvue","boxcreek", "boxelder", "cbri", "chd", "cottonwood", "elc",
 #            "joei", "lbea", "legacy", "lincoln", "mtncampus", "pbd", "pbr", "penn",
 #            "pfal", "pman", "prospect", "river bluffs", "riverbluffs", "riverbend",
 #            "salyer", "sfm", "springcreek", "tamasag", "timberline", "udall")
-sites <- c("sfm")
+sites <- c("pbd", "bellvue", "salyer", "udall", "riverbend", "cottonwood",
+           "elc", "archery", "riverbluffs", "springcreek")
 
 walk(sites,
      function(site) {
