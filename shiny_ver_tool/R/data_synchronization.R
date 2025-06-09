@@ -162,7 +162,7 @@ check_fin_ver_dir <- function(ver_file_name) {
       cat(msg, "\n")
       stop(msg)
     } else {
-      cat("File", ver_file_name, "is correctly verified\n")
+      #cat("File", ver_file_name, "is correctly verified\n")
     }
   }, error = function(e) {
     warning(sprintf("Error processing file %s: %s", ver_file_name, e$message))
@@ -186,6 +186,9 @@ split_filename <- function(filename) {
   } else {
     site_param <- strsplit(parts[1], "-")[[1]]
   }
+
+  #remove _Final if found in site_param[2]
+  site_param[2] <- gsub("_FINAL", "", site_param[2])
 
   list(
     filename = filename,
