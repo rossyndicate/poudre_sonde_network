@@ -166,6 +166,16 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
                                   month(DT_round) %in% c(7, 8, 9) ~ "monsoon",
                                   month(DT_round) %in% c(10, 11) ~ "fall_baseflow"
                                 ),
+                                auto_flag = flag,
+                                #merge auto_flag and mal_flag by ; into flag. don't include NAs
+                                flag = case_when(
+                                #both are flagged then combine by ;
+                                !is.na(auto_flag)&!is.na(mal_flag) ~ paste(auto_flag, mal_flag, sep = ";"),
+                                #only auto_flag is flagged, only use auto_flag
+                                !is.na(auto_flag)&is.na(mal_flag) ~ auto_flag,
+                                #only mal_flag is flagged, only use mal_flag
+                                !is.na(mal_flag)&is.na(auto_flag) ~ mal_flag
+                                         ),
                                 user_flag = flag, # Keep Auto flags in flag column, user added flags/alterations live in user flag
                                 brush_omit = FALSE, # User Brush Omit instances, default to FALSE
                                 user = NA, #User initials
