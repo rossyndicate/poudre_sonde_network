@@ -17,6 +17,8 @@ library(glue)
 library(anytime)
 options(shiny.maxRequestSize = 10000 * 1024^2)
 
+`%nin%` = Negate(`%in%`)
+
 ##### Colors + parameters #####
 
 site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","bellvue","salyer", "udall", "riverbend_virridy", "riverbend",
@@ -198,7 +200,7 @@ nav_panel(
                           options = list(plugins = "remove_button")),
               div(
                 style = "height: 600px; overflow-y: auto;",  # Make this div scrollable
-                plotOutput("sub_plots", width = "100%", height = "100%")
+                plotlyOutput("sub_plots", width = "100%", height = "100%")
               )
 
 
@@ -256,6 +258,13 @@ nav_panel(
           materialSwitch(
             inputId = "remove_omit_finalplot",
             label = "Remove omitted data from plot",
+            value = FALSE,
+            width = "200px",
+            status = "success"
+          ),
+          materialSwitch(
+            inputId = "log10_finalplot",
+            label = "Log Transform",
             value = FALSE,
             width = "200px",
             status = "success"
@@ -793,7 +802,23 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
           y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
 
-          geom_line(data = add_data, aes(x = DT_round, y = .data[[y_column]], color = site), linewidth = 1)
+          # Add isolated point identification
+          add_data_with_isolated <- add_data %>%
+            arrange(site, DT_round) %>%
+            group_by(site) %>%
+            mutate(
+              is_isolated = is.na(lag(.data[[y_column]])) & is.na(lead(.data[[y_column]])) & !is.na(.data[[y_column]])
+            )
+
+          # Return a list of both geom_line and geom_linerange
+          list(
+            geom_line(data = add_data_with_isolated,
+                      aes(x = DT_round, y = .data[[y_column]], color = site),
+                      linewidth = 1, na.rm = TRUE),
+            geom_linerange(data = filter(add_data_with_isolated, is_isolated),
+                           aes(x = DT_round, ymin = .data[[y_column]] - 0.1, ymax = .data[[y_column]] + 0.1, color = site),
+                           size = 0.5)
+          )
         }) + #plot other sites
         geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching final decision
         geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean, fill = final_status), shape = 21, stroke = 0, size = 1.5, alpha = 0.5)+ #add two extra days on the side
@@ -842,6 +867,9 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       p
     } else {
       #TO DO: Swap with create weekly plot function call, adding in other sites, etc
+
+
+
       if(input$remove_omit){
         week_data <- week_data %>%
           filter(!brush_omit)
@@ -876,8 +904,12 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
         week_plus_max <- week_max_check %>%
           summarise(xmin = min(DT_round), xmax = max(DT_round))
 
-        p <- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+        p<- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
       }
+
+      #set the value for the geom_crossbar, should adjust in size based on range of data
+      adjustment_value = sd(week_data$mean, na.rm = TRUE)*.05
+
       p <- p +
         map(relevant_sondes, function(sonde_data) {
           add_data <- sonde_data[[1]]
@@ -885,7 +917,25 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
           y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
 
-          geom_line(data = add_data, aes(x = DT_round, y = .data[[y_column]], color = site), linewidth = 1)
+          # Add isolated point identification
+          add_data_with_isolated <- add_data %>%
+            arrange(site, DT_round) %>%
+            group_by(site) %>%
+            mutate(
+              is_isolated = is.na(lag(.data[[y_column]])) & is.na(lead(.data[[y_column]])) & !is.na(.data[[y_column]])
+            )
+
+          # Return a list of both geom_line and geom_linerange
+          list(
+            geom_line(data = add_data_with_isolated,
+                      aes(x = DT_round, y = .data[[y_column]], color = site),
+                      linewidth = 1, na.rm = TRUE),
+            geom_crossbar(data = filter(add_data_with_isolated, is_isolated),
+                          aes(x = DT_round, y = .data[[y_column]],
+                              ymin = .data[[y_column]] - adjustment_value , ymax = .data[[y_column]] + adjustment_value,
+                              color = site),
+                          width = 0.5, size = 0.5)
+          )
         }) + # add other sites
         geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean),fill = "black",shape = 21, stroke = 0, size = 1.5, alpha = 0.5)+ #add two extra days on the side
         geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching  user flag column
@@ -953,11 +1003,12 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       }else{
         p <- p +
           scale_x_datetime(
-            limits = c(min(week_data$DT_round, na.rm = TRUE)-hours(1),
-                       max(week_data$DT_round, na.rm = TRUE)+hours(1)),
+            limits = c(min(week_data$DT_round, na.rm = TRUE)-hours(0),
+                       max(week_data$DT_round, na.rm = TRUE)+hours(0)),
             date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
             date_breaks = "1 day" # Remove extra white space
-          )
+          )+
+          scale_y_continuous(expand = c(0, 0)) # Remove extra white space
       }
 
       if(input$plot_log10){
@@ -968,8 +1019,9 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     }
   })
 
+
 ## Sub plots output
-  output$sub_plots <- renderPlot({
+  output$sub_plots <- renderPlotly({
     req(all_datasets(), current_week(), input$site, input$sub_parameters, input$sub_sites)
 
     pre_verification_data <- all_datasets()[["pre_verification_data"]]
@@ -999,16 +1051,13 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
 
     # Create individual plots for each sub parameter
-    plots <- map(input$sub_parameters, function(param) {
-
-      all_sub_plot_data <- map_dfr(all_sub_sites, function(sub_site) {
-
+    all_sub_plot_data <- map_dfr(input$sub_parameters, function(param) {
+      map_dfr(all_sub_sites, function(sub_site) {
         # Get the relevant sonde data
         relevant_sondes <- map(sub_site, ~ {
           sonde_name <- paste0(.x, "-", param)
           data_source <- NULL
           sonde_df <- NULL
-
           # Determine which directory to pull data from
           tryCatch({
             data_source <- retrieve_relevant_data_name(sonde_name, year_week)
@@ -1017,7 +1066,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             #cat("Data for",sonde_name,"not found.\n")
             return(NULL)  # Return NULL if data source can't be determined
           })
-
           # Only try to pull in the data if data_source was successfully determined
           if (!is.null(data_source)) {
             tryCatch({
@@ -1028,70 +1076,263 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
               return(NULL)  # Return NULL if sonde data can't be retrieved
             })
           }
-
           # Only return a list if both data_source and sonde_df are available
           if (!is.null(data_source) & !is.null(sonde_df)) {
             return(sonde_df)
           } else {
             return(NULL)  # Return NULL if either data_source or sonde_df is NULL
           }
-
         })
-
         # Remove any NULL results from the list
         relevant_sondes <- compact(relevant_sondes)
         if(length(relevant_sondes) == 0) {
           return(NULL)
-        }else{
+        } else {
           relevant_sondes
         }
-
       })
 
-
-      # Create plot
-      p <-
-        ggplot() +
-        # Add main site as grey points
-        geom_point(data = all_sub_plot_data%>%filter(site == input$site),
-                   aes(x = DT_round, y = mean_verified),
-                   color = "grey40",
-                   size = 2) +
-        # Add sub sites as colored lines
-        geom_line(data = all_sub_plot_data%>%filter(site %in% input$sub_sites),
-                  aes(x = DT_round, y = mean_verified, color = site),
-                  linewidth = 1) +
-        scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site)) +
-        labs(x = "Date",
-             y = param,
-             #title = param,
-             color = "Sites") +
-        theme_minimal() +
-        theme(axis.title.x = element_blank())
+    })%>%
+      mutate(mean_verified = signif(mean_verified, digits = 3))
 
 
-      return(p)
+      max_param <- all_sub_plot_data %>%
+        distinct(parameter, site) %>%  # ensure unique param-site pairs
+        group_by(parameter) %>%
+        summarise(site_count = n()) %>%
+        ungroup()%>%
+        #find the max and pull the parameter
+        arrange(desc(site_count)) %>%
+        slice(1) %>%
+        pull(parameter)
+
+      plots <- map(input$sub_parameters, function(param){
+
+
+
+        #if(param == max_param){
+
+          # Create plotly plot
+          p <- plot_ly()
+
+          # Add main site as grey points
+          main_site_data <- all_sub_plot_data %>%
+            filter(site == input$site,
+                   parameter == param)
+
+          if (nrow(main_site_data) > 0) {
+            p <- p %>%
+              add_markers(
+                data = main_site_data,
+                x = ~DT_round,
+                y = ~mean_verified,
+                marker = list(color = "grey", size = 8),
+                name = input$site,
+                legendgroup = input$site,
+                showlegend = param == max_param
+                # to not have extra legends using plotly, one plot needs to have a legend, pick the one with the most sites (max_param)
+                #otherwise it is the exact same as the other param plots
+
+                #showlegend = TRUE
+              )
+          }
+
+          # Add sub sites as colored lines
+          sub_site_data <- all_sub_plot_data %>%
+            filter(site %in% input$sub_sites,
+                   parameter == param)
+
+          if (nrow(sub_site_data) > 0) {
+            # Get site colors using joins
+            sub_site_data_with_colors <- sub_site_data %>%
+              left_join(site_color_combo, by = "site") %>%
+              replace_na(list(color = "red"))  # fallback color
+
+            # Add lines for each sub site using walk
+            sub_site_data_with_colors %>%
+              split(.$site) %>%
+              iwalk(~ {
+                site_color <- unique(.x$color)[1]  # Get the color for this site
+
+                p <<- p %>%
+                  add_lines(
+                    data = .x,
+                    x = ~DT_round,
+                    y = ~mean_verified,
+                    line = list(color = site_color, width = 3),
+                    name = .y,
+                    legendgroup = .y,
+
+                    showlegend = param == max_param
+                    #showlegend = TRUE
+                  )
+              })
+          }
+
+          # Configure layout
+          p <- p %>%
+            layout(
+              xaxis = list(title = "Date"),
+              yaxis = list(title = param),
+              showlegend = param == max_param,
+              legend = list(
+                orientation = "h",
+                x = 0.5,
+                xanchor = "center",
+                y = 1.1,
+                title = list(text = "Sites")
+              ),
+              margin = list(t = 80, b = 40)
+            )
+
+          return(p)
+        #}
+
+    #   # Create plotly plot
+    #   p <- plot_ly()
+    #
+    #   # Add main site as grey points
+    #   main_site_data <- all_sub_plot_data %>%
+    #     filter(site == input$site,
+    #            parameter == param)
+    #
+    #   if (nrow(main_site_data) > 0) {
+    #     p <- p %>%
+    #       add_markers(
+    #         data = main_site_data,
+    #         x = ~DT_round,
+    #         y = ~mean_verified,
+    #         marker = list(color = "grey", size = 8),
+    #         name = input$site,
+    #         legendgroup = input$site,
+    #         showlegend = F
+    #         #showlegend = TRUE
+    #       )
+    #   }
+    #
+    #   # Add sub sites as colored lines
+    #   sub_site_data <- all_sub_plot_data %>%
+    #     filter(site %in% input$sub_sites,
+    #            parameter == param)
+    #
+    #   if (nrow(sub_site_data) > 0) {
+    #     # Get site colors using joins
+    #     sub_site_data_with_colors <- sub_site_data %>%
+    #       left_join(site_color_combo, by = "site") %>%
+    #       replace_na(list(color = "red"))  # fallback color
+    #
+    #     # Add lines for each sub site using walk
+    #     sub_site_data_with_colors %>%
+    #       split(.$site) %>%
+    #       iwalk(~ {
+    #         site_color <- unique(.x$color)[1]  # Get the color for this site
+    #
+    #         p <<- p %>%
+    #           add_lines(
+    #             data = .x,
+    #             x = ~DT_round,
+    #             y = ~mean_verified,
+    #             line = list(color = site_color, width = 3),
+    #             name = .y,
+    #             legendgroup = .y,
+    #
+    #             showlegend = F
+    #             #showlegend = TRUE
+    #           )
+    #       })
+    #   }
+    #
+    #   # Configure layout
+    #   p <- p %>%
+    #     layout(
+    #       xaxis = list(title = "Date"),
+    #       yaxis = list(title = param),
+    #       showlegend = TRUE,
+    #       legend = list(
+    #         orientation = "h",
+    #         x = 0.5,
+    #         xanchor = "center",
+    #         y = 1.1,
+    #         title = list(text = "Sites")
+    #       ),
+    #       margin = list(t = 80, b = 40)
+    #     )
+    #
+    #   return(p)
     }) %>%
       compact()
 
     if (length(plots) > 0) {
-      # Calculate height for each plot: 600px / number of plots
-     # plot_height <- 800 / length(plots)
-      plots[[1]] <- plots[[1]] +
-        theme(axis.text.x = element_text())
-      # Add x-axis label to last plot only
-      plots[[length(plots)]] <- plots[[length(plots)]] +
-        theme(axis.title.x = element_text(),
-              axis.text.x = element_text())
+      # Filter out any NULL or invalid plots using keep
+      valid_plots <- plots %>%
+        keep(~ !is.null(.x))
 
-      # Combine plots with specific heights
-     all_plot <-  wrap_plots(plots, ncol = 1)+
-        #heights = rep(plot_height/800, length(plots))) +
-        plot_layout(guides = "collect") &
-        theme(legend.position='top')
+      if (length(valid_plots) == 1) {
+        # If only one plot, return it directly with proper layout
+        all_plot <- valid_plots[[1]] %>%
+          layout(
+            showlegend = TRUE,
+            legend = list(
+              orientation = "h",
+              x = 0.5,
+              xanchor = "center",
+              y = 1.02,
+              title = list(text = "Sites")
+            ),
+            margin = list(t = 100)
+          )
+
+
+        } else if (length(valid_plots) > 1) {
+        # Create subplot with shared x-axis for multiple plots
+        tryCatch({
+          all_plot <- subplot(
+            valid_plots,
+            nrows = length(valid_plots),
+            shareX = TRUE,
+            titleY = TRUE,
+            margin = 0.05
+          ) %>%
+            layout(
+              showlegend = TRUE,
+              legend = list(
+                orientation = "h",
+                xanchor = "center",
+                title = list(text = "Sites")
+              ),
+              margin = list(t = 100)
+            )
+
+        }, error = function(e) {
+          # Fallback: create a simple combined plot
+          warning("Subplot creation failed, creating alternative layout")
+
+          # Use the first valid plot as fallback
+          all_plot <- valid_plots[[1]] %>%
+            layout(
+              showlegend = TRUE,
+              legend = list(
+                orientation = "h",
+                x = 0.5,
+                xanchor = "center",
+                y = 1.02,
+                title = list(text = "Sites")
+              ),
+              margin = list(t = 100),
+              title = "Plot creation partially failed - showing first available plot"
+            )
+        })
+      } else {
+        # No valid plots - create empty plot
+        all_plot <- plot_ly() %>%
+          layout(
+            title = "No data available",
+            showlegend = FALSE
+          )
+      }
+
       all_plot
-    }
-
+  }
 
   })
 
@@ -1143,10 +1384,10 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 #Can only click button if there is a brush selection and a decision has been made
     if (!is.null(input$plot_brush) & !is.null(input$brush_action)) {
 
-      if(input$brush_action != "F"){
+      if(input$brush_action == "A"){
         can_submit = TRUE
       }else{
-        if(input$brush_action == "F"){
+        if(input$brush_action %in% c("F", "O")){
           can_submit = FALSE
           if(!is.null(input$user_brush_flags)){
             can_submit = TRUE
@@ -1197,30 +1438,33 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
         data %>%
           mutate(
             user_flag = case_when(
+
               between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
                 between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select == "A" ~ as.character(NA),
+                user_brush_select == "A" ~ as.character(NA), # remove flags
+
               between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
                 between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select == "F" ~ paste(input$user_brush_flags, collapse = ";\n"),
+                user_brush_select == "F" ~ paste(input$user_brush_flags, collapse = ";\n"), # add user selected flags
+
               between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
                 between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select == "O" ~ user_flag,
+                user_brush_select == "O" ~ paste(input$user_brush_flags, collapse = ";\n"), # add user selected flags
               TRUE ~ user_flag
             ),
             brush_omit = case_when(
               between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
                 between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select == "O" ~ TRUE,
+                user_brush_select == "O" ~ TRUE, # set omit to true if brushed with Omit
               between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
                 between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select %in% c("A", "F") ~ FALSE,
+                user_brush_select %in% c("A", "F") ~ FALSE, # set omit to false if brushed with Accept or Flag
               TRUE ~ brush_omit
             ),
             user = ifelse(
               between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
                 between(mean, brush$brush_mean_min, brush$brush_mean_max),
-              input$user,
+              input$user, # set user to input$user if brushed
               user
             )
           )
@@ -1432,7 +1676,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     }
 
 
-#browser()
+
 #start & end of period (still not tested on multiyear datasets)
 min_year <- min(selected_data()$year)
 max_year <- max(selected_data()$year)
@@ -1524,6 +1768,12 @@ final_plot_data$final_status <- as.factor(final_plot_data$final_status)
         )
       )
   }
+
+ if(input$log10_finalplot){
+
+   p_plotly <- layout(p_plotly, yaxis = list(type = "log"))
+ }
+
 
   p_plotly
 
