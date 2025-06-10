@@ -870,6 +870,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
 
 
+
       if(input$remove_omit){
         week_data <- week_data %>%
           filter(!brush_omit)
@@ -879,33 +880,42 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       }
       if(input$remove_flag){
         week_data <- week_data %>%
-          filter(is.na(user_flag))
+          filter(is.na(user_flag) | brush_omit) # remove flagged data unless it is omitted
 
         week_plus_data <- week_plus_data %>%
           filter(final_status != "FLAGGED"| is.na(final_status))
       }
 
-      week_min_check <- week_plus_data %>%
-        filter(week < current_week())
 
-      week_max_check <- week_plus_data %>%
-        filter(week > current_week())
 
       p <-ggplot(week_data, aes(x = DT_round))
 
-      if (nrow(week_min_check) > 0) {
 
-        week_plus_min <- week_min_check %>%
-          summarise(xmin = min(DT_round), xmax = max(DT_round))
+       if(input$incl_ex_days){
 
-        p <- p + annotate(geom = "rect", xmin = week_plus_min$xmin, xmax = week_plus_min$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+         week_min_check <- week_plus_data %>%
+           filter(week < current_week())
+
+         week_max_check <- week_plus_data %>%
+           filter(week > current_week())
+
+         if (nrow(week_min_check) > 0) {
+
+           week_plus_min <- week_min_check %>%
+             summarise(xmin = min(DT_round), xmax = max(DT_round))
+
+           p <- p + annotate(geom = "rect", xmin = week_plus_min$xmin, xmax = week_plus_min$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+         }
+         if (nrow(week_max_check) > 0) {
+           week_plus_max <- week_max_check %>%
+             summarise(xmin = min(DT_round), xmax = max(DT_round))
+
+           p<- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+         }
+
+
       }
-      if (nrow(week_max_check) > 0) {
-        week_plus_max <- week_max_check %>%
-          summarise(xmin = min(DT_round), xmax = max(DT_round))
 
-        p<- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
-      }
 
       #set the value for the geom_crossbar, should adjust in size based on range of data
       adjustment_value = sd(week_data$mean, na.rm = TRUE)*.05
@@ -924,6 +934,11 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             mutate(
               is_isolated = is.na(lag(.data[[y_column]])) & is.na(lead(.data[[y_column]])) & !is.na(.data[[y_column]])
             )
+          #filter to just single week if incl_ex_days is false
+          if(!input$incl_ex_days){
+            add_data_with_isolated <- add_data_with_isolated %>%
+              filter(week == current_week())
+          }
 
           # Return a list of both geom_line and geom_linerange
           list(
@@ -936,9 +951,15 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
                               color = site),
                           width = 0.5, size = 0.5)
           )
-        }) + # add other sites
-        geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean),fill = "black",shape = 21, stroke = 0, size = 1.5, alpha = 0.5)+ #add two extra days on the side
-        geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching  user flag column
+        })
+
+      # add in extra days if incl_ex_days is true
+        if(input$incl_ex_days){
+          p <- p + geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean),fill = "black",shape = 21, stroke = 0, size = 1.5, alpha = 0.5) #add two extra days on the side
+        }
+
+      #add in primary data
+        p <- p+ geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching  user flag column
         #Add Omitted data in red
         geom_point(data = week_data %>%filter(brush_omit == TRUE),aes(y = mean),shape = 21, stroke = 0, size = 2, fill = "#ff1100")+
       scale_color_manual(
@@ -951,6 +972,10 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           begin = 0.1,
           end = 0.9,
           na.value = "grey" )+
+          scale_x_datetime(
+            date_labels = "%b %d", # Formats as "Jan 01"
+            date_breaks = "1 day" # Remove extra white space
+          )+
         labs(
           title = paste0(str_to_title(input$site), " ", input$parameter, " (", format(flag_day, "%B %d, %Y"), ")"),
           x = "Date",
@@ -991,25 +1016,6 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
                                  site_arg = input$site,
                                  parameter_arg = input$parameter)
       }
-      if(input$incl_ex_days){
-        p <- p +
-          scale_x_datetime(
-            limits = c(min(week_plus_data$DT_round, na.rm = TRUE)-hours(1),
-                       max(week_plus_data$DT_round, na.rm = TRUE)+hours(1)),
-            #expand = c(0, 0), # Remove extra white space
-            date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
-            date_breaks = "1 day" # Remove extra white space
-          )
-      }else{
-        p <- p +
-          scale_x_datetime(
-            limits = c(min(week_data$DT_round, na.rm = TRUE)-hours(0),
-                       max(week_data$DT_round, na.rm = TRUE)+hours(0)),
-            date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
-            date_breaks = "1 day" # Remove extra white space
-          )+
-          scale_y_continuous(expand = c(0, 0)) # Remove extra white space
-      }
 
       if(input$plot_log10){
         p <- p + scale_y_log10()
@@ -1030,6 +1036,10 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
     week_data <- selected_data() %>%
       filter(week == current_week())
+
+    week_min_day = min(week_data$DT_round, na.rm = T)
+    week_max_day = max(week_data$DT_round, na.rm = T)
+
 
     year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
     all_sub_sites <- c(input$site, input$sub_sites)
@@ -1070,7 +1080,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           if (!is.null(data_source)) {
             tryCatch({
               sonde_df <- get(data_source)[[sonde_name]] %>%
-                filter(y_w == year_week)
+                filter(DT_round >= week_min_day - days(2) & DT_round <= week_max_day + days(2))
             }, error = function(err) {
               #cat("Sonde", sonde_name, "not found.\n")
               return(NULL)  # Return NULL if sonde data can't be retrieved
@@ -1186,81 +1196,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             )
 
           return(p)
-        #}
-
-    #   # Create plotly plot
-    #   p <- plot_ly()
-    #
-    #   # Add main site as grey points
-    #   main_site_data <- all_sub_plot_data %>%
-    #     filter(site == input$site,
-    #            parameter == param)
-    #
-    #   if (nrow(main_site_data) > 0) {
-    #     p <- p %>%
-    #       add_markers(
-    #         data = main_site_data,
-    #         x = ~DT_round,
-    #         y = ~mean_verified,
-    #         marker = list(color = "grey", size = 8),
-    #         name = input$site,
-    #         legendgroup = input$site,
-    #         showlegend = F
-    #         #showlegend = TRUE
-    #       )
-    #   }
-    #
-    #   # Add sub sites as colored lines
-    #   sub_site_data <- all_sub_plot_data %>%
-    #     filter(site %in% input$sub_sites,
-    #            parameter == param)
-    #
-    #   if (nrow(sub_site_data) > 0) {
-    #     # Get site colors using joins
-    #     sub_site_data_with_colors <- sub_site_data %>%
-    #       left_join(site_color_combo, by = "site") %>%
-    #       replace_na(list(color = "red"))  # fallback color
-    #
-    #     # Add lines for each sub site using walk
-    #     sub_site_data_with_colors %>%
-    #       split(.$site) %>%
-    #       iwalk(~ {
-    #         site_color <- unique(.x$color)[1]  # Get the color for this site
-    #
-    #         p <<- p %>%
-    #           add_lines(
-    #             data = .x,
-    #             x = ~DT_round,
-    #             y = ~mean_verified,
-    #             line = list(color = site_color, width = 3),
-    #             name = .y,
-    #             legendgroup = .y,
-    #
-    #             showlegend = F
-    #             #showlegend = TRUE
-    #           )
-    #       })
-    #   }
-    #
-    #   # Configure layout
-    #   p <- p %>%
-    #     layout(
-    #       xaxis = list(title = "Date"),
-    #       yaxis = list(title = param),
-    #       showlegend = TRUE,
-    #       legend = list(
-    #         orientation = "h",
-    #         x = 0.5,
-    #         xanchor = "center",
-    #         y = 1.1,
-    #         title = list(text = "Sites")
-    #       ),
-    #       margin = list(t = 80, b = 40)
-    #     )
-    #
-    #   return(p)
     }) %>%
-      compact()
+      compact() # remove any null plots
 
     if (length(plots) > 0) {
       # Filter out any NULL or invalid plots using keep
