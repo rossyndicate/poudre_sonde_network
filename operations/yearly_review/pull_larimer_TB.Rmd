@@ -42,7 +42,7 @@ Already pulled for 2024! Lets be nice to their API and more run it over and othe
 ```{r}
 
 
-grab_new_larimer <- function(start_date = "2024-01-01"){
+grab_new_larimer <- function(start_date = "2025-03-01"){
 
 end_dt =  format(Sys.Date(), "%Y-%m-%d")
 
@@ -180,7 +180,7 @@ meta <- read_csv("data/context_data/precip/station_data.csv", show_col_types = F
 larimer_precip <- left_join(precip, meta, by = 'site')
 
 #Save data
-write_csv(larimer_precip, 'data/flow/precip/select_larimerco_precip_2024.csv')
+write_csv(larimer_precip, 'data/context_data/precip/select_larimerco_precip_2025_03_06.csv')
 
 
 ```
@@ -190,7 +190,7 @@ write_csv(larimer_precip, 'data/flow/precip/select_larimerco_precip_2024.csv')
 
 ```{r}
 
-larimer_precip <- read_csv('data/context_data/precip/select_larimerco_precip_2024.csv', show_col_types = F)%>%
+larimer_precip <- read_csv('data/context_data/precip/select_larimerco_precip_2025_03_06.csv', show_col_types = F)%>%
   filter(site != "11525" & watershed != "out")%>%
   mutate(site = as.character(site), 
          p_in = q_cfs, 
@@ -263,8 +263,7 @@ ggplot(precip_trim, aes(x = date,y = avg_daily_precip, fill = name))+
 
 }
 #aug_storm <- 
-  create_precip_plot(start_date = as.Date("2024-08-09"), end_date = as.Date("2024-08-15"), grouping = "ws")
-  scale_y_reverse()
+  ggplotly(create_precip_plot(start_date = as.Date("2025-03-25"), end_date = as.Date("2025-06-06"), grouping = "ws"))
 
 
 ggsave("aug_storm.png", aug_storm, width = 14, height = 6, units = "in")
@@ -337,7 +336,7 @@ if(nrow(zero_data) > 0){
 }
 }
 
-create_precip_map("2024-08-10")
+create_precip_map("2025-05-7")
 dates <- seq(as.Date("2024-04-01"), as.Date("2024-12-31"), by = "day")
 
 list_of_maps <- lapply(dates, create_precip_map)%>%

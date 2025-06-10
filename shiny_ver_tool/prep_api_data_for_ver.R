@@ -51,8 +51,6 @@ files <- tibble(filename = list.files(here("data","manual_data_verification",cur
 
 # read in files
 all_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
-  #save DT_join as a character after converting it to MST
-  mutate(DT_join = with_tz(DT_join, tz = "MST") %>% as.character())%>%
   #turn into individual dataframes by site and parameter
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
@@ -62,17 +60,17 @@ all_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
 
 all_data_tidy <- all_data%>%
   bind_rows()%>%
-  mutate(DT_round = with_tz(DT_round, tz = "MST"))%>%
-  rename(value = mean,
-         flag = auto_flag)
+  #convert to MST!
+  mutate(DT_round = with_tz(DT_round, tz = "MST"),
+         DT_join = as.character(DT_round))
 
-ggplot(all_data_tidy%>%filter(site == "sfm"), aes(x = DT_round, y = value, colour = flag)) +
-  geom_point() +
-  facet_wrap(~parameter, scales = "free_y") +
-  labs(
-       x = "Date and Time (MST)",
-       y = "Value",
-       color = "Parameter")
+# ggplotly(ggplot(all_data_tidy%>%filter(site == "archery" & parameter == "Temperature"), aes(x = DT_round, y = value, colour = flag)) +
+#   geom_point() +
+#   facet_wrap(~parameter, scales = "free_y") +
+#   labs(
+#        x = "Date and Time (MST)",
+#        y = "Value",
+#        color = "Parameter"))
 
 
 # save to raw data file to be processed later on

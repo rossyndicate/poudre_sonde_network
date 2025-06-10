@@ -65,8 +65,8 @@ fix_sites <- function(df) {
 }
 
 # Establishing directory paths.
-staging_directory <- here("data","sharing", "quartely_meetings", "2025_Q2", "raw_data")
-flagged_directory <- here("data","sharing", "quartely_meetings", "2025_Q2", "flagged_data")
+staging_directory <- here("data","sharing","quarterly_meetings","2025_Q2", "raw_data")
+flagged_directory <- here("data","sharing","quarterly_meetings","2025_Q2", "flagged_data")
 
 # Read in the threshold data first
 sensor_thresholds <- read_yaml(here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "thresholds", "sensor_spec_thresholds.yml"))
@@ -95,55 +95,51 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 hv_sites <- hv_locations_all(hv_token) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE))
 
-mst_start <- ymd_hms("2025-03-01 00:00:00", tz = "America/Denver")
-mst_end <- ymd_hms("2025-06-01 23:59:59", tz = "America/Denver")
+mst_start <- ymd_hms("2025-03-03 00:00:00", tz = "America/Denver")
+mst_end <- ymd_hms("2025-06-02 23:59:59", tz = "America/Denver")
 
 # Upload the hv data
-# sites <- c("archery","bellvue","boxcreek", "boxelder", "cbri", "chd", "cottonwood", "elc",
-#            "joei", "lbea", "legacy", "lincoln", "mtncampus", "pbd", "pbr", "penn",
-#            "pfal", "pman", "prospect", "river bluffs", "riverbluffs", "riverbend",
-#            "salyer", "sfm", "springcreek", "tamasag", "timberline", "udall")
-sites <- c("pbd", "bellvue", "salyer", "udall", "riverbend", "cottonwood",
-           "elc", "archery", "riverbluffs", "springcreek")
+sites <- c("pbd")
+
 
 walk(sites,
      function(site) {
        message("Requesting HV data for: ", site)
        api_puller(
          site = site,
-        network = "all",
+         network = "all",
          start_dt = with_tz(mst_start, tzone = "UTC"),
          end_dt = with_tz(mst_end, tzone = "UTC"),
          api_token = hv_token,
          #hv_sites_arg = hv_sites,
          dump_dir = staging_directory
-        #synapse_env = FALSE,
+         #synapse_env = FALSE,
          #fs = NULL
        )
      }
 )
 
-start_dt = with_tz(mst_start, tzone = "UTC")
-end_dt = with_tz(mst_end, tzone = "UTC")
-
-sfm_file <- list.files(staging_directory, pattern = "sfm", full.names = TRUE)
-#read in api data
-sfm_hydrovu <- read_parquet(sfm_file, as_data_frame = TRUE)
-
-# add non logged data from SFM to SFM data file
-sfm_livestream <- read_csv("data/manual_data_verification/2024_cycle/hydro_vu_pull/extra_data/SFM_2024-12-10_1430.csv",
-                           show_col_types = F)%>%
-  filter(parameter != "% Saturation O₂", !is.na(value))%>%
-  mutate(units = ifelse(parameter == "Temperature", "C", units))%>%
-  #only keep dates where data is not in sfm
-  filter(timestamp >= start_dt & timestamp <= end_dt)
-
-sfm_final <- bind_rows( sfm_hydrovu, sfm_livestream)
-
-#write to final file
-write_parquet(sfm_final,
-            here(staging_directory, paste0("sfm_", stringr::str_replace(stringr::str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".parquet")))
-
+# start_dt = with_tz(mst_start, tzone = "UTC")
+# end_dt = with_tz(mst_end, tzone = "UTC")
+#
+# sfm_file <- list.files(staging_directory, pattern = "sfm", full.names = TRUE)
+# #read in api data
+# sfm_hydrovu <- read_parquet(sfm_file, as_data_frame = TRUE)
+#
+# # add non logged data from SFM to SFM data file
+# sfm_livestream <- read_csv("data/manual_data_verification/2024_cycle/hydro_vu_pull/extra_data/SFM_2024-12-10_1430.csv",
+#                            show_col_types = F)%>%
+#   filter(parameter != "% Saturation O₂", !is.na(value))%>%
+#   mutate(units = ifelse(parameter == "Temperature", "C", units))%>%
+#   #only keep dates where data is not in sfm
+#   filter(timestamp >= start_dt & timestamp <= end_dt)
+#
+# sfm_final <- bind_rows( sfm_hydrovu, sfm_livestream)
+#
+# #write to final file
+# write_parquet(sfm_final,
+#               here(staging_directory, paste0("sfm_", stringr::str_replace(stringr::str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".parquet")))
+#
 
 
 
@@ -312,7 +308,7 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
   }
 }
 # Let's temporarily save this data so i can remove everything else
-iwalk(intrasensor_flags_list, ~write_csv(.x, here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged_temp", paste0(.y, ".csv"))))
+iwalk(intrasensor_flags_list, ~write_csv(.x, here("data","sharing","quarterly_meetings", "2025_Q2", "flagged_data_temp", paste0(.y, ".csv"))))
 
 # Because we are pulling in all of the data for all of the sites, and the
 # network check to do that is not applicable, here we make a custom net work check function
@@ -470,6 +466,7 @@ v_final_flags <- final_flags%>%
   keep(~nrow(.) > 0)
 
 # Save the data individually.
-iwalk(v_final_flags, ~write_csv(.x, here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged_sam", paste0(.y, ".csv"))))
+iwalk(v_final_flags, ~write_csv(.x, here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final", paste0(.y, ".csv"))))
 
-# TODO: delete raw data files that are virridy_virridy
+
+
