@@ -88,4 +88,6 @@ subset_split <- subset %>%
       split(f = list(.$calibration_site, .$sensor), sep = "-", drop = TRUE) %>%
       discard(\(site_param_df) nrow(site_param_df) == 0) 
   })
+
+write_rds(subset_split, here("data", "calibration_reports", "0_cal_data_munge", "munged_calibration_data.RDS"))
 ```
