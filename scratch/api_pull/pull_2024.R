@@ -1,3 +1,7 @@
+# TODO: pull fdom
+# TODO: cap turbidity at 1000 NTU
+# TODO: add last_site_visit column
+
 # loading packages
 package_loader <- function(x) {
   if (x %in% installed.packages()) {
@@ -143,8 +147,6 @@ sfm_final <- bind_rows( sfm_hydrovu, sfm_livestream)
 #write to final file
 write_parquet(sfm_final,
             here(staging_directory, paste0("sfm_", stringr::str_replace(stringr::str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".parquet")))
-
-
 
 
 # Load in all the raw files
@@ -312,6 +314,7 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
   }
 }
 # Let's temporarily save this data so i can remove everything else
+<<<<<<< HEAD
 iwalk(intrasensor_flags_list, ~write_csv(.x, here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged_temp", paste0(.y, ".csv"))))
 
 # Because we are pulling in all of the data for all of the sites, and the
@@ -350,6 +353,7 @@ custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags_l
                      "boxcreek",
                      "archery_virridy")
   }
+
   # missing sites: mtncampus, pbr, pman
   if (site_name %in% c("mtncampus", "pbr", "pman")){
     return(df)
@@ -357,6 +361,7 @@ custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags_l
 
   # exlcude virridy sites
   if (site_name %in% c("riverbend_virridy","cottonwood_virridy","timberline_virridy", "prospect_virridy", "elc", "archery_virridy")){
+
     return(df)
   }
 
@@ -472,8 +477,6 @@ v_final_flags <- final_flags%>%
 # Save the data individually.
 iwalk(v_final_flags, ~write_csv(.x, here("data","manual_data_verification", "2024_cycle" , "hydro_vu_pull", "flagged_sam", paste0(.y, ".csv"))))
 
-
-
 ### Reformatting for Verification Tool ###
 
 # select correct verification cycle to load
@@ -508,3 +511,4 @@ all_data_tidy <- all_data%>%
 
 # save to raw data file to be processed later on inside ver tool
 write_rds(all_data_tidy, here("data", "manual_data_verification", current_cycle_folder, "in_progress","raw_data","raw_data.rds" ))
+
