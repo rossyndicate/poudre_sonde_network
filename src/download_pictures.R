@@ -1,24 +1,30 @@
-## Photos
-
-# Goals:
-# Download all user created photos ( upstream, downstream, clarity, filter and other pictures)
+#' @title download_pictures
+#' @description This function looks through all the uploaded photos to the field notes and downloads the photos to a specified folder. It will only download photos that have not yet been downloaded.
+#' # Download all user created photos ( upstream, downstream, clarity, filter and other pictures)
 # Label according to site, date, description in the format site_YYYYMMDD_descriptor.jpg
-# Only download photos which have not yet been downloaded
 
+#' @param field_notes A dataframe containing field notes with columns: site, crew, start_DT,end_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd
+#' @param download_path A string filepath to the current file where field pictures should be downloaded to. If it does not exist yet, a sub folder named sampling_pics will be created at this path
+#'
+#' @example
+#' source("src/download_pictures.R")
+#' download_pictures(field_notes = all_notes_cleaned,
+#'               download_path = "data/field_pics/")
 
+download_pictures <- function(field_notes, download_path = "data/field_pics/"){
 
-
-download_pictures <- function(){
-  #source to grab all notes cleaned
-  source("src/load_mWater_notes.R")
-
-  all_notes_cleaned <- load_mWater_notes()
   # Find all the downloaded pictures
-  all_file_names <- tolower(list.files(path = "data/field_pics/", recursive = TRUE, full.names = T))
+  all_file_names <- list.files(path = here(download_path), recursive = TRUE, full.names = T)
   # basic path to field pics
-  path <- "data/field_pics//sampling_pics/"
+  path <- here(paste0(download_path, "/sampling_pics/"))
+
+  #create folder if it does not exist
+  if(!dir_exists(path)){
+    dir_create(path)
+  }
+
   #grab notes
-  sampling_photos <- all_notes_cleaned%>%
+  sampling_photos <- field_notes%>%
     #grab needed columns
     select(site, start_dt,photos_downloaded,upstream_pic,downstream_pic,clarity,filter_pic,other_pic,other_pic_descriptor)%>%
     mutate(
@@ -28,11 +34,11 @@ download_pictures <- function(){
       yyyymmdd = format(start_dt, "%Y%m%d"),
       #create filenames ONLY if there is a URL associated with the site visit
       upstream_filename = case_when(
-        !is.na(upstream_pic) ~ paste0(path, site, "_", yyyymmdd, "_upstream.jpg"),
+        !is.na(upstream_pic) ~ here(paste0(path, site, "_", yyyymmdd, "_upstream.jpg")),
         TRUE ~ NA_character_
       ),
       downstream_filename = case_when(
-        !is.na(downstream_pic) ~ paste0(path, site, "_", yyyymmdd, "_downstream.jpg"),
+        !is.na(downstream_pic) ~ here(paste0(path, site, "_", yyyymmdd, "_downstream.jpg")),
         TRUE ~ NA_character_
       ),
       clarity_filename = case_when(
@@ -89,10 +95,10 @@ download_pictures <- function(){
     }
   }
 
-  path <- "data/field_pics//"
+
 
   #grab notes for sites with other pictures
-  other_photos <- all_notes_cleaned%>%
+  other_photos <- field_notes%>%
     #grab needed columns
     select(site, start_dt,other_pic,other_pic_descriptor)%>%
     #get rid of instances with no other pics
@@ -112,13 +118,32 @@ download_pictures <- function(){
     select(site, start_dt,yyyymmdd, other_pic = other_pic_sep, other_pic_descriptor = other_descriptor_sep)%>%
     # make descriptor lower case and remove any spaces in the name
     mutate(other_pic_descriptor = tolower(str_replace_all(other_pic_descriptor, " ", "_")),
-           other_filename = case_when(!is.na(other_pic) ~ paste0(path, site, "_", yyyymmdd, "_", other_pic_descriptor, ".jpg")),
+           other_filename = case_when(!is.na(other_pic) ~ here(paste0(here(download_path), "/", site, "_", yyyymmdd, "_", other_pic_descriptor, ".jpg"))),
            # Check to see if photo has already been downloaded
            other_downloaded = case_when(
              is.na(other_filename) ~ NA,
              other_filename %in% all_file_names ~ TRUE,
              TRUE ~ FALSE
            ))
+
+# find all the descriptors > 25 characters
+
+long_desc <- other_photos%>%
+  filter(nchar(other_pic_descriptor) > 40 & !other_downloaded)
+
+if(nrow(long_desc) > 0) {
+  for (i in 1:nrow(long_desc)) {
+      cat("\nWarning: The descriptor for ",long_desc$site[i], " on ", as.character(as.Date(long_desc$start_dt[i])), " too long for a file name:\n",
+          long_desc$other_pic_descriptor[i], "\nPlease shorten the descriptor in mWater.\n")
+  }
+  #prompt user to proceed
+  proceed <- readline(prompt = "Do you want to continue downloading pictures? (yes/no): ")
+  if (tolower(proceed) != "yes") {
+    cat("Download cancelled\n")
+    return()
+  }
+}
+
 
 
   # loop thru dataset and download the photo ONLY if it is not yet downloaded and not NA
