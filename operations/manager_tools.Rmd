@@ -9,21 +9,44 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(here)
+library(openxlsx)
+library(readxl)
 ```
 
 
-## Determining uploads
+# Loading field notes and sensor tracking file path
+
+Update file path as needed
+
+```{r}
+#current file path for tracking sonde SNs, etc
+sonde_tracking_file_path <- "data/metadata/2025_sensor_tracking.xlsx"
+
+#source clean mwater script for all notes cleaned
+source("src/load_mWater_notes.R")
+all_notes_cleaned <- load_mWater_notes()
+```
+
+# Update Station Info
+
+Updating the tracking sheet to most up to date sonde/vulinks and SNs in `station_info` tab. 
+Pulls in field notes and using sonde deployment records, updates station info tab
+
+```{r}
+#update the current_sonde tab so that file missing is correct
+source("src/update_station_info.R")
+update_station_info(field_notes = all_notes_cleaned,
+                    sonde_tracking_file_path)
+```
+
+# Files Missing
 
 This function looks at the user inputs for calibration report collect and logs collected. Based on these inputs, it looks at all the uploaded logs or calibration reports and will print out what logs are missing and who to contact to get those files uploaded.
 
 ```{r}
-#source clean mwater script for all notes cleaned
-source("src/load_mWater_notes.R")
-all_notes_cleaned <- load_mWater_notes()
-
-
 source("src/files_missing.R")
-files_missing()
+files_missing(field_notes = all_notes_cleaned,
+              sonde_tracking_file_path)
 
 ```
 
@@ -35,9 +58,9 @@ Goal:
 
 
 ```{r}
-source("src/current_sensor_locations.R")
-
-current_sensor_locations()
+source("src/update_sensor_current_locations.R")
+update_sensor_current_locations(field_notes = all_notes_cleaned,
+                                sonde_tracking_file_path)
 
 ```
 
@@ -52,11 +75,11 @@ Goal:
 
 ```{r}
 #source function
-source("src/sampling_spreadsheet_creator.R")
-# To get the RMRS style data for a specfic date of sampling, 
-# Input the date of interest in sampling_spreadsheet_creator
-
-sampling_spreadsheet_creator(date_oi = "2023-12-05")
+# source("src/sampling_spreadsheet_creator.R")
+# # To get the RMRS style data for a specfic date of sampling, 
+# # Input the date of interest in sampling_spreadsheet_creator
+# 
+# sampling_spreadsheet_creator(date_oi = "2025-07-01")
 
 #sampling_spreadsheet_creator(date_oi = "2023-11-17")
 
@@ -83,12 +106,12 @@ source("src/download_pictures.R")
 # It takes about 2-5 minutes to download ~25-50 photos
 # Sometimes the request to mWater time out, just re run the function below if that happens
 
-download_pictures()
+download_pictures(field_notes = all_notes_cleaned, download_path = "data/sampling_pics")
 ```
 
 
 
-# Remove extra objects not needed in QAQC pipeline
+# Remove extra objects
 ```{r}
 rm(all_notes, sampling_sites, upper_sites, all_notes_cleaned)
 ```
