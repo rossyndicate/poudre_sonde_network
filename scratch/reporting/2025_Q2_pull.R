@@ -95,11 +95,19 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 hv_sites <- hv_locations_all(hv_token) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE))
 
-mst_start <- ymd_hms("2025-03-03 00:00:00", tz = "America/Denver")
-mst_end <- ymd_hms("2025-06-02 23:59:59", tz = "America/Denver")
+mst_start <- ymd_hms("2025-05-30 00:00:00", tz = "America/Denver")
+mst_end <- ymd_hms("2025-07-02 23:59:59", tz = "America/Denver")
 
 # Upload the hv data
-sites <- c("pbd")
+sites <- c("archery",
+           "bellvue",
+           "boxelder",
+           "cottonwood",
+           "elc",
+           "riverbluffs",
+           "salyer",
+           "udall",
+           "riverbend")
 
 
 walk(sites,
@@ -467,6 +475,37 @@ v_final_flags <- final_flags%>%
 
 # Save the data individually.
 iwalk(v_final_flags, ~write_csv(.x, here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final", paste0(.y, ".csv"))))
+
+
+params <- paste(c("Chl-a Fluorescence","Depth", "Specific Conductivity",
+                   "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence"), collapse = "|")
+
+
+#get files in hydrovu_2024_data
+files <- tibble(filename = list.files(here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final"), full.names = TRUE))%>%
+  filter(grepl(pattern = params, filename))%>%
+  #remove extras
+  filter(!grepl(pattern = "Level|MV", filename))
+
+
+# read in files
+all_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
+  #turn into individual dataframes by site and parameter
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  keep(~nrow(.) > 0)%>%
+  bind_rows()%>%
+  #convert to MST!
+  mutate(DT_round = with_tz(DT_round, tz = "MST"),
+         DT_join = as.character(DT_round))
+
+
+min_date <- min(all_data$DT_round, na.rm = TRUE)%>%
+  format("%Y-%m-%d")
+max_date <- max(all_data$DT_round, na.rm = TRUE)%>%
+  format("%Y-%m-%d")
+
+# save to raw data file to be processed later on
+write_rds(all_data, here("data", "sharing", "quarterly_meetings", "2025_Q2", paste0("flagged_data_", min_date, "_", max_date, ".rds")))
 
 
 
