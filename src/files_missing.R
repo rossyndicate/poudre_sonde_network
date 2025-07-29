@@ -4,24 +4,27 @@
 #Based on these inputs, it looks at all the uploaded logs or calibration reports
 #and will print out what logs are missing and who to contact to get those files uploaded.
 
+#' @title files_missing
+#' @description This function looks through all the calibration reports,
+#' @param field_notes A dataframe containing field notes with columns: site, crew, start_DT,end_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd
+#' @param sonde_tracking_file_path A string filepath to the current file where sonde info is tracked. This is an .xslx file with the sheet "station_info" where we will update the sonde numbers,
+#' and the sheet "ownership" where we will look for sensors that are not to be included in the current sensor deployments.
+#' @param logical A boolean indicating whether to return a logical vector of missing files (default is FALSE, which only prints to console)
+#'@example
+#' source("src/files_missing")
+#' files_missing(field_notes = all_notes_cleaned,
+#'               sonde_tracking_file_path = "data/metadata/2025_sensor_tracking.xlsx")
+#'
+#' file_check <- files_missing(field_notes = all_notes_cleaned,
+#'               sonde_tracking_file_path = "data/metadata/2025_sensor_tracking.xlsx",
+#'               logical = T)
 
-
-
-files_missing <- function(){
+files_missing <- function(field_notes, sonde_tracking_file_path, logical = F){
 
   `%nin%` = Negate(`%in%`)
   # #source clean mwater script for all notes cleaned
   #
   # source("src/mWater_collate/load_mWater_notes.R")
-
-  #grab context metadata
-  site_meta <- read_csv("data/metadata/water_sampling_sites.csv",show_col_types = FALSE)%>%
-    select(site = site_code, Site_Name, site_label_rmrs)
-  # sort for sites in upper network (ie. acronyms rather than street names)
-  upper_sites <- read_csv("data/metadata/water_sampling_sites.csv",show_col_types = FALSE)%>%
-    filter(watershed != "CLP  Mainstem-Fort Collins")%>%
-    #this is to help match with user input
-    mutate(site_code = tolower(site_code))
 
   field_season <- year(Sys.Date())
 
@@ -31,13 +34,13 @@ files_missing <- function(){
 
 
   # Find relevant sonde SN
-  active_sns <- readxl::read_xlsx(here("data", "metadata", "2025_sensor_tracking.xlsx"), sheet = "station_info")%>%
-    select(site = site_code, sn = Current_sonde_sn)%>%
+  active_sns <- readxl::read_xlsx(here(sonde_tracking_file_path), sheet = "station_info")%>%
+    select(site = site_code, sn = current_sonde_sn)%>%
     filter(!is.na(sn))%>%
     mutate(site = tolower(site))
 
   #grab sensor notes that have logs or cal reports that should be  downloaded
-  sensor_files <- all_notes_cleaned%>%
+  sensor_files <- field_notes%>%
     filter(year(DT_round) == field_season)%>%
     filter(grepl("Sensor",visit_type, ignore.case = TRUE))%>%
     filter(cal_report_collected|log_downloaded)%>%
@@ -105,23 +108,34 @@ files_missing <- function(){
       )%>%
     left_join(active_sns, by = "site")
 
-
+missing_files <- F
 
   for (i in 1:nrow(sensor_files)) {
 
     #if log missing print out missing logs or cal reports
     if(sensor_files$log_missing[i]){
       cat("\nLog Missing: ", sensor_files$log1_name[i], " and/or ", sensor_files$log2_name[i], "\nContact: ", sensor_files$crew[i], "\n")
+      missing_files <- T
 
     }
     #if log missing print out missing logs or cal reports
     if(sensor_files$cal_missing[i]){
       cat("\nCal Missing: ", sensor_files$full_cal_name[i],"\nSonde SN: ", sensor_files$sn[i], " \nContact: ", sensor_files$crew[i], "\n")
+      missing_files <- T
     }
 
 
   }
-  cat("\nFile Check Complete")
+
+
+  if(logical == T){
+    return(missing_files)
+  }else{
+    if(missing_files == F){
+      cat("\nFile Check Complete, no missing files were found\n")
+    }
+  }
+
 
 }
 

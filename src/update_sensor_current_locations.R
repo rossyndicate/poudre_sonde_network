@@ -1,22 +1,25 @@
-#' @title current_sensor_locations
+#' @title update_sensor_current_locations
 #' @description This function looks through all the calibration reports, grabs the most recent and extracts the useful info.
 #'  It organizes the data and returns a dataframe with the each SNs current location, sensor type, owner and sonde.
-#'  Sensors no
+#' @param sonde_tracking_file_path A string filepath to the current file where sonde info is tracked. This is an .xslx file with the sheet "station_info" where we will update the sonde numbers,
+#' and the sheet "ownership" where we will look for sensors that are not to be included in the current sensor deployments.
+#' @param field_notes A dataframe containing field notes with columns: site, crew, start_DT,end_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd
 #'@example
 #' source("src/current_sensor_locations.R")
 #' current_sensor_locations()
-current_sensor_locations <- function(){
-  library(openxlsx)
-  library(readxl)
+update_sensor_current_locations <- function(field_notes, sonde_tracking_file_path){
 
+#check for missing files before proceeding
   source("src/files_missing.R")
-  files_missing()
+  file_check <- files_missing(field_notes,sonde_tracking_file_path, logical = T)
 
-  cat("If there are out of date calibration reports, please update and re-run")
+  if(file_check == T){
+    stop("`files_missing()` has found missing calibration reports or logs. Please upload all calibration reports and logs before re-running")
+  }
 
   `%nin%` <- Negate(`%in%`)
 # read in sensor ownership sheet
-all_sensors <- readxl::read_xlsx(here("data", "metadata", "2025_sensor_tracking.xlsx"), sheet = "ownership")%>%
+all_sensors <- readxl::read_xlsx(here(sonde_tracking_file_path), sheet = "ownership")%>%
   #remove sensors given back to CU and YSI chla sensors
   filter(is.na(archive) & Equipment != "YSI chla sensor")%>%
   mutate(SN = as.numeric(SN))
@@ -67,7 +70,7 @@ sonde_sn <- parsed %>%
   pull(sn)
 
 #get sonde site from file name, first string before _
-short_file_path <- str_remove(string = html_file, pattern = here( "data", "calibration_reports/"))
+short_file_path <- basename(html_file)
 
 parts <- strsplit(short_file_path, "_")[[1]]
 #grab site
@@ -111,7 +114,7 @@ final_status <- bind_rows(current_status, lab_sns)%>%
 
 
 # Define file path
-file_path <- here("data", "metadata", "2025_sensor_tracking.xlsx")
+file_path <- here(sonde_tracking_file_path)
 
 # Load the workbook
 wb <- loadWorkbook(file_path)

@@ -29,8 +29,11 @@ load_mWater_notes <- function(creds = yaml::read_yaml("creds/mWaterCreds.yml"), 
       malfunction_end_dt = lubridate::with_tz(lubridate::parse_date_time(malfunction_end_dt, orders = c("%Y%m%d %H:%M:%S", "%m%d%y %H:%M", "%m%d%Y %H:%M", "%b%d%y %H:%M" )), tz = "MST"),
       date = as.Date(start_DT, tz = "MST"),
       start_time_mst = format(start_DT, "%H:%M"),
+      #did sonde/vulinks change
       sensor_pulled = as.character(sn_removed),
+      vulink_pulled = as.character(sn_removed_vulink),
       sensor_deployed = as.character(sn_deployed),
+      vulink_deployed = as.character(sn_deployed_vulink),
       # If other is chosen, make site == other response
       site = ifelse(site == "Other (please specify)", tolower(stringr::str_replace_all(site_other, " ", "")), site),
       # When I changed the mWater survey, I accidentally introduced ??? in the place of Sensor Calibration option, fixing that here
