@@ -1,5 +1,5 @@
 ---
-title: "mWater_pull_collate"
+title: "PSN Data Manager Tools"
 author: "Sam Struthers"
 date: "`r Sys.Date()`"
 output: html_document
@@ -75,7 +75,7 @@ Goal:
 
 ```{r}
 #source function
-# source("src/sampling_spreadsheet_creator.R")
+source("src/sampling_spreadsheet_creator.R")
 # # To get the RMRS style data for a specfic date of sampling, 
 # # Input the date of interest in sampling_spreadsheet_creator
 # 
@@ -86,7 +86,7 @@ Goal:
 
 # To get all the water sampling data and save to CSV in sampling notes
 # This also returns the df sampling_notes in case you want to review in R
-#sampling_spreadsheet_creator(all_dates = TRUE)
+sampling_spreadsheet_creator(all_dates = TRUE)
 ```
 
 ## Photos
