@@ -69,7 +69,7 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
      select(site_code = site, Date = date, DT_round, SampleType = sample_collected, time_mst = time,chla_volume_ml,  do_mgl, cond_ms_cm, temp_c, visit_comments)
 
    # write to csv
-   write_csv(x = sampling_notes_output, file = paste0("data/sampling_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))
+   write_csv(x = sampling_notes_output, file = paste0("data/field_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))
  }else{
    #grab desired date
    date_oi_clean <- as.Date(date_oi, tz = "America/Denver")
@@ -83,7 +83,7 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
      select(Site = site ,SiteDescr, SiteLabel = site_label_rmrs , Date, SampleType = sample_collected, q_cfs,
             time, do_mgl, cond_ms_cm, temp_c, notes = visit_comments  )
    # write to csv
-   write_csv(x = samples_of_day, file = paste0("data/sampling_notes/samples_of_",date_oi,".csv" ))
+   write_csv(x = samples_of_day, file = paste0("data/field_notes/samples_of_",date_oi,".csv" ))
  }
 }
 
