@@ -75,29 +75,33 @@ cal_extract_conductivity_data <- function(div) {
   driftr_data_check_1 <- cal_div_table_check(
     table_list = div_tables,
     table_name = "pre_measurement",
-    col_names = c("actual_conductivity", "specific_conductivity")
+    col_names = c("specific_conductivity")
   )
 
   driftr_data_check_2 <- cal_div_table_check(
     table_list = div_tables,
     table_name = "post_measurement",
-    col_names = c("actual_conductivity", "specific_conductivity")
+    col_names = c("specific_conductivity")
   )
 
   if (driftr_data_check_1 && driftr_data_check_2) {
 
   calibration_1 <- div_tables[["pre_measurement"]] %>%
-    pivot_wider(names_from = X1, values_from = X2, names_repair = make_clean_names)
+    pivot_wider(names_from = X1, values_from = X2, names_repair = make_clean_names) %>%
+    select(-actual_conductivity) %>%
+    rename(pre_measurement = specific_conductivity)
 
   calibration_2 <- div_tables[["post_measurement"]] %>%
-    pivot_wider(names_from = X1, values_from = X2, names_repair = make_clean_names)
+    pivot_wider(names_from = X1, values_from = X2, names_repair = make_clean_names) %>%
+    select(-actual_conductivity) %>%
+    rename(post_measurement = specific_conductivity)
 
-  driftr_input <- tibble(point = c(1,2), bind_rows(calibration_1,calibration_2)) %>%
+  driftr_input <- tibble(point = c(1), bind_cols(calibration_1,calibration_2)) %>%
     mutate(
-      units = word(specific_conductivity, 2),
-      across(c(actual_conductivity, specific_conductivity), ~word(.x, 1)), # get rid of units in measurements
-      across(c(actual_conductivity, specific_conductivity), ~gsub(",", "", .x)), # get rid of commas
-      across(c(actual_conductivity, specific_conductivity), ~as.numeric(.x)) # convert to numeric
+      units = word(post_measurement, 2),
+      across(c(pre_measurement, post_measurement), ~word(.x, 1)), # get rid of units in measurements
+      across(c(pre_measurement, post_measurement), ~gsub(",", "", .x)), # get rid of commas
+      across(c(pre_measurement, post_measurement), ~as.numeric(.x)) # convert to numeric
     )
   } else {
     driftr_input <- NULL
