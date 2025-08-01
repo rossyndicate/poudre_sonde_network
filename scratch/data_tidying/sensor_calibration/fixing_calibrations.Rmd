@@ -262,94 +262,53 @@ requirements.
 # Saving the Back-calibrated Data
 
 ```{r save-cal-data}
-# write_rds(calibrated_data, here("data", "manual_data_verification", "complete_dataset", "calibrated_sensor_data.rds"))
+write_rds(calibrated_data, here("data", "manual_data_verification", "complete_dataset", "calibrated_sensor_data.rds"))
 ```
 
 # Explore the calibrations
 
-```{r explore-cal-1}
-# Functional cottonwood turbidity 2024 example to explore the calibrations:
-cottonwood_turb_2024 <- prepped_snsr_cal_data$`2024`$`cottonwood-Turbidity`
+```{r explore-cal}
+# update `calibrated_test` object with the data you would like to explore...
+calibrated_test <- calibrated_data$`2024`$`cottonwood-Turbidity`
 
-# Apply the back calibration to this specific site-parameter
-cottonwood_turb_2024_calibrated <- cottonwood_turb_2024 %>% 
-  map_dfr(function(chunk){
-    cal_back_calibrate(chunk) 
-  })
+# Extract parameter and site info for dynamic labeling
+parameter <- unique(calibrated_test$parameter)
+site <- unique(calibrated_test$site)
 
 # Create ggplot with basic labels and legend
-cot_turb_p <- ggplot(cottonwood_turb_2024_calibrated) +
+calibration_p_test <- ggplot(calibrated_test) +
   geom_line(aes(x = DT_round, y = mean, color = "Original"), alpha = 0.6) +
   geom_line(aes(x = DT_round, y = mean_raw, color = "Raw"), alpha = 0.3, linetype = "dotted") +
   geom_line(aes(x = DT_round, y = mean_drift_trans, color = "Drift Corrected"), alpha = 0.6) +
   geom_line(aes(x = DT_round, y = mean_lm_trans, color = "Linear Transform"), alpha = 0.6) +
   scale_color_manual(values = c("Original" = "red", "Raw" = "yellow", 
-                               "Linear Transform" = "green", "Drift Corrected" = "blue")) +
+                                "Linear Transform" = "green", "Drift Corrected" = "blue")) +
   labs(
-    title = "Cottonwood Turbidity 2024 Calibration",
+    title = paste(site, parameter, "2024 Calibration"),
     x = "Date",
-    y = "Turbidity (NTU)",
+    y = paste(parameter, "(units)"),
     color = "Data Type"
   ) +
   ylim(c(0,50)) +
   theme_minimal()
 
 # Convert to plotly
-cot_turb_p <- ggplotly(cot_turb_p)
+calibration_p_test <- ggplotly(calibration_p_test)
 
 # Add vertical lines for calibration dates
-vline_dates <- round_date(unique(cottonwood_turb_2024_calibrated$file_date), "15 minutes")
+vline_dates <- round_date(unique(calibrated_test$file_date), "15 minutes")
 for(date in vline_dates) {
-  cot_turb_p <- cot_turb_p %>% add_segments(x = date, xend = date, y = 0, yend = 50, 
-                         line = list(color = "black", dash = "dash"),
-                         showlegend = FALSE)
+  calibration_p_test <- calibration_p_test %>% add_segments(x = date, xend = date, 
+                                                            y = min(calibrated_test$mean_drift_trans, na.rm = TRUE), 
+                                                            yend = max(calibrated_test$mean_drift_trans, na.rm = TRUE), 
+                                                            line = list(color = "black", dash = "dash"),
+                                                            showlegend = FALSE)
 }
 
 # Display the plot
-cot_turb_p 
-```
+calibration_p_test <- ggplotly(calibration_p_test)
 
-```{r explore-cal-2}
-# Functional archery specific conductivity 2024 example to explore the calibrations:
-archery_spc_2024 <- prepped_snsr_cal_data$`2024`$`archery-Specific Conductivity`
-
-# Apply the back calibration to this specific site-parameter
-archery_spc_2024_calibrated <- archery_spc_2024 %>% 
-  map_dfr(function(chunk){
-    cal_back_calibrate(chunk) 
-  })
-
-# Create ggplot with basic labels and legend
-arch_spc_p <- ggplot(archery_spc_2024_calibrated) +
-  geom_line(aes(x = DT_round, y = mean, color = "Original"), alpha = 0.6) +
-  geom_line(aes(x = DT_round, y = mean_raw, color = "Raw"), alpha = 0.3, linetype = "dotted") +
-  geom_line(aes(x = DT_round, y = mean_drift_trans, color = "Drift Corrected"), alpha = 0.6) +
-  geom_line(aes(x = DT_round, y = mean_lm_trans, color = "Linear Transform"), alpha = 0.6) +
-  scale_color_manual(values = c("Original" = "red", "Raw" = "yellow", 
-                               "Linear Transform" = "green", "Drift Corrected" = "blue")) +
-  labs(
-    title = "Archery Specific Conductivity 2024 Calibration",
-    x = "Date",
-    y = "Specific Conductivity (μS/cm)",
-    color = "Data Type"
-  ) +
-  theme_minimal()
-
-# Convert to plotly
-arch_spc_p <- ggplotly(arch_spc_p)
-
-# Add vertical lines for calibration dates
-vline_dates <- round_date(unique(archery_spc_2024_calibrated$file_date), "15 minutes")
-for(date in vline_dates) {
-  arch_spc_p <- arch_spc_p %>% add_segments(x = date, xend = date, 
-                         y = min(archery_spc_2024_calibrated$mean_drift_trans, na.rm = TRUE), 
-                         yend = max(archery_spc_2024_calibrated$mean_drift_trans, na.rm = TRUE), 
-                         line = list(color = "black", dash = "dash"),
-                         showlegend = FALSE)
-}
-
-# Display the plot
-arch_spc_p
+calibration_p_test
 ```
 
 # Workflow Summary

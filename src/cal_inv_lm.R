@@ -24,7 +24,7 @@ cal_inv_lm <- function(df, obs_col, lm_coefs_col){
   calibration_1 <- df[[lm_coefs_col]][[1]]
 
   # Handle missing calibration data
-  if (is.null(calibration_1)) {
+  if (!is.data.frame(calibration_1) || nrow(calibration_1) == 0) {
     df <- df %>%
       mutate(!!raw_col := NA_integer_)
     return(df)

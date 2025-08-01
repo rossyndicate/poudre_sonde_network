@@ -32,7 +32,9 @@ cal_lin_trans_inv_lm_pH <- function(df = ., obs_col = "mean", mv_col = "mean_mV_
   calibration_2 <- df[[lm_coefs_col]][[nrow(df)]]
 
   # Handle missing calibration data
-  if (is.null(calibration_1) || is.null(calibration_2)){
+  cal_1_check <- (is.data.frame(calibration_1) && nrow(calibration_1) != 0)
+  cal_2_check <- (is.data.frame(calibration_2) && nrow(calibration_2) != 0)
+  if (!cal_1_check | !cal_2_check){
     df <- df %>%
       mutate(!!ph_f := NA_integer_)
     return(df)
@@ -66,13 +68,13 @@ cal_lin_trans_inv_lm_pH <- function(df = ., obs_col = "mean", mv_col = "mean_mV_
   df <- df %>%
     mutate(
       # Inverse transformation for low pH range: x = (y-(b_1-wt(b_1-b_2)))/(m_1-wt(m_1-m_2))
-      ph_1 := (.data[[mv_col]] - (cal_1_offset_1 - (.data[[wt_col]] * offset_1_delta))) /
+      ph_1 = (.data[[mv_col]] - (cal_1_offset_1 - (.data[[wt_col]] * offset_1_delta))) /
         (cal_1_slope_1 - (.data[[wt_col]] * slope_1_delta)),
       # Inverse transformation for high pH range: x = (y-(b_1-wt(b_1-b_2)))/(m_1-wt(m_1-m_2))
-      ph_2 := (.data[[mv_col]] - (cal_1_offset_2 - (.data[[wt_col]] * offset_2_delta))) /
+      ph_2 = (.data[[mv_col]] - (cal_1_offset_2 - (.data[[wt_col]] * offset_2_delta))) /
         (cal_1_slope_2 - (.data[[wt_col]] * slope_2_delta)),
       # Select appropriate pH value based on original pH threshold (neutral = 7)
-      !!ph_f := ifelse(.data[[obs_col]] >= 7, !!ph_2, !!ph_1)
+      !!ph_f := ifelse(.data[[obs_col]] >= 7, ph_2, ph_1)
     ) %>%
     select(-c(ph_1, ph_2))  # Remove intermediate calculation columns
 

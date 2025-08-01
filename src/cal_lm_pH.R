@@ -27,7 +27,7 @@ cal_lm_pH <- function(df, obs_col, lm_coefs_col) {
   calibration_1 <- df[[lm_coefs_col]][[1]]
 
   # Handle missing calibration data
-  if (is.null(calibration_1)) {
+  if (!is.data.frame(calibration_1) || nrow(calibration_1) == 0) {
     df <- df %>%
       mutate(!!mv_f := NA_integer_)
     return(df)
@@ -51,7 +51,7 @@ cal_lm_pH <- function(df, obs_col, lm_coefs_col) {
       # Apply linear transformation for high pH range: y = mx + b
       mv_2 = (slope_2 * .data[[obs_col]]) + offset_2,
       # Select appropriate mV value based on pH threshold (neutral = 7)
-      !!mv_f := ifelse(.data[[obs_col]] >= 7, .data[[mv_2]], .data[[mv_1]])
+      !!mv_f := ifelse(.data[[obs_col]] >= 7, mv_2, mv_1)
     ) %>%
     select(-c(mv_1, mv_2))  # Remove intermediate calculation columns
 

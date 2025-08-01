@@ -32,7 +32,7 @@ cal_three_point_drift_pH <- function(df, obs_col, lm_trans_col, drift_corr_col, 
   drift_back_calibration <- df[[drift_corr_col]][[nrow(df)]]
 
   # Handle missing drift calibration data
-  if (is.null(drift_back_calibration)){
+  if (!is.data.frame(drift_back_calibration) || nrow(drift_back_calibration) == 0){
     df <- df %>%
       mutate(!!drift_f := NA_integer_)
     return(df)
@@ -82,7 +82,7 @@ cal_three_point_drift_pH <- function(df, obs_col, lm_trans_col, drift_corr_col, 
       drift_1 = ((.data[[lm_trans_col]] - a_t) / (b_t - a_t)) * (b_e - a_e) + a_e,  # Low-medium range
       drift_2 = ((.data[[lm_trans_col]] - b_t) / (c_t - b_t)) * (c_e - b_e) + b_e,  # Medium-high range
       # Select appropriate correction based on original pH value
-      !!drift_f := ifelse(.data[[obs_col]] >= 7, !!drift_2, !!drift_1)
+      !!drift_f := ifelse(.data[[obs_col]] >= 7, drift_2, drift_1)
     ) %>%
     select(-c(a_t, b_t, c_t, drift_1, drift_2))  # Remove intermediate columns
 

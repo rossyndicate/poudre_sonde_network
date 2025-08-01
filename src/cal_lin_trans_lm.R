@@ -31,7 +31,9 @@ cal_lin_trans_lm <- function(df, raw_col, lm_coefs_col, wt_col){
   calibration_2 <- df[[lm_coefs_col]][[nrow(df)]]
 
   # Handle missing calibration data
-  if (is.null(calibration_1) || is.null(calibration_2)){
+  cal_1_check <- (is.data.frame(calibration_1) && nrow(calibration_1) != 0)
+  cal_2_check <- (is.data.frame(calibration_2) && nrow(calibration_2) != 0)
+  if (!cal_1_check | !cal_2_check){
     df <- df %>%
       mutate(!!transformed_col := NA_integer_)
     return(df)

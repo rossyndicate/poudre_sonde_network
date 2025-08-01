@@ -28,6 +28,13 @@ cal_one_point_drift <- function(df, lm_trans_col, drift_corr_col, wt_col){
   # Extract drift calibration data from the latest calibration
   drift_back_calibration <- df[[drift_corr_col]][[nrow(df)]]
 
+  # Handle missing calibration data
+  if (!is.data.frame(drift_back_calibration) || nrow(drift_back_calibration) == 0) {
+    df <- df %>%
+      mutate(!!transformed_col := NA_integer_)
+    return(df)
+  }
+
   # Extract calibration standard values for drift calculation
   expected_standard <- as.numeric(drift_back_calibration %>% pull(post_measurement))
   observed_standard <- as.numeric(drift_back_calibration %>% pull(pre_measurement))

@@ -29,11 +29,12 @@ cal_check <- function(df, obs_col, lm_trans_col) {
   # Create final calibrated values and quality control flag
   df <- df %>%
     mutate(
-      # Use linearly transformed values if available, otherwise fall back to original observations
-      !!transformed_col := ifelse(all_na, .data[[obs_col]], .data[[lm_trans_col]]),
       # Create calibration success flag for quality control
-      cal_check = ifelse(!all_na, TRUE, FALSE)
-    )
+      cal_check = ifelse(!all_na, TRUE, FALSE),
+      # Use linearly transformed values if available, otherwise fall back to original observations
+      !!transformed_col := ifelse(cal_check, .data[[lm_trans_col]], .data[[obs_col]])
+    ) %>%
+    relocate(cal_check, .after = !!transformed_col)
 
   return(df)
 }
