@@ -62,10 +62,10 @@ these thresholds
 # Reading in data to make new thresholds
 ```{r Generating threshold combinations}
 site_levels <- c("bellvue", "salyer", "udall", "riverbend", "cottonwood", "elc",
-                 "archery", "riverbluffs")
+                 "archery", "riverbluffs", "joei", "cbri", "chd", "pfal", "sfm", "pbd")
 
 parameter_levels <- c("Chl-a Fluorescence", "Depth", "DO", "ORP", "pH",
-                      "Specific Conductivity", "Temperature", "Turbidity") 
+                      "Specific Conductivity", "Temperature", "Turbidity", "FDOM Fluorescence") 
 
 season_levels <- c("winter_baseflow", "snowmelt", "monsoon", "fall_baseflow")
 
@@ -155,12 +155,12 @@ summary_stats_2023 <- dataset_2023 %>%
   map(~generate_summary_statistics(.))
 
 rm(
- # File path lists
- verified_names, post_verified_names,
- # Raw datasets before combining
- finalized_dataset_2023, post_finalized_dataset_2023, dataset_2023,
- # Index vectors for combining datasets
- post_names, non_post_names
+  # File path lists
+  verified_names, post_verified_names,
+  # Raw datasets before combining
+  finalized_dataset_2023, post_finalized_dataset_2023, dataset_2023,
+  # Index vectors for combining datasets
+  post_names, non_post_names
 )
 
 gc()
@@ -174,161 +174,68 @@ except that during the flagging step we do the same flags that were done in
 for_azure.Rmd to generate the 'good-ish' 2024 data.
 
 ```{r Read in the 2024 data}
-# Preemptively make a complete site list to pull from the HydroVu API
+# Read in the 2024 data from the flagged directory
+flagged_2024_names <- list.files(
+  here("data", "manual_data_verification", "2024_cycle", "hydro_vu_pull", "flagged"),
+  full.names = T)
+
+# Preemptively make a complete site list 
 complete_site_list <- c("bellvue", "salyer", "udall", "riverbend", 
                         "cottonwood", "elc", "archery", "riverbluffs", 
                         "tamasag", "legacy", "lincoln", "timberline", 
-                        "prospect", "boxelder", "river bluffs")
+                        "prospect", "boxelder", "river bluffs",
+                        "joei", "cbri", "chd", "pfal", "sfm", "pbd")
 complete_site_str <- paste0(complete_site_list, collapse = "|")
 
-# Generate start and end times for the HydroVu API request
-start_dt = as.POSIXct("2024-01-01 00:00:00", tz = "America/Denver")
-start_dt = with_tz(start_dt, tzone = "UTC")
+complete_param_list <- c("Chl-a Fluorescence", "Depth", "DO", "ORP", "pH", 
+                         "Specific Conductivity", "Temperature", "Turbidity", 
+                         "FDOM Fluorescence")
+complete_param_str <- paste0(complete_param_list, collapse = "|")
 
-end_dt = as.POSIXct("2024-12-31 11:59:59", tz = "America/Denver")
-end_dt = with_tz(end_dt, tzone = "UTC")
+# Filter file names before processing
+filtered_2024_names <- flagged_2024_names %>%
+  # Remove virridy files
+  discard(~ grepl("virridy", basename(.x))) %>%
+  # Keep only files that match our sites
+  keep(~ grepl(complete_site_str, basename(.x))) %>%
+  # Keep only files that match our parameters
+  keep(~ grepl(complete_param_str, basename(.x)))
 
-# Load field and malfunction notes
-mWater_data <- load_mWater(creds = read_yaml(here("creds", "mWaterCreds.yml")))
+# Set up parallel processing with 4 cores
+library(furrr)
+plan(multisession, workers = 4)
 
-# Filter both all_field_notes and sensor_malfunction_notes for 2024 data
-all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)  %>% 
-  filter(field_season == 2024) %>% 
-  fix_sites()
-
-sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data) %>% 
-  filter(start_DT >= start_dt & start_DT <= end_dt,
-         end_DT >= start_dt & end_DT <= end_dt) %>% 
-  fix_sites()
-
-# Load the HydroVu data into a file locally
-## Create a custom api_start_dates for the 2024 data
-api_start_dates <- tibble(site = complete_site_list,
-                          start_DT = start_dt,
-                          end_DT = end_dt)
-
-## Configure HydroVu API call
-hv_creds <- read_yaml(here("creds", "HydroVuCreds.yml"))
-
-hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
-                    client_secret = as.character(hv_creds["secret"]))
-
-hv_sites <- hv_locations_all(hv_token) %>% 
-  # filter out vulink and virridy data
-  filter(!grepl("vulink|virridy", name, ignore.case = TRUE),
-         # filter for the sites we are interested in
-         grepl(complete_site_str, name, ignore.case = TRUE))
-
-# Create temporary directory
-temp_dir <- file.path(tempdir(), "api_data_2024")
-dir.create(temp_dir, showWarnings = FALSE)
-temp_dir <- normalizePath(temp_dir)  
-
-## Load the HydroVu data
-pwalk(api_start_dates,
-      function(site, start_DT, end_DT) {
-        message("Requesting HydroVu data for site: ", site)
-        api_puller(
-          site = site,
-          start_dt = start_DT,
-          end_dt = end_DT,
-          api_token = hv_token,
-          hv_sites_arg = hv_sites,
-          # Use temporary directory for the API call
-          dump_dir = temp_dir,
-          synapse_env = FALSE,
-          fs = NULL
-        )
-      }
-)
-
-# Munge the HydroVu data
-## The data needs to be cleaned up from HydroVu to match the new site names.
-new_data_2024 <- munge_api_data(api_dir = temp_dir) %>% 
-  # Clean up
-  fix_sites() %>% 
-  # Split
-  split(f = list(.$site, .$parameter), sep = "-") %>%
-  purrr::keep(~ nrow(.) > 0)
-
-# Format and Summarize the data
-sites <- unique(dplyr::bind_rows(new_data_2024) %>% dplyr::pull(site))
-
-params <- c("Chl-a Fluorescence", "Depth", "DO", "ORP", "pH", "Specific Conductivity",
-            "Temperature", "Turbidity")
-
-site_param_combos <- crossing(sites, params) %>% 
-  mutate(combo = paste0(sites, "-", params)) %>% 
-  pull(combo) 
-
-## Join the data with the field notes
-new_data_2024_subset <- new_data_2024[names(new_data_2024) %in% site_param_combos]
-
-new_data_2024_tidy <- map(new_data_2024_subset, ~tidy_api_data(api_data = .x)) %>% 
-  keep(~!is.null(.)) %>% 
-  map(~add_field_notes(df = ., notes = all_field_notes))
-
-# Add the sensor threshold flags to make good-ish data
-## read in the sensor spec thresholds
-sensor_spec_threshold <- read_yaml(here("data", "field_notes", "qaqc", "sensor_spec_thresholds.yml"))
-
-summary_stats_2024 <- new_data_2024_tidy %>% 
-  bind_rows() %>%
-  split(f = .$site, sep = "-") %>%
-  map(., function(site_df) {
-    site_df %>%
-      data.table(.) %>% 
-      ## Intrasonde Flags
-      add_frozen_flag(df = .) %>%
-      add_unsubmerged_flag(df = .) 
-  }) %>% 
-  bind_rows() %>%
-  split(f = list(.$site, .$parameter), sep = "-") %>% 
-  discard(~ nrow(.) == 0) %>% 
-  map(., function(site_param_df) {
-    site_param_df %>% 
-      data.table(.) %>% 
-      generate_summary_statistics(.) %>% 
-      fix_turbidity(df = .) %>%
-      ## Single Sonde Flags
-      add_field_flag(df = .) %>%
-      add_spec_flag(df = ., spec_table = sensor_spec_threshold) %>%
-      add_na_flag(df = .) %>%
-      add_repeat_flag(df = .) %>%
-      add_depth_shift_flag(df = ., level_shift_table =  all_field_notes, post2024 = TRUE) %>% 
-      add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes) %>% 
-      rename(auto_flag = flag) %>% 
-      tidy_flag_column(df = .) %>% 
-      add_suspect_flag(df = .) %>% 
+# Load the 2024 data from the filtered file list using parallel processing
+summary_stats_2024 <- filtered_2024_names %>% 
+  future_map(\(file_path){
+    site_parameter_df <- read_csv(file_path, show_col_types = F) %>%
+      fix_sites() %>% 
+      # All flags were added to this data, so we need to remove the generated threshold flag for this step
+      mutate(auto_flag = str_remove_all(auto_flag, "outside of seasonal range|slope violation")) %>%
+      # Clean up the flag column
+      fcw.qaqc::tidy_flag_column() %>%
       # Filtering the data for what we care about for the thresholds
       mutate(auto_flag = ifelse(auto_flag == "", NA, auto_flag),
              mal_flag = ifelse(mal_flag == "", NA, mal_flag),
              mean = case_when(
                !is.na(auto_flag) ~ NA,
                sonde_employed == 1 ~ NA,
-               !is.na(depth_change) | depth_change == "sonde moved" ~ NA,
+               !is.na(sonde_moved) ~ NA,
                !is.na(mal_flag) ~ NA,
                TRUE ~ mean
-             )
+             ), 
+             DT_join = format(DT_join, "%Y-%m-%d %H:%M:%S")
       ) %>% 
-      select(DT_round, DT_join, site, parameter, mean, flag = auto_flag)
-  }) %>%
+      select(DT_round, DT_join, site, parameter, mean, flag = auto_flag) 
+    return(site_parameter_df)
+  }, .progress = T) %>%
+  set_names(map_chr(., ~ paste0(unique(.x$site), "-", unique(.x$parameter)))) %>%
+  purrr::keep(~ nrow(.) > 0) %>%
+  # Generate the summary statistics for the 2024 autoqaqc'd data
   map(~generate_summary_statistics(.))
 
-rm(
-  # API and credential objects
-  mWater_data, hv_creds,  hv_token, hv_sites,
-  # Raw and intermediate data processing objects
-  new_data_2024, new_data_2024_subset, new_data_2024_tidy,
-  # Configuration objects
-  api_start_dates, complete_site_list, complete_site_str, sites, params, 
-  # Field notes (if not needed for later analysis)
-  all_field_notes, sensor_malfunction_notes,
-  # Sensor spec thresholds (if not needed later)
-  sensor_spec_threshold,
-  # Date objects
-  start_dt, end_dt
-)
+# Reset to sequential processing for the rest of the script
+plan(sequential)
 
 gc()
 ```
@@ -336,6 +243,10 @@ gc()
 # Generate the new thresholds from the updated data (2023 & 2024)
 
 ```{r Bind 2023 and 2024 data}
+site_param_combos <- crossing(complete_site_list, complete_param_list) %>% 
+  mutate(combo = paste0(complete_site_list, "-", complete_param_list)) %>% 
+  pull(combo)
+
 bound_2023_2024 <- map(
   site_param_combos,
   function(idx) {
@@ -391,8 +302,9 @@ missing_combinations <- all_combinations %>%
 # These were:
 # archery Turbidity snowmelt and winter baseflow
 # elc Depth monsoon
-# Unsure why this would happen with these... The data was not retrieved in neither 
-# the 2023 or 2024 pulls that I did here
+# Notes on missing combinations:
+# - archery did not have a turbidity sensor until this year unless we are using archery_virridy in its place
+# - elc depth had a lot of issues last year which probably caused it to not have enough data to make a threshold
 
 # PBD is not included in this analysis
 
