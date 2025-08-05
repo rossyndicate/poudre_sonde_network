@@ -1,0 +1,406 @@
+---
+title: "Remaking Seasonal Thresholds with Manually Verified 2023 Data"
+author: "ROSSyndicate/Juan De La Torre"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r Setting options}
+options(arrow.unsafe_metadata = TRUE)
+```
+
+```{r Loading libraries}
+# Loading libraries
+library(tidyverse)
+library(data.table)
+library(lubridate)
+library(here)
+library(arrow)
+library(yaml)
+library(fcw.qaqc)
+
+# A site name fixing function to save space and increase readability
+fix_sites <- function(df) {
+  fixed_df <- df %>%
+    mutate(site = tolower(site)) %>%
+    # renaming all the sites, just in case
+    mutate(site = case_when(
+      grepl("tamasag", site, ignore.case = TRUE) ~ str_replace(site, "tamasag", "bellvue"),
+      grepl("legacy", site, ignore.case = TRUE) ~ str_replace(site, "legacy", "salyer"),
+      grepl("lincoln", site, ignore.case = TRUE) ~ str_replace(site, "lincoln", "udall"),
+      grepl("timberline", site, ignore.case = TRUE) ~ str_replace(site, "timberline", "riverbend"),
+      grepl("prospect", site, ignore.case = TRUE) ~ str_replace(site, "prospect", "cottonwood"),
+      grepl("boxelder", site, ignore.case = TRUE) ~ str_replace(site, "boxelder", "elc"),
+      grepl("archery", site, ignore.case = TRUE) ~ str_replace(site, "archery", "archery"),
+      grepl("river bluffs", site, ignore.case = TRUE) ~ str_replace(site, "river bluffs", "riverbluffs"),
+      TRUE ~ site)
+    )
+  return(fixed_df)
+}
+```
+
+# Thresholds
+
+What do we use the thresholds for?
+
+Why are we updating them?
+
+The definition for these thresholds (as defined by `make_threshold_table`) is:
+- `slope_down`: the 99th quantile of the negative `slope_behind` values, grouped by season 
+- `slope_up`: the 1st quantile of the positive `slope_behind` values, grouped by season 
+- `f01`: the 99th quantile of the mean, grouped by season
+- `f99`: the 1st quantile of the mean, grouped by season
+
+These definitions require clean data to accurately generate the thresholds.
+For this reason we will generate them using the manually verified 2023 data.
+When the 2024 data is manually verified, we will use that data to update 
+these thresholds
+
+# Reading in data to make new thresholds
+```{r Generating threshold combinations}
+site_levels <- c("bellvue", "salyer", "udall", "riverbend", "cottonwood", "elc",
+                 "archery", "riverbluffs")
+
+parameter_levels <- c("Chl-a Fluorescence", "Depth", "DO", "ORP", "pH",
+                      "Specific Conductivity", "Temperature", "Turbidity") 
+
+season_levels <- c("winter_baseflow", "snowmelt", "monsoon", "fall_baseflow")
+
+all_combinations <- crossing(
+  site = site_levels,
+  parameter = parameter_levels,
+  season = season_levels
+)
+
+site_level_string <- paste(site_levels, collapse = "|")
+parameter_level_string <- paste(parameter_levels, collapse = "|")
+```
+
+```{r Read in the verified 2023 data}
+# Pulling in the manually verified data
+verified_names <- list.files(
+  here("data", "manual_data_verification", "2023_cycle", 
+       "in_progress", "virridy_verification", "verified_directory"),
+  full.names = T)
+
+finalized_dataset_2023 <- verified_names %>% 
+  map(\(file_path){
+    site_parameter_df <- read_rds(file_path) %>%
+      fix_sites()
+    return(site_parameter_df)
+  }) %>%
+  set_names(map_chr(., ~ paste0(unique(.x$site), "-", unique(.x$parameter)))) %>%
+  discard_at(imap_lgl(., ~ grepl("virridy", .y))) %>%
+  keep_at(imap_lgl(., ~ grepl(site_level_string, .y))) %>%
+  keep_at(imap_lgl(., ~ grepl(parameter_level_string, .y))) 
+
+# Pulling in the post verified data
+post_verified_names <- list.files(
+  here("data", "manual_data_verification", "2023_cycle",
+       "in_progress", "virridy_verification", "post_verified_directory"),
+  full.names = T)
+
+post_finalized_dataset_2023 <- post_verified_names %>% 
+  map(\(file_path){
+    site_parameter_df <- read_rds(file_path) %>%
+      fix_sites()
+    return(site_parameter_df)
+  }) %>%
+  set_names(map_chr(., ~ paste0(unique(.x$site), "-", unique(.x$parameter)))) %>%
+  discard_at(imap_lgl(., ~ grepl("virridy", .y))) %>%
+  keep_at(imap_lgl(., ~ grepl(site_level_string, .y))) %>%
+  keep_at(imap_lgl(., ~ grepl(parameter_level_string, .y))) 
+
+# Combining all 2023 data by preferentially using post verified data
+post_names <- intersect(names(post_finalized_dataset_2023), names(finalized_dataset_2023))
+non_post_names <- setdiff(names(finalized_dataset_2023), post_names)
+
+dataset_2023 <- c(
+  post_finalized_dataset_2023[post_names], 
+  finalized_dataset_2023[non_post_names]
+)
+
+summary_stats_2023 <- dataset_2023 %>%
+  bind_rows() %>% 
+  data.table() %>%
+  fix_sites() %>% 
+  mutate(
+    clean_mean = case_when(
+      is.na(flag) & verification_status == "PASS" ~ mean,
+      is.na(flag) & verification_status == "FAIL" ~ NA,
+      !is.na(flag) & verification_status == "PASS" ~ NA,
+      !is.na(flag) & verification_status == "FAIL" ~ mean
+    ),
+    clean_flag = case_when(
+      is.na(flag) & verification_status == "PASS" ~ NA,
+      is.na(flag) & verification_status == "FAIL" ~ "MANUAL FLAG",
+      !is.na(flag) & verification_status == "PASS" ~ flag,
+      !is.na(flag) & verification_status == "FAIL" ~ NA
+    )
+  ) %>%
+  filter(
+    !is.na(site),
+    site %in% site_levels,
+    parameter %in% parameter_levels,
+    # Filter based on DT. The 2023 data is in MST.
+    DT_round >= as.POSIXct("2023-01-01 00:00:00", tz = "MST") & DT_round <= as.POSIXct("2023-12-31 11:59:59", tz = "MST")
+  ) %>%
+  select(DT_round, DT_join, site, parameter, mean = clean_mean, flag = clean_flag) %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  discard(~ nrow(.x) == 0) %>% 
+  # Generate the summary statistics for the 2023 verified data
+  map(~generate_summary_statistics(.))
+
+rm(
+ # File path lists
+ verified_names, post_verified_names,
+ # Raw datasets before combining
+ finalized_dataset_2023, post_finalized_dataset_2023, dataset_2023,
+ # Index vectors for combining datasets
+ post_names, non_post_names
+)
+
+gc()
+```
+
+The 2024 data is not manually verified. We are going to use the 'good-ish' data cleaning
+method for this data, like we had previously done for the 2023 data.
+
+We basically have to run through the whole pipeline for 2024 data to be summarized,
+except that during the flagging step we do the same flags that were done in 
+for_azure.Rmd to generate the 'good-ish' 2024 data.
+
+```{r Read in the 2024 data}
+# Preemptively make a complete site list to pull from the HydroVu API
+complete_site_list <- c("bellvue", "salyer", "udall", "riverbend", 
+                        "cottonwood", "elc", "archery", "riverbluffs", 
+                        "tamasag", "legacy", "lincoln", "timberline", 
+                        "prospect", "boxelder", "river bluffs")
+complete_site_str <- paste0(complete_site_list, collapse = "|")
+
+# Generate start and end times for the HydroVu API request
+start_dt = as.POSIXct("2024-01-01 00:00:00", tz = "America/Denver")
+start_dt = with_tz(start_dt, tzone = "UTC")
+
+end_dt = as.POSIXct("2024-12-31 11:59:59", tz = "America/Denver")
+end_dt = with_tz(end_dt, tzone = "UTC")
+
+# Load field and malfunction notes
+mWater_data <- load_mWater(creds = read_yaml(here("creds", "mWaterCreds.yml")))
+
+# Filter both all_field_notes and sensor_malfunction_notes for 2024 data
+all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)  %>% 
+  filter(field_season == 2024) %>% 
+  fix_sites()
+
+sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data) %>% 
+  filter(start_DT >= start_dt & start_DT <= end_dt,
+         end_DT >= start_dt & end_DT <= end_dt) %>% 
+  fix_sites()
+
+# Load the HydroVu data into a file locally
+## Create a custom api_start_dates for the 2024 data
+api_start_dates <- tibble(site = complete_site_list,
+                          start_DT = start_dt,
+                          end_DT = end_dt)
+
+## Configure HydroVu API call
+hv_creds <- read_yaml(here("creds", "HydroVuCreds.yml"))
+
+hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
+                    client_secret = as.character(hv_creds["secret"]))
+
+hv_sites <- hv_locations_all(hv_token) %>% 
+  # filter out vulink and virridy data
+  filter(!grepl("vulink|virridy", name, ignore.case = TRUE),
+         # filter for the sites we are interested in
+         grepl(complete_site_str, name, ignore.case = TRUE))
+
+# Create temporary directory
+temp_dir <- file.path(tempdir(), "api_data_2024")
+dir.create(temp_dir, showWarnings = FALSE)
+temp_dir <- normalizePath(temp_dir)  
+
+## Load the HydroVu data
+pwalk(api_start_dates,
+      function(site, start_DT, end_DT) {
+        message("Requesting HydroVu data for site: ", site)
+        api_puller(
+          site = site,
+          start_dt = start_DT,
+          end_dt = end_DT,
+          api_token = hv_token,
+          hv_sites_arg = hv_sites,
+          # Use temporary directory for the API call
+          dump_dir = temp_dir,
+          synapse_env = FALSE,
+          fs = NULL
+        )
+      }
+)
+
+# Munge the HydroVu data
+## The data needs to be cleaned up from HydroVu to match the new site names.
+new_data_2024 <- munge_api_data(api_dir = temp_dir) %>% 
+  # Clean up
+  fix_sites() %>% 
+  # Split
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  purrr::keep(~ nrow(.) > 0)
+
+# Format and Summarize the data
+sites <- unique(dplyr::bind_rows(new_data_2024) %>% dplyr::pull(site))
+
+params <- c("Chl-a Fluorescence", "Depth", "DO", "ORP", "pH", "Specific Conductivity",
+            "Temperature", "Turbidity")
+
+site_param_combos <- crossing(sites, params) %>% 
+  mutate(combo = paste0(sites, "-", params)) %>% 
+  pull(combo) 
+
+## Join the data with the field notes
+new_data_2024_subset <- new_data_2024[names(new_data_2024) %in% site_param_combos]
+
+new_data_2024_tidy <- map(new_data_2024_subset, ~tidy_api_data(api_data = .x)) %>% 
+  keep(~!is.null(.)) %>% 
+  map(~add_field_notes(df = ., notes = all_field_notes))
+
+# Add the sensor threshold flags to make good-ish data
+## read in the sensor spec thresholds
+sensor_spec_threshold <- read_yaml(here("data", "field_notes", "qaqc", "sensor_spec_thresholds.yml"))
+
+summary_stats_2024 <- new_data_2024_tidy %>% 
+  bind_rows() %>%
+  split(f = .$site, sep = "-") %>%
+  map(., function(site_df) {
+    site_df %>%
+      data.table(.) %>% 
+      ## Intrasonde Flags
+      add_frozen_flag(df = .) %>%
+      add_unsubmerged_flag(df = .) 
+  }) %>% 
+  bind_rows() %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>% 
+  discard(~ nrow(.) == 0) %>% 
+  map(., function(site_param_df) {
+    site_param_df %>% 
+      data.table(.) %>% 
+      generate_summary_statistics(.) %>% 
+      fix_turbidity(df = .) %>%
+      ## Single Sonde Flags
+      add_field_flag(df = .) %>%
+      add_spec_flag(df = ., spec_table = sensor_spec_threshold) %>%
+      add_na_flag(df = .) %>%
+      add_repeat_flag(df = .) %>%
+      add_depth_shift_flag(df = ., level_shift_table =  all_field_notes, post2024 = TRUE) %>% 
+      add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes) %>% 
+      rename(auto_flag = flag) %>% 
+      tidy_flag_column(df = .) %>% 
+      add_suspect_flag(df = .) %>% 
+      # Filtering the data for what we care about for the thresholds
+      mutate(auto_flag = ifelse(auto_flag == "", NA, auto_flag),
+             mal_flag = ifelse(mal_flag == "", NA, mal_flag),
+             mean = case_when(
+               !is.na(auto_flag) ~ NA,
+               sonde_employed == 1 ~ NA,
+               !is.na(depth_change) | depth_change == "sonde moved" ~ NA,
+               !is.na(mal_flag) ~ NA,
+               TRUE ~ mean
+             )
+      ) %>% 
+      select(DT_round, DT_join, site, parameter, mean, flag = auto_flag)
+  }) %>%
+  map(~generate_summary_statistics(.))
+
+rm(
+  # API and credential objects
+  mWater_data, hv_creds,  hv_token, hv_sites,
+  # Raw and intermediate data processing objects
+  new_data_2024, new_data_2024_subset, new_data_2024_tidy,
+  # Configuration objects
+  api_start_dates, complete_site_list, complete_site_str, sites, params, 
+  # Field notes (if not needed for later analysis)
+  all_field_notes, sensor_malfunction_notes,
+  # Sensor spec thresholds (if not needed later)
+  sensor_spec_threshold,
+  # Date objects
+  start_dt, end_dt
+)
+
+gc()
+```
+
+# Generate the new thresholds from the updated data (2023 & 2024)
+
+```{r Bind 2023 and 2024 data}
+bound_2023_2024 <- map(
+  site_param_combos,
+  function(idx) {
+    # Get the index from the list
+    old_data_2023_df <- summary_stats_2023[[idx]]
+    new_data_2024_df <- summary_stats_2024[[idx]]
+    
+    old_data_available <- (!is.null(old_data_2023_df) && nrow(old_data_2023_df) > 0)
+    new_data_available <- (!is.null(new_data_2024_df) && nrow(new_data_2024_df) > 0)
+    
+    if (old_data_available && new_data_available) {
+      bound_data <- bind_rows(old_data_2023_df, new_data_2024_df) %>% 
+        distinct(DT_round, .keep_all = TRUE) %>% 
+        arrange(DT_round)
+      return(bound_data)
+    } else if (old_data_available && !new_data_available) {
+      return(old_data_2023_df)
+    } else if (!old_data_available && new_data_available) {
+      return(new_data_2024_df)
+    } else {  
+      return(NULL)
+    }
+  }
+) %>%
+  set_names(site_param_combos) %>%
+  compact()
+```
+
+```{r Generate the new thresholds using the bound data}
+# source make threshold table from functions
+source(here("src", "make_threshold_table.R"))
+new_thresholds <- map_dfr(bound_2023_2024, make_threshold_table)
+```
+
+# Read in the thresholds used to flag the 2025 data
+This data has the 2023 data to _some_ point in 2024
+```{r Read in the old thresholds}
+old_thresholds <- read_csv(here("data", "field_notes","qaqc", "seasonal_thresholds.csv"), show_col_types = FALSE) %>%
+  filter(parameter %in% parameter_levels) 
+```
+
+# Read in the manual thresholds generated via field experience
+```{r Read in the manual thresholds}
+manual_thresholds <- read_csv(here("data", "field_notes", "qaqc", "realistic_thresholds.csv"), show_col_types = FALSE)
+```
+
+```{r Generate the final new thresholds}
+# Find combinations that are in the old thresholds but NOT in the new thresholds
+missing_combinations <- all_combinations %>%
+  inner_join(old_thresholds, by = c("site", "parameter", "season")) %>%
+  anti_join(new_thresholds, by = c("site", "parameter", "season"))
+
+# These were:
+# archery Turbidity snowmelt and winter baseflow
+# elc Depth monsoon
+# Unsure why this would happen with these... The data was not retrieved in neither 
+# the 2023 or 2024 pulls that I did here
+
+# PBD is not included in this analysis
+
+# Add the missing rows to the new thresholds
+complete_thresholds <- new_thresholds %>%
+  bind_rows(missing_combinations %>% select(names(new_thresholds)))
+```
+
+```{r Save the new thresholds}
+write_csv(complete_thresholds, here("data", "field_notes", "qaqc", "updated_seasonal_thresholds_2025.csv"))
+```
