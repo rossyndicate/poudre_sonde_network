@@ -2,8 +2,10 @@
 title: "PWQN Q2 Report"
 author: "Sam Struthers"
 date: "`r Sys.Date()`"
-output: powerpoint_presentation
+output: html_document
 ---
+
+# Set up
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
@@ -54,7 +56,7 @@ invisible(
 #                    "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence"), collapse = "|")
 # 
 # 
-# #get files in hydrovu_2024_data
+#
 # files <- tibble(filename = list.files(here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final"), full.names = TRUE))%>%
 #   filter(grepl(pattern = params, filename))%>%
 #   #remove extras
@@ -81,48 +83,95 @@ invisible(
 # write_rds(all_data, here("data", "sharing", "quarterly_meetings", "2025_Q2", paste0("flagged_data_", min_date, "_", max_date, ".rds")))
 ```
 
+# Setup folder to dump figures
+
+```{r}
+# Create a folder to save figures
+fig_dir <- "data/sharing/figures/2025/"
+if (!dir.exists(fig_dir)) {
+  dir.create(fig_dir, recursive = TRUE)
+}
+```
+
+
+# Site names, Parameter Labels and Colors
 ```{r, include= F}
+
+#Site names
 site_names <- tibble(site = c("pbd", "bellvue", "salyer", "udall", "riverbend", "cottonwood" ,"elc",  "archery", "riverbluffs"), 
-                        site_name = c("Canyon Mouth", "Tamasag", "Legacy", "Lincoln", "Timberline", "Prospect" ,"Boxelder",  "Archery", "River Bluffs"), 
+                     site_name = c("Canyon Mouth", "Tamasag", "Legacy", "Lincoln", "Timberline", "Prospect" ,"Boxelder",  "Archery", "River Bluffs"), 
                      natural_name = c("Canyon Mouth", "Bellvue", "Salyer", "Udall", "Riverbend", "Cottonwood", "ELC", "Archery", "River Bluffs"))
 
-labels <- tibble(param = c("Turbidity", "Specific Conductivity", "Depth", "Chl-a Fluorescence", "FDOM Fluorescence", "Temperature", "DO", 'pH', "Flow"),
-                 label = c("Turbidity (NTU)", "Specific Conductivity (uS/cm)", "Depth (ft)", "Chl-a Fluorescence (RFU)", "FDOM Fluorescence (RFU)", "Temperature (C)", "DO (mg/L)", 'pH', "Flow (cfs)"))
+#Site Order from up to downstream
 
-sensor_data <- read_rds(file = "data/sharing/quarterly_meetings/2025_Q2/flagged_data_2025-03-27_2025-07-02.rds")%>%
-  left_join(site_names, by = c("site"))%>%
-  left_join(labels, by = c( "parameter" = "param")) 
-
-
-#sensor_data_auto_clean <- filter(sensor_data, auto_cleaned_flag_binary == 0)
-
-sensor_data_simple_clean <- sensor_data%>%
-  filter(is.na(mal_flag))%>%
-  filter(!grepl("site visit|sv window", auto_flag))%>%
-  filter(!grepl("sonde unsubmerged", auto_flag))%>%
-  filter(!grepl("sonde not employed", auto_flag))%>%
-  filter(!grepl("sensor malfunction", auto_flag))  %>%
-filter(!(parameter == "Specific Conductivity" & mean > 2000))%>%
-  filter(!(parameter == "pH" & mean < 6))%>%
-  filter(!(parameter == "pH" & mean > 10 ))%>%
-  filter(!(parameter == "Temperature" & mean < 0))%>%
-   filter(!(parameter == "Depth" & mean < 0))%>%
-   filter(!(parameter == "Temperature" & mean > 25 ))%>%
-  filter(!(parameter == "DO" & mean < 4 ))%>%
-  filter(!(mean == 0 ))%>%
-  mutate(mean = case_when(
-    parameter == "Turbidity" & mean > 1000 ~ 1000, 
-    parameter == "Depth"  ~ mean / 0.3048, #convert to ft
-    TRUE ~ mean
-  ))
-
-
-
-#site_order <- c("Canyon Mouth", "Tamasag", "Legacy", "Lincoln", "Timberline" , "Prospect", "Boxelder", "Archery", "River Bluffs"  )
 site_order = c("Canyon Mouth", "Bellvue", "Salyer", "Udall", "Riverbend", "Cottonwood", "ELC", "Archery", "River Bluffs")
 
 
+# Parameter labels
+labels <- tibble(param = c("Turbidity", "Specific Conductivity", "Depth", "Chl-a Fluorescence", "FDOM Fluorescence", "Temperature", "DO", 'pH', "Flow"),
+                 label = c("Turbidity (NTU)", "Specific Conductivity (uS/cm)", "Depth (ft)", "Chl-a Fluorescence (RFU)", "FDOM Fluorescence (RFU)", "Temperature (C)", "DO (mg/L)", 'pH', "Flow (cfs)"))
 
+# Plot colors
+bg_colors <- c( "#01377D", "#009DD1", "#97E7F5",
+                "#7ED348", "#26B170", "#000000") 
+bg_colors_full <- c( "#185BB4", "#009DD1", "#00F5DC", "#00F0C0",
+                "#00D684", "#00BD48", "#00DB58","#0FFF6B" 
+                , "#000000" ) 
+
+colors <- c("#01377D","#009DD1", "#D55E00")
+```
+
+# Read in Sensor Data
+
+```{r, include= F}
+
+params <- paste(c("Chl-a Fluorescence","Depth", "Specific Conductivity",
+                   "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence"), collapse = "|")
+
+files <- tibble(filename = list.files(here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final"), full.names = TRUE))%>%
+  filter(grepl(pattern = params, filename))%>%
+  #remove extras
+  filter(!grepl(pattern = "Level|MV", filename))
+
+
+# read in files
+sensor_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
+  #turn into individual dataframes by site and parameter
+  # split(f = list(.$site, .$parameter), sep = "-") %>%
+  # keep(~nrow(.) > 0)%>%
+  bind_rows()%>%
+  #convert to MST from UTC
+  mutate(DT_round = with_tz(DT_round, tz = "MST"),
+         DT_join = as.character(DT_round))%>%
+  left_join(labels, by = c( "parameter" = "param"))%>%
+  left_join(site_names, by = "site")
+
+sensor_data_clean <- sensor_data %>%
+  filter(
+    is.na(mal_flag), # remove any known malfunctions
+    !grepl("site visit|sv window", auto_flag), # remove site visit impacted data
+    !grepl("sonde unsubmerged", auto_flag),!grepl("sonde not employed", auto_flag), !grepl("sensor malfunction", auto_flag), # remove simple sensor flags
+    !(parameter == "Specific Conductivity" & mean > 2000), # remove instances of SC > 2000 uS/cm
+    !(parameter == "pH" & mean < 4.5), # remove pH < 4 (storage solution)
+    !(parameter == "pH" & mean > 10), # remove pH > 10 (sensor malfunction)
+    !(parameter == "Temperature" & mean < 0), # remove frozen instances
+    !(parameter == "Depth" & mean < 0), # remove negative depth values
+    !(parameter == "Temperature" & mean > 30), # remove instances of temperature > 30 C (sensor error)
+    !(parameter == "DO" & mean < 3), # remove DO < 3 mg/L (sensor error)
+    !(mean == 0) # remove instances of 0 values
+  ) %>%
+  mutate(mean = case_when(
+    parameter == "Turbidity" & mean > 1000 ~ 1000, # cap turbidity at 1000 NTU
+    parameter == "Depth" ~ mean / 0.3048, # convert depth to ft
+    TRUE ~ mean
+  ))
+```
+
+# WQ Event Time Series Plots
+
+## Function to create timeseries plots
+
+```{r, include= F}
 plot_sensor_grabs <- function(df, sites, parameters, renamed_sites, start_dt, end_dt, timestep, add_grabs, color_scheme = bg_colors, b_size = 30){
   
   
@@ -331,57 +380,6 @@ plot_sensor_grabs <- function(df, sites, parameters, renamed_sites, start_dt, en
 
 
 
-
-```{r, include= F}
-
-#read in cdphe standards
-convert_season_to_months <- function(season_range) {
-  # Define month order
-  months <- c("january", "february", "march", "april", "may", "june",
-              "july", "august", "september", "october", "november", "december")
-  
-  # Split the season range
-  season_parts <- strsplit(season_range, "-")[[1]]
-  start_month <- tolower(season_parts[1])
-  end_month <- tolower(season_parts[2])
-  
-  # Find positions of start and end months
-  start_pos <- which(months == start_month)
-  end_pos <- which(months == end_month)
-  
-  # Handle cases where season crosses year boundary
-  if (start_pos <= end_pos) {
-    selected_months <- months[start_pos:end_pos]
-  } else {
-    selected_months <- c(months[start_pos:12], months[1:end_pos])
-  }
-  
-  # Return pipe-separated string
-  return(paste(selected_months, collapse = "|"))
-}
-
-site_standards <- readxl::read_xlsx(path = "data/metadata/site_cdphe_classification_2025.xlsx") %>%
-  # Convert season_1 to pipe-separated months
-  mutate(season = sapply(season, convert_season_to_months))%>%
-  # Split ph column into ph_low and ph_high
-  separate(ph, into = c("ph_low", "ph_high"), sep = "-", convert = TRUE)
-
-
-
-
-bg_colors <- c( "#01377D", "#009DD1", "#97E7F5",
-                "#7ED348", "#26B170", "#000000") 
-bg_colors_full <- c( "#185BB4", "#009DD1", "#00F5DC", "#00F0C0",
-                "#00D684", "#00BD48", "#00DB58","#0FFF6B" 
-                , "#000000" ) 
-
-colors <- c("#01377D","#009DD1", "#D55E00")
-
-
-
-```
-
-
 ## WQ Events: March
 
 ```{r april_drawdown, echo= F}
@@ -396,7 +394,7 @@ march_storm <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_m
 
 
 march_storm
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/march_storm.png", plot = march_storm, width = 16, height = 10, units = "in", dpi = 300)
+ggsave(paste0(fig_dir,"/march_storm.png"), plot = march_storm, width = 16, height = 10, units = "in", dpi = 300)
 
 ```
 
@@ -415,7 +413,7 @@ april <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_april, 
 
 
 april
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/april_drawdowns.png", plot = april, width = 16, height = 10, units = "in", dpi = 300)
+ggsave(paste0(fig_dir,"/april_drawdown.png"), plot = april, width = 16, height = 10, units = "in", dpi = 300)
 
 ```
 
@@ -433,7 +431,7 @@ may_storm <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_may
 
 
 may_storm
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/may_storm.jpg", plot = may_storm, width = 16, height = 10, units = "in", dpi = 300)
+ggsave(paste0(fig_dir,"/may_storm.png"), plot = may_storm, width = 16, height = 10, units = "in", dpi = 300)
 
 ```
 
@@ -452,7 +450,7 @@ may_1 <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_may_1, 
 
 
 may_1
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/may_do_shift.png", plot = may_1, width = 16, height = 10, units = "in", dpi = 300)
+ggsave(paste0(fig_dir,"/may_do_shift.png"), plot = may_1, width = 16, height = 10, units = "in", dpi = 300)
 
 ```
 
@@ -472,7 +470,7 @@ may_2 <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_may_2, 
 
 may_2
 
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/may_drawdowns.png", plot = may_2, width = 16, height = 10, units = "in", dpi = 300)
+ggsave(paste0(fig_dir,"/may_drawdown.png"), plot = may_2, width = 16, height = 10, units = "in", dpi = 300)
 
 ```
 
@@ -487,270 +485,221 @@ june_fdom <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_jun
   labs(caption = "Preliminary Data, subject to revision")
 
 june_fdom
+
+ggsave(paste0(fig_dir,"/june_fdom.png"), plot = june_fdom, width = 16, height = 10, units = "in", dpi = 300)
 ```
 
 
 
+# WQ Monthly Summary
 
-
-## WQ Summary
-
-
-
-
-```{r}
-# Define Y-axis limits for each parameter using tibble
-y_limits <- tibble(
-  parameter = c("Temperature", "pH", "DO", "Specific Conductivity"),
-  y_min = c(0, 6, 4, 0),
-  y_max = c(30, 10, 20, 2000)
-)
-
-```
-
-### March & April
-
-```{r}
-#create boxplots for each site/parameter following site ordering
-
-box_data <- sensor_data_simple_clean%>%
-         filter(parameter != "Turbidity",
-                parameter != "Depth", 
-                parameter != "FDOM Fluorescence", 
-                parameter != "Chl-a Fluorescence", 
-                parameter != "ORP")%>%
-         filter(site != "pbd", site != "springcreek")%>%
-  filter(month(DT_round) %in% c(3,4))
-
-# Merge with your data using left_join
-box_data_with_limits <- box_data %>%
-  left_join(y_limits, by = "parameter")
-
- box_data_with_limits$natural_name <- factor(box_data_with_limits$natural_name, levels = site_order )
-
-april_box_plot <- box_data_with_limits %>%
-  ggplot(aes(x = natural_name, y = mean, fill = natural_name)) +
-  geom_boxplot() +
-  facet_wrap(~label, scales = "free_y", strip.position = "left") +
-  geom_blank(aes(y = y_min)) +  # Forces inclusion of minimum
-  geom_blank(aes(y = y_max)) +  # Forces inclusion of maximum
-  scale_fill_manual(values = bg_colors_full) +
-  labs(x = "Site", y = "", 
-       title = "Poudre Water Quality Network Data Summary: End of March and April 2025",
-       caption = "Preliminary Data, subject to revision") +
-  theme_bw(base_size = 20) +
-  theme(legend.position = "none",
-        axis.text.x = element_text(angle = 45, hjust = 1), 
-        strip.background = element_blank(),
-        strip.placement = "outside")
-  
-
-april_box_plot
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/april_boxplots.png", plot = april_box_plot, width = 16, height = 10, units = "in", dpi = 300)
-
-```
-
-## May
+## Function for monthly boxplots
 
 ```{r}
 
-
-
-
-
-box_data <- sensor_data_simple_clean%>%
-         filter(parameter != "Turbidity",
-                parameter != "Depth", 
-                parameter != "FDOM Fluorescence", 
-                parameter != "Chl-a Fluorescence", 
-                parameter != "ORP")%>%
-         filter(site != "pbd", site != "springcreek")%>%
-  filter(month(DT_round) == 5)
-
-
-
-# Merge with your data using left_join
-box_data_with_limits <- box_data %>%
-  left_join(y_limits, by = "parameter")
- box_data_with_limits$natural_name <- factor(box_data_with_limits$natural_name, levels = site_order )
-
-may_box_plot <- box_data_with_limits %>%
-  ggplot(aes(x = natural_name, y = mean, fill = natural_name)) +
-  geom_boxplot() +
-  facet_wrap(~label, scales = "free_y", strip.position = "left") +
-  geom_blank(aes(y = y_min)) +  # Forces inclusion of minimum
-  geom_blank(aes(y = y_max)) +  # Forces inclusion of maximum
-  scale_fill_manual(values = bg_colors_full) +
-  labs(x = "Site", y = "", 
-       title = "Poudre Water Quality Network Data Summary: May 2025",
-       caption = "Preliminary Data, subject to revision") +
-  theme_bw(base_size = 20) +
-  theme(legend.position = "none",
-        axis.text.x = element_text(angle = 45, hjust = 1), 
-        strip.background = element_blank(),
-        strip.placement = "outside")
-
-may_box_plot
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/may_boxplots.png", plot = may_box_plot, width = 16, height = 10, units = "in", dpi = 300)
-
-```
-
-
-## June
-
-```{r}
-
-
-
-
-generate_monthly_boxplot_summary <- function(sensor_data, month){
+generate_monthly_boxplot_summary <- function(sensor_data, year, month){
   
-# Parse the month string as part of a date and extract the month number
-month_number <- mdy(paste(month, "1, 2020")) %>% month()
-month_name <- mdy(paste(month, "1, 2020")) %>% month(label = TRUE)
-
+  # Parse the month string as part of a date and extract the month number
+  month_number <- mdy(paste(month, "1, 2020")) %>% month()
+  month_name <- mdy(paste(month, "1, 2020")) %>% month(label = TRUE)
   
-box_data <- sensor_data%>%
-         filter(parameter != "Turbidity",
-                parameter != "Depth", 
-                parameter != "FDOM Fluorescence", 
-                parameter != "Chl-a Fluorescence", 
-                parameter != "ORP")%>%
-         filter(site != "pbd", site != "springcreek")%>%
-  filter(month(DT_round) == month_number)
-
-
-# Merge with your data using left_join
-box_data_with_limits <- box_data #%>%
- box_data_with_limits$natural_name <- factor(box_data_with_limits$natural_name, levels = site_order )
-
-month_standard <- readxl::read_xlsx(path = "data/metadata/site_cdphe_classification_2025.xlsx") %>%
-  # Convert season_1 to pipe-separated months
-  mutate(season = sapply(season, convert_season_to_months))%>%
-  # Split ph column into ph_low and ph_high
-  separate(ph, into = c("ph_low", "ph_high"), sep = "-", convert = TRUE) %>%
-  filter(grepl(x = season, pattern = month_name, ignore.case = TRUE), 
-         site %in% unique(box_data_with_limits$natural_name))
-
-# Get unique parameters from the data
-parameters <- unique(box_data_with_limits$label)
-
-# Create individual plots for each parameter
-parameter_plots <- list()
-
-for (param in parameters) {
-  # Filter data for current parameter
-  param_data <- box_data_with_limits %>% 
-    filter(label == param)
   
-  standards <- param_data %>%
+  box_data <- sensor_data%>%
+    filter(parameter != "Turbidity",
+           parameter != "Depth", 
+           parameter != "FDOM Fluorescence", 
+           parameter != "Chl-a Fluorescence", 
+           parameter != "ORP")%>%
+    filter(site != "pbd", site != "springcreek")%>%
+    filter(month(DT_round) == month_number & year(DT_round) == year)
+  
+  
+  # Merge with your data using left_join
+  box_data_with_limits <- box_data #%>%
+  box_data_with_limits$natural_name <- factor(box_data_with_limits$natural_name, levels = site_order )
+  
+  
+  convert_season_to_months <- function(season_range) {
+    # Define month order
+    months <- c("january", "february", "march", "april", "may", "june",
+                "july", "august", "september", "october", "november", "december")
+    
+    # Split the season range
+    season_parts <- strsplit(season_range, "-")[[1]]
+    start_month <- tolower(season_parts[1])
+    end_month <- tolower(season_parts[2])
+    
+    # Find positions of start and end months
+    start_pos <- which(months == start_month)
+    end_pos <- which(months == end_month)
+    
+    # Handle cases where season crosses year boundary
+    if (start_pos <= end_pos) {
+      selected_months <- months[start_pos:end_pos]
+    } else {
+      selected_months <- c(months[start_pos:12], months[1:end_pos])
+    }
+    
+    return(paste(selected_months, collapse = "|"))
+  }
+  
+  #read in cdphe standards collected by Sam Struthers from https://cdphe.colorado.gov/water-quality-control-commission-regulations
+  #Parameter (DO, pH, Temp) thresholds: Reg 31, Table I 
+  # Site classifications: Reg 38, ~ Pg 410
+  
+  month_standard <- readxl::read_xlsx(path = "data/metadata/site_cdphe_classification_2025.xlsx") %>%
+    # Convert season_1 to pipe-separated months
+    mutate(season = sapply(season, convert_season_to_months))%>%
+    # Split ph column into ph_low and ph_high
+    separate(ph, into = c("ph_low", "ph_high"), sep = "-", convert = TRUE) %>%
+    filter(grepl(x = season, pattern = month_name, ignore.case = TRUE), 
+           site %in% unique(box_data_with_limits$natural_name))
+  
+  # Get unique parameters from the data
+  parameters <- unique(box_data_with_limits$label)
+  
+  # Create individual plots for each parameter
+  parameter_plots <- list()
+  
+  for (param in parameters) {
+    # Filter data for current parameter
+    param_data <- box_data_with_limits %>% 
+      filter(label == param)
+    
+    standards <- param_data %>%
       select(natural_name) %>%
       distinct() %>%
       left_join(month_standard, by = c("natural_name" = "site"))%>%
       mutate(site_num =  as.numeric(factor(natural_name, levels = site_order))-1)
-  
-  # Create base plot for current parameter
-  p <- param_data %>%
-    ggplot(aes(x = natural_name, y = mean, fill = natural_name)) +
-    geom_boxplot() +
-    #geom_blank(aes(y = y_min)) +  # Forces inclusion of minimum
-    #geom_blank(aes(y = y_max)) +  # Forces inclusion of maximum
-    scale_fill_manual(values = bg_colors_full) +
-    labs(x = "Site", y = param) +  # Use parameter name as y-axis label
-    theme_bw(base_size = 14) +  # Slightly smaller base size for multiple plots
-    theme(legend.position = "none",
-          axis.text.x = element_text(angle = 45, hjust = 1),
-          plot.title = element_text(size = 12))  # Smaller title for individual plots
-  
-  # Add reference lines based on parameter type
-  if (grepl("pH", param, ignore.case = TRUE)) {
-    # Add horizontal lines for pH standards
-    p <- p + 
-      geom_hline(yintercept = 6.5, color = "red", linetype = "dashed", alpha = 0.7) +
-      geom_hline(yintercept = 9, color = "red", linetype = "dashed", alpha = 0.7)
-  }
-  
-  if (grepl("Temperature|Temp", param, ignore.case = TRUE)) {
-    # Add chronic temperature lines (orange, dashed)
-    if ("temp_chronic" %in% names(standards)) {
-      chronic_data <- standards %>% 
-        filter(!is.na(temp_chronic))
+    
+    # Create base plot for current parameter
+    p <- param_data %>%
+      ggplot(aes(x = natural_name, y = mean, fill = natural_name)) +
+      geom_boxplot() +
+      #geom_blank(aes(y = y_min)) +  # Forces inclusion of minimum
+      #geom_blank(aes(y = y_max)) +  # Forces inclusion of maximum
+      scale_fill_manual(values = bg_colors_full) +
+      labs(x = "Site", y = param) +  # Use parameter name as y-axis label
+      theme_bw(base_size = 14) +  # Slightly smaller base size for multiple plots
+      theme(legend.position = "none",
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            axis.title.x = element_text(face = "bold"),
+            axis.title.y = element_text(face = "bold"),
+            plot.title = element_text(size = 12))  # Smaller title for individual plots
+    
+    # Add reference lines based on parameter type
+    if (grepl("pH", param, ignore.case = TRUE)) {
+      # Add horizontal lines for pH standards
+      p <- p + 
+        geom_hline(yintercept = 6.5, color = "red", linetype = "dashed", alpha = 0.7) +
+        geom_hline(yintercept = 9, color = "red", linetype = "dashed", alpha = 0.7)
+    }
+    
+    if (grepl("Temperature|Temp", param, ignore.case = TRUE)) {
+      # Add chronic temperature lines (orange, dashed)
+      if ("temp_chronic" %in% names(standards)) {
+        chronic_data <- standards %>% 
+          filter(!is.na(temp_chronic))
+        
+        if (nrow(chronic_data) > 0) {
+          p <- p + 
+            geom_segment(data = chronic_data,
+                         aes(x = site_num - 0.5, xend = site_num + 0.5, 
+                             y = temp_chronic, yend = temp_chronic),
+                         color = "orange", linetype = "dashed", linewidth = 1, alpha = 0.8,
+                         inherit.aes = FALSE)
+        }
+      }
       
-      if (nrow(chronic_data) > 0) {
-        p <- p + 
-          geom_segment(data = chronic_data,
-                      aes(x = site_num - 0.5, xend = site_num + 0.5, 
-                          y = temp_chronic, yend = temp_chronic),
-                      color = "orange", linetype = "dashed", linewidth = 1, alpha = 0.8,
-                      inherit.aes = FALSE)
+      # Add acute temperature lines (red, solid)
+      if ("temp_acute" %in% names(standards)) {
+        acute_data <- standards %>% 
+          filter(!is.na(temp_acute))
+        
+        if (nrow(acute_data) > 0) {
+          p <- p + 
+            geom_segment(data = acute_data,
+                         aes(x = site_num - 0.5, xend = site_num + 0.5, 
+                             y = temp_acute, yend = temp_acute),
+                         color = "red", linetype = "solid", linewidth = 1, alpha = 0.8,
+                         inherit.aes = FALSE)
+        }
+      }
+    }
+    if (grepl("DO", param, ignore.case = TRUE)) {
+      
+      # Add chronic temperature lines (orange, dashed)
+      if ("do_chronic" %in% names(standards)) {
+        do_chronic_data <- standards %>% 
+          filter(!is.na(temp_chronic))
+        
+        if (nrow(do_chronic_data) > 0) {
+          p <- p + 
+            geom_segment(data = do_chronic_data,
+                         aes(x = site_num - 0.4, xend = site_num + 0.4, 
+                             y = do_chronic, yend = do_chronic),
+                         color = "red", linetype = "solid", linewidth = 1, alpha = 0.8,
+                         inherit.aes = FALSE)
+        }
       }
     }
     
-    # Add acute temperature lines (red, solid)
-    if ("temp_acute" %in% names(standards)) {
-      acute_data <- standards %>% 
-        filter(!is.na(temp_acute))
-      
-      if (nrow(acute_data) > 0) {
-        p <- p + 
-          geom_segment(data = acute_data,
-                      aes(x = site_num - 0.5, xend = site_num + 0.5, 
-                          y = temp_acute, yend = temp_acute),
-                      color = "red", linetype = "solid", linewidth = 1, alpha = 0.8,
-                      inherit.aes = FALSE)
-      }
-    }
+    parameter_plots[[param]] <- p +
+      annotate("text", 
+               x = -Inf, 
+               y = Inf, 
+               label = "PRELIMINARY RESULTS", 
+               hjust = -0.1, 
+               vjust = 2, 
+               size = 4, 
+               fontface = "bold",
+               color = "red")
   }
-  if (grepl("DO", param, ignore.case = TRUE)) {
-
-    # Add chronic temperature lines (orange, dashed)
-    if ("do_chronic" %in% names(standards)) {
-      do_chronic_data <- standards %>% 
-        filter(!is.na(temp_chronic))
-      
-      if (nrow(do_chronic_data) > 0) {
-        p <- p + 
-          geom_segment(data = do_chronic_data,
-                      aes(x = site_num - 0.4, xend = site_num + 0.4, 
-                          y = do_chronic, yend = do_chronic),
-                      color = "red", linetype = "solid", linewidth = 1, alpha = 0.8,
-                      inherit.aes = FALSE)
-      }
-      }
-    }
   
   
-  parameter_plots[[param]] <- p
+  parameter_plots[[1]] <- parameter_plots[[1]]+
+    theme(axis.title.x = element_blank())
+  parameter_plots[[2]] <- parameter_plots[[2]]+
+    theme(axis.title.x = element_blank())
+  
+  # Combine plots using patchwork
+  combined_plot <- wrap_plots(parameter_plots, ncol = 2) +  # Adjust ncol as needed
+    plot_annotation(
+      title = paste0("Poudre Water Quality Network Data Summary: ", str_to_title(month_name),  " ", year),
+      caption = "Preliminary Data, subject to revision.\n Red solid lines indicate state of Colorado chronic thresholds and orange dashed lines indicate acute thresholds for aquatic life.",
+      theme = theme(plot.title = element_text(size = 16, hjust = 0.5, face = "bold"), 
+                    plot.caption = element_text(size = 13))
+    )
+  
+  # Display the combined plot
+  return(combined_plot)
+  
 }
 
+```
 
-parameter_plots[[1]] <- parameter_plots[[1]]+
-  theme(axis.title.x = element_blank())
-parameter_plots[[2]] <- parameter_plots[[2]]+
-  theme(axis.title.x = element_blank())
+## Generate for each month
 
-# Combine plots using patchwork
-combined_plot <- wrap_plots(parameter_plots, ncol = 2) +  # Adjust ncol as needed
-  plot_annotation(
-    title = paste0("Poudre Water Quality Network Data Summary: ", str_to_title(month_name),  " ", year(Sys.Date())),
-    caption = "Preliminary Data, subject to revision.\n Red solid lines indicate state of Colorado chronic thresholds and orange dashed lines indicate acute thresholds for aquatic life.",
-    theme = theme(plot.title = element_text(size = 16, hjust = 0.5))
-  )
+```{r}
 
-# Display the combined plot
-return(combined_plot)
+monthly_plots <- map2(1:7,2025, ~{
+  result<- tryCatch({
+    generate_monthly_boxplot_summary(sensor_data = sensor_data_clean, month = .x, year = .y)
+  }, error = function(e) {
+    message(paste("Skipping month", .x, "- Error:", e$message))
+    return(NULL)
+  })
+  # Add month-year as attribute to preserve original indices
+  if (!is.null(result)) {
+    attr(result, "year_month") <- paste0(.y, "_", .x)
+  }
+  return(result)
+})%>%
+keep(~ !is.null(.x))%>%
+  set_names(map_chr(., ~ attr(.x, "year_month")))
 
-}
-
-
-may_boxplots<- generate_monthly_boxplot_summary(sensor_data = sensor_data_simple_clean,
-                                 month = "May")
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/may_boxplots.png", plot = may_boxplots, width = 16, height = 10, units = "in", dpi = 300)
-
-june_boxplots<- generate_monthly_boxplot_summary(sensor_data = sensor_data_simple_clean,
-                                 month = "June")
-ggsave("data/sharing/quarterly_meetings/2025_Q2/figs/june_boxplots.png", plot = june_boxplots, width = 16, height = 10, units = "in", dpi = 300)
-
+monthly_plots
+walk(monthly_plots, ~ ggsave(.x, filename = paste0(fig_dir, "monthly_boxplot_summary_", attr(.x, "year_month"), ".png"), width = 16, height = 10, units = "in", dpi = 300))
 
 
 ```
