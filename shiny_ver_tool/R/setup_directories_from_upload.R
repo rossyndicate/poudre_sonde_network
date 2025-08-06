@@ -149,13 +149,13 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   pre_processed_data <- map(.x = flagged_list, \(x)
                             x %>%
                               mutate(
-                                mean = value, # actual data for DS use
+                                #mean = value, # actual data for DS use
                                 mean_verified = mean, # if verification status pass or flag, this is mean. set default to mean so that it can be used in the app
                                 is_verified = FALSE, # whether or not the data has been verified
                                 verification_status = NA, # can only be pass/fail/skip
                                 year = year(DT_round),
                                 week = week(DT_round),
-                                weekday = wday(DT_round, week_start = 7),
+                                weekday = lubridate::wday(DT_round, week_start = 7),
                                 y_w = paste(year, "-", week),
                                 day = yday(DT_round),
                                 y_d = paste(year, "-", day),
@@ -166,7 +166,7 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
                                   month(DT_round) %in% c(7, 8, 9) ~ "monsoon",
                                   month(DT_round) %in% c(10, 11) ~ "fall_baseflow"
                                 ),
-                                auto_flag = flag,
+                                #auto_flag = flag,
                                 #merge auto_flag and mal_flag by ; into flag. don't include NAs
                                 flag = case_when(
                                 #both are flagged then combine by ;
