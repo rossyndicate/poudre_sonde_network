@@ -245,7 +245,7 @@ while maintaining the overall automated workflow for standard cases.
 
 ## The `back_calibrate()` Function
 
-The `back_calibrate()` function serves as the orchestrator for the entire calibration 
+The `cal_back_calibrate()` function serves as the orchestrator for the entire calibration 
 process within each chunk. It automatically determines the appropriate calibration 
 workflow based on the sensor parameter type. Standard sensors (Chlorophyll-a, 
 FDOM, ORP, Pressure, Specific Conductivity, RDO) follow a five-step process 
