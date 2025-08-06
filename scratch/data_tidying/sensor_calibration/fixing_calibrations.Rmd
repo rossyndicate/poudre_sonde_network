@@ -236,7 +236,7 @@ year, and calibration chunks within each site-parameter. While `join_sensor_cali
 and `prepare_sensor_calibration_data()` handle similar nested year/site-parameter 
 iterations internally, they abstract away this complexity from the user.
 
-The explicit nested structure in  the `back_calibration()` function call serves 
+The explicit nested structure in  the `cal_back_calibration()` function call serves 
 a purpose for future functionality. While automated calibration works well for 
 most situations, some sensor data may require manual intervention or custom 
 calibration approaches. The exposed nested maps allow users to easily extract 
