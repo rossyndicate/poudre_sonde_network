@@ -243,7 +243,7 @@ calibration approaches. The exposed nested maps allow users to easily extract
 specific years, site-parameters, or individual chunks for manual processing 
 while maintaining the overall automated workflow for standard cases.
 
-## The `back_calibrate()` Function
+## The `cal_back_calibrate()` Function
 
 The `cal_back_calibrate()` function serves as the orchestrator for the entire calibration 
 process within each chunk. It automatically determines the appropriate calibration 
