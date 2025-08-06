@@ -215,7 +215,6 @@ calibration parameters.
 # Back Calibration
 
 ```{r Apply back calibration functions to the data}
-# NOTE: THIS WILL NOT RUN YET!
 calibrated_data <- prepped_snsr_cal_data %>% 
   map(function(year){
     calibrated_site_param_list <- year %>%
