@@ -388,7 +388,7 @@ plot_sensor_grabs <- function(df, sites, parameters, renamed_sites, start_dt, en
 sites_march <- c( "udall", "cottonwood", "elc", "archery")
 
 
-march_storm <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_march,  parameters = c("Depth", "Specific Conductivity","Turbidity" ), start_dt = "2025-03-28  00:00",
+march_storm <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_march,  parameters = c("Depth", "Specific Conductivity","Turbidity" ), start_dt = "2025-03-28  00:00",
                   end_dt = "2025-04-02 24:00",timestep =  "30 minutes", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
   labs(caption = "Preliminary Data, subject to revision")
 
@@ -407,7 +407,7 @@ ggsave(paste0(fig_dir,"/march_storm.png"), plot = march_storm, width = 16, heigh
 sites_april <- c("salyer", "udall", "riverbend", "elc", "archery")
 
 
-april <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_april,  parameters = c("Depth", "Specific Conductivity","DO","Temperature" ), start_dt = "2025-04-13  00:00",
+april <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_april,  parameters = c("Depth", "Specific Conductivity","DO","Temperature" ), start_dt = "2025-04-13  00:00",
                   end_dt = "2025-04-17 24:00",timestep =  "30 minutes", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
   labs(caption = "Preliminary Data, subject to revision")
 
@@ -425,7 +425,7 @@ ggsave(paste0(fig_dir,"/april_drawdown.png"), plot = april, width = 16, height =
 sites_may_storm <- c( "udall", "elc", "archery", "riverbluffs")
 
 
-may_storm <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_may_storm,  parameters = c("Depth", "DO" ,"Turbidity", "Temperature" ), start_dt = "2025-05-07  00:00",
+may_storm <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_may_storm,  parameters = c("Depth", "DO" ,"Turbidity", "Temperature" ), start_dt = "2025-05-07  00:00",
                   end_dt = "2025-05-09 00:00",timestep =  "15 minutes", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
   labs(caption = "Preliminary Data, subject to revision")
 
@@ -444,7 +444,7 @@ ggsave(paste0(fig_dir,"/may_storm.png"), plot = may_storm, width = 16, height = 
 sites_may_1<- c( "bellvue", "salyer", "udall", "riverbend")
 
 
-may_1 <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_may_1,  parameters = c("Depth","DO","Temperature" ), start_dt = "2025-05-02  12:00",
+may_1 <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_may_1,  parameters = c("Depth","DO","Temperature" ), start_dt = "2025-05-02  12:00",
                   end_dt = "2025-05-04 12:00",timestep =  "15 minute", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
   labs(caption = "Preliminary Data, subject to revision")
 
@@ -463,7 +463,7 @@ ggsave(paste0(fig_dir,"/may_do_shift.png"), plot = may_1, width = 16, height = 1
 sites_may_2<- c("bellvue", "riverbend", "elc", "archery", "riverbluffs")
 
 
-may_2 <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_may_2,  parameters = c("Depth", "Specific Conductivity","DO","Temperature" ), start_dt = "2025-05-01  00:00",
+may_2 <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_may_2,  parameters = c("Depth", "Specific Conductivity","DO","Temperature" ), start_dt = "2025-05-01  00:00",
                   end_dt = "2025-05-15 24:00",timestep =  "2 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
   labs(caption = "Preliminary Data, subject to revision")
 
@@ -480,7 +480,7 @@ ggsave(paste0(fig_dir,"/may_drawdown.png"), plot = may_2, width = 16, height = 1
 ```{r}
 sites_june <- c("salyer", "udall", "riverbend", "cottonwood", "elc")
 
-june_fdom <-  plot_sensor_grabs(df = sensor_data_simple_clean, sites = sites_june,  parameters = c("Depth", "FDOM Fluorescence","Specific Conductivity" ), start_dt = "2025-06-24  00:00",
+june_fdom <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_june,  parameters = c("Depth", "FDOM Fluorescence","Specific Conductivity" ), start_dt = "2025-06-24  00:00",
                   end_dt = "2025-06-28 24:00",timestep =  "2 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
   labs(caption = "Preliminary Data, subject to revision")
 
@@ -500,8 +500,8 @@ ggsave(paste0(fig_dir,"/june_fdom.png"), plot = june_fdom, width = 16, height = 
 generate_monthly_boxplot_summary <- function(sensor_data, year, month){
   
   # Parse the month string as part of a date and extract the month number
-  month_number <- mdy(paste(month, "1, 2020")) %>% month()
-  month_name <- mdy(paste(month, "1, 2020")) %>% month(label = TRUE)
+  month_number <- mdy(paste(month, "1, 2020")) %>% lubridate::month()
+  month_name <- mdy(paste(month, "1, 2020")) %>% lubridate::month(label = TRUE)
   
   
   box_data <- sensor_data%>%
@@ -511,7 +511,7 @@ generate_monthly_boxplot_summary <- function(sensor_data, year, month){
            parameter != "Chl-a Fluorescence", 
            parameter != "ORP")%>%
     filter(site != "pbd", site != "springcreek")%>%
-    filter(month(DT_round) == month_number & year(DT_round) == year)
+    filter(lubridate::month(DT_round) == month_number & lubridate::year(DT_round) == year)
   
   
   # Merge with your data using left_join
@@ -699,6 +699,9 @@ keep(~ !is.null(.x))%>%
   set_names(map_chr(., ~ attr(.x, "year_month")))
 
 monthly_plots
+
+write_rds(monthly_plots, file = paste0(fig_dir, "monthly_boxplot_summaries.rds"))
+
 walk(monthly_plots, ~ ggsave(.x, filename = paste0(fig_dir, "monthly_boxplot_summary_", attr(.x, "year_month"), ".png"), width = 16, height = 10, units = "in", dpi = 300))
 
 
