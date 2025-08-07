@@ -1,0 +1,115 @@
+---
+title: "mcm_low_pass_filter"
+output: html_document
+---
+
+```{r}
+# Read calibrated sensor data
+cal_sensor_data <- read_rds(here("data", "manual_data_verification", "complete_dataset", "calibrated_sensor_data.rds"))
+```
+
+```{r}
+low_pass_filter <- function(df) {
+  # Only apply low pass filter to turbidity data due to its susceptibility to optical noise
+  if (unique(df$parameter) == "Turbidity") {
+
+    # Define 5-point binomial kernel function with weights [1,4,6,4,1]
+    binomial_kernel <- function(int_vec) {
+      kernel <- c(1, 4, 6, 4, 1)  
+      x <- sum(int_vec * kernel) / 16  
+      return(x)
+    }
+
+    # Apply low pass smoothing filter three times in succession for aggressive noise reduction
+    # Each application uses a centered 5-point window covering ±30 minutes (at 15-min intervals)
+    df <- df %>% 
+      mutate(
+        # First pass
+        smoothed_mean = data.table::frollapply(mean, n = 5, FUN = binomial_kernel, 
+                                               fill = NA, align = "center"),
+        # Second pass
+        smoothed_mean = data.table::frollapply(smoothed_mean, n = 5, FUN = binomial_kernel, 
+                                               fill = NA, align = "center"),
+        # Third pass
+        smoothed_mean = data.table::frollapply(smoothed_mean, n = 5, FUN = binomial_kernel, 
+                                               fill = NA, align = "center")
+      )
+
+    return(df)
+  } else {
+    # Return unmodified dataframe for non-turbidity parameters
+    return(df)
+  }
+}
+```
+
+```{r}
+# Get turb example
+sfm_turb <- cal_sensor_data$`2024`$`sfm-Turbidity`
+```
+
+```{r}
+# apply low pass filter to it
+sfm_turb <- low_pass_filter(sfm_turb)
+```
+
+```{r}
+# Read in HMM library
+library(depmixS4)
+
+# Create HMM model on first principal component
+hmm_model <- depmix(
+  sfm_turb$mean ~ 1,    # Model PC1 with intercept only
+  nstates = 3,            # 3 hidden regimes
+  family = gaussian(),    # Gaussian emissions
+  ntimes = nrow(sfm_turb) # Length of time series
+)
+
+hmm_fit <- fit(hmm_model)
+
+regime_results <- posterior(hmm_fit)
+```
+
+```{r}
+# Join the columns from the model onto the raw data
+sfm_turb_raw_hmm <- bind_cols(sfm_turb, regime_results)
+```
+
+```{r}
+# Map regime colors manually
+sfm_turb_raw_hmm <- sfm_turb_raw_hmm %>%
+  mutate(
+    regime_color = case_when(
+      state == 1 ~ "green",
+      state == 2 ~ "orange", 
+      state == 3 ~ "red"
+    )
+  )
+
+p <- plot_ly(
+  sfm_turb_raw_hmm,
+  x = ~DT_round, 
+  y = ~smoothed_mean,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(color = "grey", width = 1),
+  marker = list(
+    color = ~regime_color,
+    size = 6
+  ),
+  text = ~paste(
+    "Date:", DT_round,
+    "<br>Turbulence:", round(mean, 3),
+    "<br>Regime:", state
+  ),
+  hovertemplate = "%{text}<extra></extra>"
+) %>%
+  layout(
+    title = "Turbulence Data with HMM Regimes",
+    xaxis = list(title = "Date"),
+    yaxis = list(title = "Turbulence Mean")
+  )
+
+p
+```
+
