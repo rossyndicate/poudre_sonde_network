@@ -18,9 +18,12 @@ library(shinyWidgets)
 library(glue)
 library(anytime)
 options(shiny.maxRequestSize = 10000 * 1024^2)
+options(shiny.autoload.r = TRUE)
 
 `%nin%` = Negate(`%in%`)
 
+#Source Helper filesq
+walk(list.files(here("shiny_ver_tool", "R"), pattern = "\\.R$", full.names = TRUE), source)
 ##### Colors + parameters #####
 
 site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","bellvue","salyer", "udall", "riverbend_virridy", "riverbend",
@@ -50,5 +53,7 @@ available_sites <- get_filenames()%>%mutate(
 available_flags <- read_csv(here("shiny_ver_tool", "data", "meta", "available_flags.csv"), show_col_types = F)%>%
   pull(flags)%>%
   unique()
+
+
 
 ###### End Helper Functions ######
