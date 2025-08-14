@@ -13,6 +13,38 @@
 #'
 #' all_data <- map(all_files, parse_insitu_html)%>%
 #'  bind_rows()
+#'
+#'
+#'  # Example workflow to read in all insitu logs for 2025
+#'
+#'  source("src/parse_insitu_html_log.R")
+# sites <- c("joei", "cbri","chd", "pfal", "sfm", "pbr", "pman")
+#
+# troll_files <- list.files(path = "data/sensor_data/2025/", pattern = "troll", full.names = T)%>%
+#   #only look for our upper sites that do not livestream in any capacity
+#   str_subset(paste(sites, collapse = "|"))
+#
+# troll_data <- map(troll_files, parse_insitu_html_log) %>%
+#   bind_rows()
+#
+# vulink_files <- list.files(path = "data/sensor_data/2025/", pattern = "vulink", full.names = T)%>%
+#   #only look for our upper sites that do not livestream in any capacity
+#   str_subset(paste(sites, collapse = "|"))
+#
+# vulink_data <- map(vulink_files, parse_insitu_html_log) %>%
+#   bind_rows()
+#
+# #always start with troll data and then fill in where needed with vulink data
+# log_data_2025 <- troll_data %>%
+#   #find the data that is not in the troll data but is in the vulink log and bind in
+#   bind_rows(anti_join(vulink_data, ., by = c("site", "parameter", "DT_join")))%>%
+#   #check for duplicates
+#   distinct(.keep_all = TRUE) %>%
+#   # #format to match other data
+#   split(f = list(.$site, .$parameter), sep = "-") %>%
+#   keep(~nrow(.) > 0)
+
+
 parse_insitu_html_log <- function(html_file_path) {
 
   #check if troll in file name
