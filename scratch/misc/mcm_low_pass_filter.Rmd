@@ -89,7 +89,7 @@ sfm_turb_raw_hmm <- sfm_turb_raw_hmm %>%
 p <- plot_ly(
   sfm_turb_raw_hmm,
   x = ~DT_round, 
-  y = ~smoothed_mean,
+  y = ~mean,
   type = 'scatter',
   mode = 'lines+markers',
   line = list(color = "grey", width = 1),
