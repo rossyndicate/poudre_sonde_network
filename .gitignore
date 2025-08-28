@@ -18,6 +18,7 @@ creds/mWaterCreds.yml
 creds/HydroVuCreds.yml
 for_azure/creds/mWaterCreds.yml
 for_azure/creds/HydroVuCreds.yml
+src/mWater_collate/mWater_API.yml
 
 # reporting
 scratch/reporting/PWQN_overview.html
