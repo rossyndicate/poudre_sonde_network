@@ -314,7 +314,6 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
   }
 }
 # Let's temporarily save this data so i can remove everything else
-<<<<<<< HEAD
 iwalk(intrasensor_flags_list, ~write_csv(.x, here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged_temp", paste0(.y, ".csv"))))
 
 # Because we are pulling in all of the data for all of the sites, and the
