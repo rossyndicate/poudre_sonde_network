@@ -1,0 +1,711 @@
+---
+title: "PWQN Q2 Report"
+author: "Sam Struthers"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Set up
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(here)
+library(tidyverse)
+library(plotly)
+library(arrow)
+library(furrr)
+# loading packages
+package_loader <- function(x) {
+  if (x %in% installed.packages()) {
+    suppressMessages({
+      library(x, character.only = TRUE)
+    })
+  } else {
+    suppressMessages({
+      install.packages(x)
+      library(x, character.only = TRUE)
+    })
+  }
+}
+
+invisible(
+  lapply(c("arrow",
+           "data.table",
+           "httr2",
+           "tidyverse",
+           "lubridate",
+           "zoo",
+           "padr",
+           "stats",
+           "RcppRoll",
+           "yaml",
+           "here",
+           #"fcw.qaqc",
+           "furrr", 
+           "dataRetrieval", 
+           "cdssr", 
+           "ggplot2", 
+           "ggthemes", 
+           "patchwork"
+  ),
+  package_loader)
+)
+
+# 
+# params <- paste(c("Chl-a Fluorescence","Depth", "Specific Conductivity",
+#                    "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence"), collapse = "|")
+# 
+# 
+#
+# files <- tibble(filename = list.files(here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final"), full.names = TRUE))%>%
+#   filter(grepl(pattern = params, filename))%>%
+#   #remove extras
+#   filter(!grepl(pattern = "Level|MV", filename))
+# 
+# 
+# # read in files
+# all_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
+#   #turn into individual dataframes by site and parameter
+#   split(f = list(.$site, .$parameter), sep = "-") %>%
+#   keep(~nrow(.) > 0)%>%
+#   bind_rows()%>%
+#   #convert to MST!
+#   mutate(DT_round = with_tz(DT_round, tz = "MST"),
+#          DT_join = as.character(DT_round))
+# 
+# 
+# min_date <- min(all_data$DT_round, na.rm = TRUE)%>%
+#   format("%Y-%m-%d")
+# max_date <- max(all_data$DT_round, na.rm = TRUE)%>%
+#   format("%Y-%m-%d")
+# 
+# # save to raw data file to be processed later on
+# write_rds(all_data, here("data", "sharing", "quarterly_meetings", "2025_Q2", paste0("flagged_data_", min_date, "_", max_date, ".rds")))
+```
+
+# Setup folder to dump figures
+
+```{r}
+# Create a folder to save figures
+fig_dir <- "data/sharing/figures/2025/"
+if (!dir.exists(fig_dir)) {
+  dir.create(fig_dir, recursive = TRUE)
+}
+```
+
+
+# Site names, Parameter Labels and Colors
+```{r, include= F}
+
+#Site names
+site_names <- tibble(site = c("pbd", "bellvue", "salyer", "udall", "riverbend", "cottonwood" ,"elc",  "archery", "riverbluffs"), 
+                     site_name = c("Canyon Mouth", "Tamasag", "Legacy", "Lincoln", "Timberline", "Prospect" ,"Boxelder",  "Archery", "River Bluffs"), 
+                     natural_name = c("Canyon Mouth", "Bellvue", "Salyer", "Udall", "Riverbend", "Cottonwood", "ELC", "Archery", "River Bluffs"))
+
+#Site Order from up to downstream
+
+site_order = c("Canyon Mouth", "Bellvue", "Salyer", "Udall", "Riverbend", "Cottonwood", "ELC", "Archery", "River Bluffs")
+
+
+# Parameter labels
+labels <- tibble(param = c("Turbidity", "Specific Conductivity", "Depth", "Chl-a Fluorescence", "FDOM Fluorescence", "Temperature", "DO", 'pH', "Flow"),
+                 label = c("Turbidity (NTU)", "Specific Conductivity (uS/cm)", "Depth (ft)", "Chl-a Fluorescence (RFU)", "FDOM Fluorescence (RFU)", "Temperature (C)", "DO (mg/L)", 'pH', "Flow (cfs)"))
+
+# Plot colors
+bg_colors <- c( "#01377D", "#009DD1", "#97E7F5",
+                "#7ED348", "#26B170", "#000000") 
+bg_colors_full <- c( "#185BB4", "#009DD1", "#00F5DC", "#00F0C0",
+                "#00D684", "#00BD48", "#00DB58","#0FFF6B" 
+                , "#000000" ) 
+
+colors <- c("#01377D","#009DD1", "#D55E00")
+```
+
+# Read in Sensor Data
+
+```{r, include= F}
+
+params <- paste(c("Chl-a Fluorescence","Depth", "Specific Conductivity",
+                   "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence"), collapse = "|")
+
+files <- tibble(filename = list.files(here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final"), full.names = TRUE))%>%
+  filter(grepl(pattern = params, filename))%>%
+  #remove extras
+  filter(!grepl(pattern = "Level|MV", filename))
+
+
+# read in files
+sensor_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
+  #turn into individual dataframes by site and parameter
+  # split(f = list(.$site, .$parameter), sep = "-") %>%
+  # keep(~nrow(.) > 0)%>%
+  bind_rows()%>%
+  #convert to MST from UTC
+  mutate(DT_round = with_tz(DT_round, tz = "MST"),
+         DT_join = as.character(DT_round))%>%
+  left_join(labels, by = c( "parameter" = "param"))%>%
+  left_join(site_names, by = "site")
+
+sensor_data_clean <- sensor_data %>%
+  filter(
+    is.na(mal_flag), # remove any known malfunctions
+    !grepl("site visit|sv window", auto_flag), # remove site visit impacted data
+    !grepl("sonde unsubmerged", auto_flag),!grepl("sonde not employed", auto_flag), !grepl("sensor malfunction", auto_flag), # remove simple sensor flags
+    !(parameter == "Specific Conductivity" & mean > 2000), # remove instances of SC > 2000 uS/cm
+    !(parameter == "pH" & mean < 4.5), # remove pH < 4 (storage solution)
+    !(parameter == "pH" & mean > 10), # remove pH > 10 (sensor malfunction)
+    !(parameter == "Temperature" & mean < 0), # remove frozen instances
+    !(parameter == "Depth" & mean < 0), # remove negative depth values
+    !(parameter == "Temperature" & mean > 30), # remove instances of temperature > 30 C (sensor error)
+    !(parameter == "DO" & mean < 3), # remove DO < 3 mg/L (sensor error)
+    !(mean == 0) # remove instances of 0 values
+  ) %>%
+  mutate(mean = case_when(
+    parameter == "Turbidity" & mean > 1000 ~ 1000, # cap turbidity at 1000 NTU
+    parameter == "Depth" ~ mean / 0.3048, # convert depth to ft
+    TRUE ~ mean
+  ))
+```
+
+# WQ Event Time Series Plots
+
+## Function to create timeseries plots
+
+```{r, include= F}
+plot_sensor_grabs <- function(df, sites, parameters, renamed_sites, start_dt, end_dt, timestep, add_grabs, color_scheme = bg_colors, b_size = 30){
+  
+  
+  
+  all_data <- filter(df, site %in% sites & DT_round >= ymd_hm(start_dt) & DT_round <= ymd_hm(end_dt))%>%
+    filter(parameter %in% parameters)
+  
+
+  create_plot <- function(param_arg) {
+
+    if(param_arg == "Flow"){
+      
+      flow_plot <- function(sites,start_dt, end_dt, timestep){
+
+  flow_sites <- tibble(
+    site = c("pbd", "udall", "elc", "riverbluffs"), 
+    #site_name = c("Canyon Mouth", "Lincoln", "Boxelder", "River Bluffs"  ),
+    natural_name = c("Canyon Mouth", "Udall", "ELC", "River Bluffs"  ),
+    source = c('CDWR', 'USGS', 'USGS', 'CDWR'), 
+    abbrev = c("CLAFTCCO","06752260","06752280",   "CLARIVCO" ))%>%
+    filter(site %in% sites)
+  
+  
+  start_dt <- ymd_hm(start_dt, tz = "MST")
+  end_dt <- ymd_hm(end_dt, tz = "MST")
+  start_date <- floor_date(start_dt, unit = "day")
+  end_date <- ceiling_date(end_dt, unit = "day")
+  
+  gather_q <- function(selected_sites, start_date, end_date, timestep) {
+
+
+    all_q <- tibble()
+
+    for (i in 1:nrow(flow_sites)) {
+      if (flow_sites$source[i] == "USGS") {
+        q_data <- readNWISuv(siteNumbers = flow_sites$abbrev[i],
+                             startDate = start_date,
+                             endDate = end_date,
+                             parameterCd = "00060", tz = "America/Denver") %>%
+          distinct() %>%
+          mutate(DT_mst = with_tz(dateTime, tzone = "MST"),
+                 source = "USGS") %>%
+          dplyr::select(site = site_no, DT_mst, q_cfs = X_00060_00000, flag = X_00060_00000_cd)
+
+      } else if (flow_sites$source[i] == "CDWR") {
+        q_data <- get_telemetry_ts(
+          abbrev = flow_sites$abbrev[i],
+          parameter = "DISCHRG",
+          start_date = start_date,
+          end_date = end_date,
+          timescale = "raw",
+          include_third_party = TRUE) %>%
+          distinct() %>%
+          mutate(DT_mst = force_tz(datetime, tzone = "MST"),
+                 flag = case_when(!is.na(flag_a) & !is.na(flag_b) ~ paste0(flag_a, ",", flag_b),
+                                  is.na(flag_a) & !is.na(flag_b) ~ flag_b,
+                                  is.na(flag_b) & !is.na(flag_b) ~ flag_a,
+                                  TRUE ~ NA_character_),
+                 source = "DWR") %>%
+          dplyr::select(site = abbrev, DT_mst, q_cfs = meas_value, flag, source)
+      }
+      all_q <- bind_rows(all_q, q_data)
+    }
+
+  
+      final_q <- all_q %>%
+        mutate(DT_round = round_date(x = DT_mst, unit = timestep)) %>%
+        group_by(site, DT_round) %>%
+        summarise(q_cfs = mean(q_cfs, na.rm = TRUE)) %>%
+        filter(!is.na(q_cfs))%>%
+        left_join(flow_sites, by = c("site" = "abbrev"))
+   
+
+    return(final_q)
+  }
+  final_q <- gather_q(flow_sites, start_date, end_date, timestep)
+  
+  
+  trim_q <- final_q%>%
+    filter(between(DT_round, start_dt, end_dt))
+    
+  
+  # Subset the colors since there are only a few sites where flow is available
+  colors_selected <- tibble(site = sites)%>%
+    left_join(site_names, by = c("site" = "site"))
+  colors_selected$natural_name <- factor(colors_selected$natural_name, levels = site_order )
+  
+  
+    colors_selected <- colors_selected %>%
+      mutate(color = color_scheme[1:length(sites)])%>%
+    filter(site %in% flow_sites$site)
+    
+    
+    color_scheme <- colors_selected$color
+  
+  trim_q$natural_name <- factor(trim_q$natural_name, levels = site_order )
+      
+    
+  
+    ggplot(trim_q, aes(x = DT_round, y = q_cfs, color = natural_name)) +
+      geom_line(size = 1.5, show.legend = F) +
+      scale_color_manual(values = color_scheme) +
+      labs( x = "Date", y = "Flow (cfs)", color = "")+
+      theme_few(base_size = b_size) +
+      theme(axis.title.x = element_blank(), legend.position = "none", 
+            legend.text = element_blank())
+  
+
+      }
+      
+      plot <- flow_plot(sites, start_dt, end_dt, timestep)
+      
+      return(plot)
+    }
+    
+    
+    plot_data <- all_data %>%
+      filter(parameter == param_arg)
+    
+    label <- labels %>%
+      filter(param == param_arg) %>%
+      pull(label)
+    
+    plot_data$natural_name <- factor(plot_data$natural_name, levels = site_order )
+    
+    # if(param_arg == "Specific Conductivity"){
+    #   b_size = b_size - 5
+    #   
+    #   plot <- ggplot(plot_data, aes(x = DT_round, y = value, color = site_name)) +
+    #   geom_line(linewidth = 2, show.legend = F) +
+    #   scale_color_manual(name = "Site", values = color_scheme) +
+    #   labs(x = "Date", y = label, color = "Site") +
+    #   theme_few(base_size = b_size) +
+    #   labs(color = "Site") +
+    #   theme(axis.title.x = element_blank(), legend.position = "none")
+    # }
+    
+    plot <- ggplot(plot_data, aes(x = DT_round, y = mean, color = natural_name)) +
+      geom_line(linewidth = 2) +
+      scale_color_manual(name = "Site", values = color_scheme) +
+      labs(x = "Date", y = label, color = "Site") +
+      theme_few(base_size = b_size) +
+      labs(color = "Site") +
+      theme(axis.title.x = element_blank(), legend.position = "bottom")
+    
+    if (add_grabs) {
+      grab_data <- tidy_correlated_df %>%
+        filter(site %in% sites & grab_dt >= ymd_hm(start_dt) & grab_dt <= ymd_hm(end_dt))%>%
+        left_join(site_names, by = c("site" = "site"))
+      
+      plot <- plot +
+        geom_vline(data = grab_data, aes(xintercept = grab_dt, color = natural_name), linetype = "dashed", size = 1)
+    }
+    
+    return(plot)
+  }
+  
+  all_data <- all_data%>%
+    mutate(DT_round = round_date(DT_round, unit = timestep))%>%
+    group_by(DT_round, natural_name,site, parameter)%>%
+    summarise(mean = mean(mean, na.rm = TRUE), .groups = "drop")
+
+
+  all_plot <- map(parameters, create_plot)
+  
+
+  
+  if(length(parameters) == 1){
+    all_plot[[1]] <- all_plot[[1]] + theme(axis.title.x = element_text( size = b_size))
+    
+    plots <- wrap_plots(all_plot, ncol = 1) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom")
+    
+  }else if(length(parameters) == 2){
+    all_plot[[1]] <- all_plot[[1]] + theme(axis.text.x = element_blank(), 
+                                           legend.position = "none")
+    all_plot[[2]] <- all_plot[[2]] + theme(axis.title.x = element_text( size = b_size))
+    plots <- wrap_plots(all_plot, ncol = 1) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom", legend.text = element_text(size = b_size))
+    
+    return(plots)
+  }else if(length(parameters) == 3){
+    all_plot[[3]] <- all_plot[[3]] + theme(axis.title.x = element_text( size = b_size))
+    plots <- wrap_plots(all_plot, ncol = 1) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom", legend.text = element_text(size = b_size))
+  }else if(length(parameters) == 4){
+    all_plot[[3]] <- all_plot[[3]] + theme(axis.title.x = element_text( size = b_size))
+    all_plot[[4]] <- all_plot[[4]] + theme(axis.title.x = element_text( size = b_size))
+    plots <- wrap_plots(all_plot, ncol = 2) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom", legend.text = element_text(size = b_size))
+  }else if(length(parameters) == 5){
+    all_plot[[5]] <- all_plot[[5]] + theme(axis.title.x = element_text( size = b_size))
+    plots <- wrap_plots(all_plot, ncol = 2) + 
+      plot_layout(guides = "collect") & 
+      theme(legend.position = "bottom", legend.text = element_text(size = b_size))
+  }
+  
+  
+  return(plots)
+}
+```
+
+
+
+## WQ Events: March
+
+```{r april_drawdown, echo= F}
+
+
+sites_march <- c( "udall", "cottonwood", "elc", "archery")
+
+
+march_storm <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_march,  parameters = c("Depth", "Specific Conductivity","Turbidity" ), start_dt = "2025-03-28  00:00",
+                  end_dt = "2025-04-02 24:00",timestep =  "30 minutes", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+
+
+march_storm
+ggsave(paste0(fig_dir,"/march_storm.png"), plot = march_storm, width = 16, height = 10, units = "in", dpi = 300)
+
+```
+
+
+
+## WQ Events: April Drawdown
+
+```{r april_drawdown, echo= F}
+
+sites_april <- c("salyer", "udall", "riverbend", "elc", "archery")
+
+
+april <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_april,  parameters = c("Depth", "Specific Conductivity","DO","Temperature" ), start_dt = "2025-04-13  00:00",
+                  end_dt = "2025-04-17 24:00",timestep =  "30 minutes", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+
+
+april
+ggsave(paste0(fig_dir,"/april_drawdown.png"), plot = april, width = 16, height = 10, units = "in", dpi = 300)
+
+```
+
+## WQ Events:  May Storm
+
+```{r, echo= F}
+
+
+sites_may_storm <- c( "udall", "elc", "archery", "riverbluffs")
+
+
+may_storm <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_may_storm,  parameters = c("Depth", "DO" ,"Turbidity", "Temperature" ), start_dt = "2025-05-07  00:00",
+                  end_dt = "2025-05-09 00:00",timestep =  "15 minutes", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+
+
+may_storm
+ggsave(paste0(fig_dir,"/may_storm.png"), plot = may_storm, width = 16, height = 10, units = "in", dpi = 300)
+
+```
+
+
+## WQ Events: May DO shift
+
+```{r, echo = F}
+
+
+sites_may_1<- c( "bellvue", "salyer", "udall", "riverbend")
+
+
+may_1 <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_may_1,  parameters = c("Depth","DO","Temperature" ), start_dt = "2025-05-02  12:00",
+                  end_dt = "2025-05-04 12:00",timestep =  "15 minute", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+
+
+may_1
+ggsave(paste0(fig_dir,"/may_do_shift.png"), plot = may_1, width = 16, height = 10, units = "in", dpi = 300)
+
+```
+
+
+## WQ Events: May SC Diversion
+
+```{r, echo = F}
+
+
+sites_may_2<- c("bellvue", "riverbend", "elc", "archery", "riverbluffs")
+
+
+may_2 <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_may_2,  parameters = c("Depth", "Specific Conductivity","DO","Temperature" ), start_dt = "2025-05-01  00:00",
+                  end_dt = "2025-05-15 24:00",timestep =  "2 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+
+
+may_2
+
+ggsave(paste0(fig_dir,"/may_drawdown.png"), plot = may_2, width = 16, height = 10, units = "in", dpi = 300)
+
+```
+
+
+## WQ Events: June FDOM increase
+
+```{r}
+sites_june <- c("salyer", "udall", "riverbend", "cottonwood", "elc")
+
+june_fdom <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_june,  parameters = c("Depth", "FDOM Fluorescence","Specific Conductivity" ), start_dt = "2025-06-24  00:00",
+                  end_dt = "2025-06-28 24:00",timestep =  "2 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+
+june_fdom
+
+ggsave(paste0(fig_dir,"/june_fdom.png"), plot = june_fdom, width = 16, height = 10, units = "in", dpi = 300)
+```
+
+
+
+# WQ Monthly Summary
+
+## Function for monthly boxplots
+
+```{r}
+
+generate_monthly_boxplot_summary <- function(sensor_data, year, month){
+  
+  # Parse the month string as part of a date and extract the month number
+  month_number <- mdy(paste(month, "1, 2020")) %>% lubridate::month()
+  month_name <- mdy(paste(month, "1, 2020")) %>% lubridate::month(label = TRUE)
+  
+  
+  box_data <- sensor_data%>%
+    filter(parameter != "Turbidity",
+           parameter != "Depth", 
+           parameter != "FDOM Fluorescence", 
+           parameter != "Chl-a Fluorescence", 
+           parameter != "ORP")%>%
+    filter(site != "pbd", site != "springcreek")%>%
+    filter(lubridate::month(DT_round) == month_number & lubridate::year(DT_round) == year)
+  
+  
+  # Merge with your data using left_join
+  box_data_with_limits <- box_data #%>%
+  box_data_with_limits$natural_name <- factor(box_data_with_limits$natural_name, levels = site_order )
+  
+  
+  convert_season_to_months <- function(season_range) {
+    # Define month order
+    months <- c("january", "february", "march", "april", "may", "june",
+                "july", "august", "september", "october", "november", "december")
+    
+    # Split the season range
+    season_parts <- strsplit(season_range, "-")[[1]]
+    start_month <- tolower(season_parts[1])
+    end_month <- tolower(season_parts[2])
+    
+    # Find positions of start and end months
+    start_pos <- which(months == start_month)
+    end_pos <- which(months == end_month)
+    
+    # Handle cases where season crosses year boundary
+    if (start_pos <= end_pos) {
+      selected_months <- months[start_pos:end_pos]
+    } else {
+      selected_months <- c(months[start_pos:12], months[1:end_pos])
+    }
+    
+    return(paste(selected_months, collapse = "|"))
+  }
+  
+  #read in cdphe standards collected by Sam Struthers from https://cdphe.colorado.gov/water-quality-control-commission-regulations
+  #Parameter (DO, pH, Temp) thresholds: Reg 31, Table I 
+  # Site classifications: Reg 38, ~ Pg 410
+  
+  month_standard <- readxl::read_xlsx(path = "data/metadata/site_cdphe_classification_2025.xlsx") %>%
+    # Convert season_1 to pipe-separated months
+    mutate(season = sapply(season, convert_season_to_months))%>%
+    # Split ph column into ph_low and ph_high
+    separate(ph, into = c("ph_low", "ph_high"), sep = "-", convert = TRUE) %>%
+    filter(grepl(x = season, pattern = month_name, ignore.case = TRUE), 
+           site %in% unique(box_data_with_limits$natural_name))
+  
+  # Get unique parameters from the data
+  parameters <- unique(box_data_with_limits$label)
+  
+  # Create individual plots for each parameter
+  parameter_plots <- list()
+  
+  for (param in parameters) {
+    # Filter data for current parameter
+    param_data <- box_data_with_limits %>% 
+      filter(label == param)
+    
+    standards <- param_data %>%
+      select(natural_name) %>%
+      distinct() %>%
+      left_join(month_standard, by = c("natural_name" = "site"))%>%
+      mutate(site_num =  as.numeric(factor(natural_name, levels = site_order))-1)
+    
+    # Create base plot for current parameter
+    p <- param_data %>%
+      ggplot(aes(x = natural_name, y = mean, fill = natural_name)) +
+      geom_boxplot() +
+      #geom_blank(aes(y = y_min)) +  # Forces inclusion of minimum
+      #geom_blank(aes(y = y_max)) +  # Forces inclusion of maximum
+      scale_fill_manual(values = bg_colors_full) +
+      labs(x = "Site", y = param) +  # Use parameter name as y-axis label
+      theme_bw(base_size = 14) +  # Slightly smaller base size for multiple plots
+      theme(legend.position = "none",
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            axis.title.x = element_text(face = "bold"),
+            axis.title.y = element_text(face = "bold"),
+            plot.title = element_text(size = 12))  # Smaller title for individual plots
+    
+    # Add reference lines based on parameter type
+    if (grepl("pH", param, ignore.case = TRUE)) {
+      # Add horizontal lines for pH standards
+      p <- p + 
+        geom_hline(yintercept = 6.5, color = "red", linetype = "dashed", alpha = 0.7) +
+        geom_hline(yintercept = 9, color = "red", linetype = "dashed", alpha = 0.7)
+    }
+    
+    if (grepl("Temperature|Temp", param, ignore.case = TRUE)) {
+      # Add chronic temperature lines (orange, dashed)
+      if ("temp_chronic" %in% names(standards)) {
+        chronic_data <- standards %>% 
+          filter(!is.na(temp_chronic))
+        
+        if (nrow(chronic_data) > 0) {
+          p <- p + 
+            geom_segment(data = chronic_data,
+                         aes(x = site_num - 0.5, xend = site_num + 0.5, 
+                             y = temp_chronic, yend = temp_chronic),
+                         color = "orange", linetype = "dashed", linewidth = 1, alpha = 0.8,
+                         inherit.aes = FALSE)
+        }
+      }
+      
+      # Add acute temperature lines (red, solid)
+      if ("temp_acute" %in% names(standards)) {
+        acute_data <- standards %>% 
+          filter(!is.na(temp_acute))
+        
+        if (nrow(acute_data) > 0) {
+          p <- p + 
+            geom_segment(data = acute_data,
+                         aes(x = site_num - 0.5, xend = site_num + 0.5, 
+                             y = temp_acute, yend = temp_acute),
+                         color = "red", linetype = "solid", linewidth = 1, alpha = 0.8,
+                         inherit.aes = FALSE)
+        }
+      }
+    }
+    if (grepl("DO", param, ignore.case = TRUE)) {
+      
+      # Add chronic temperature lines (orange, dashed)
+      if ("do_chronic" %in% names(standards)) {
+        do_chronic_data <- standards %>% 
+          filter(!is.na(temp_chronic))
+        
+        if (nrow(do_chronic_data) > 0) {
+          p <- p + 
+            geom_segment(data = do_chronic_data,
+                         aes(x = site_num - 0.4, xend = site_num + 0.4, 
+                             y = do_chronic, yend = do_chronic),
+                         color = "red", linetype = "solid", linewidth = 1, alpha = 0.8,
+                         inherit.aes = FALSE)
+        }
+      }
+    }
+    
+    parameter_plots[[param]] <- p +
+      annotate("text", 
+               x = -Inf, 
+               y = Inf, 
+               label = "PRELIMINARY RESULTS", 
+               hjust = -0.1, 
+               vjust = 2, 
+               size = 4, 
+               fontface = "bold",
+               color = "red")
+  }
+  
+  
+  parameter_plots[[1]] <- parameter_plots[[1]]+
+    theme(axis.title.x = element_blank())
+  parameter_plots[[2]] <- parameter_plots[[2]]+
+    theme(axis.title.x = element_blank())
+  
+  # Combine plots using patchwork
+  combined_plot <- wrap_plots(parameter_plots, ncol = 2) +  # Adjust ncol as needed
+    plot_annotation(
+      title = paste0("Poudre Water Quality Network Data Summary: ", str_to_title(month_name),  " ", year),
+      caption = "Preliminary Data, subject to revision.\n Red solid lines indicate state of Colorado chronic thresholds and orange dashed lines indicate acute thresholds for aquatic life.",
+      theme = theme(plot.title = element_text(size = 16, hjust = 0.5, face = "bold"), 
+                    plot.caption = element_text(size = 13))
+    )
+  
+  # Display the combined plot
+  return(combined_plot)
+  
+}
+
+```
+
+## Generate for each month
+
+```{r}
+
+monthly_plots <- map2(1:7,2025, ~{
+  result<- tryCatch({
+    generate_monthly_boxplot_summary(sensor_data = sensor_data_clean, month = .x, year = .y)
+  }, error = function(e) {
+    message(paste("Skipping month", .x, "- Error:", e$message))
+    return(NULL)
+  })
+  # Add month-year as attribute to preserve original indices
+  if (!is.null(result)) {
+    attr(result, "year_month") <- paste0(.y, "_", .x)
+  }
+  return(result)
+})%>%
+keep(~ !is.null(.x))%>%
+  set_names(map_chr(., ~ attr(.x, "year_month")))
+
+monthly_plots
+
+write_rds(monthly_plots, file = paste0(fig_dir, "monthly_boxplot_summaries.rds"))
+
+walk(monthly_plots, ~ ggsave(.x, filename = paste0(fig_dir, "monthly_boxplot_summary_", attr(.x, "year_month"), ".png"), width = 16, height = 10, units = "in", dpi = 300))
+
+
+```
+
+
+

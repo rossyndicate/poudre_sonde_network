@@ -1,345 +1,62 @@
-library(shiny)
-library(bslib)
-library(DT)
-library(tidyverse)
-library(lubridate)
-library(here)
-library(ggpubr)
-library(gridExtra)
-library(plotly)
-library(keys)
-library(patchwork)
-library(digest)
-library(fs)
-library(shinyFiles)
-library(shinyWidgets)
-library(glue)
-library(anytime)
-options(shiny.maxRequestSize = 10000 * 1024^2)
-
-`%nin%` = Negate(`%in%`)
-
-##### Colors + parameters #####
-
-site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","bellvue","salyer", "udall", "riverbend_virridy", "riverbend",
-                                    "cottonwood_virridy", "cottonwood","elc",  "archery_virridy", "archery", "boxcreek", "springcreek", "riverbluffs"),
-                           color = c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC",
-                                     "#117744", "#44AA77", "#88CCAA", "#777711", "#AAAA44","#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788"))
-
-
-final_status_colors <- c("PASS" = "green",
-                         "OMIT" = "red",
-                         "FLAGGED" = "orange")
-
-
-
-available_parameters <- get_filenames()%>%mutate(
-  parameter = map_chr(filename, ~ split_filename(.x)$parameter))%>%
-  pull(parameter)%>%
-  unique()
-
-
-available_sites <- get_filenames()%>%mutate(
-  site = map_chr(filename, ~ split_filename(.x)$site))%>%
-  pull(site)%>%
-  unique()
-
-#TODO: Automate for public version or ask for user input
-available_flags <- read_csv(here("shiny_ver_tool", "data", "meta", "available_flags.csv"), show_col_types = F)%>%
-  pull(flags)%>%
-  unique()
-
-###### End Helper Functions ######
-
-
-# UI Definition
-ui <- page_navbar(
-  title = "Data Processing Pipeline",
-  id = "tabs",
-  nav_item(
-    input_dark_mode(id = "dark_mode", mode = "light") #Toggle light vs dark mode
-  ),
-  theme = bs_theme(preset = "bootstrap"),
-
-
-
-  #### Tab 1: Data Selection ####
-nav_panel(
-  title = "Data Selection",
-  card(
-    card_header("Select Your Data"),
-    card_body(
-      uiOutput("conditional_data_ui")
-    )
-  )
-),
-
-
-  #### Tab 2: Data Verification ####
-  nav_panel(
-    title = "Data Verification",
-    layout_columns(
-      col_widths = c(8,4),
-
-      #### Left column ####
-      layout_columns(
-        col_widths = 12,
-        # Main plot (top left)
-        card(
-          card_header(
-            div(
-              actionButton("prev_tab", "← Back to Selection", class = "btn-info"),
-              keys::useKeys(),
-              keys::keysInput("q_key", "q"),
-              actionButton("quit_app", "Quit", class = "btn-danger")
-            )
-          ),
-          card_body(
-            plotOutput("main_plot",
-                       brush = brushOpts(
-                         id = "plot_brush",
-                         resetOnNew = FALSE  # This allows multiple brush selections
-                       ))
-          ),
-          card_footer(
-            div(
-              class = "d-flex justify-content-between gap-3", # Use space-between instead of evenly
-                class = "d-flex gap-3",
-                selectizeInput("add_sites", "Additional Sites:",
-                            choices = available_sites,
-                            multiple = TRUE,
-                            options = list(plugins = "remove_button"),
-                            width = "300px"),
-              div(
-                class = "d-flex flex-column gap-2",
-                materialSwitch(
-                  inputId = "remove_omit",
-                  label = "Remove Omit",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                ),
-                materialSwitch(
-                  inputId = "remove_flag",
-                  label = "Remove Flag",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                )
-              ),
-              div(
-                class = "d-flex flex-column gap-2",
-                materialSwitch(
-                  inputId = "incl_thresholds",
-                  label = "Thresholds",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                ),
-                materialSwitch(
-                  inputId = "plot_log10",
-                  label = "Log 10",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                ),
-                materialSwitch(
-                  inputId = "incl_ex_days",
-                  label = "Extra Data",
-                  value = TRUE,
-                  width = "200px",
-                  status = "success"
-                )
-              ),
-                actionButton("prev_week","← Previous Week", class = "btn-secondary", style = "width: 200px;"),
-                actionButton("next_week","Next Week →", class = "btn-secondary", style = "width: 200px;"),
-                actionButton("reset_week", "Reset Data", class = "btn-danger")
-              )
-          )
-        ),
-
-       #### Weekly decision card (bottom left, shorter height) ####
-       card(
-         style = "height: 5px; overflow: hidden;",
-         # card_header(
-         #   h6("Make weekly decision")
-         # ),
-         card_body(
-           div(
-             div(
-               class = "d-flex gap-5", # Add flexbox with gap between elements
-               div(
-                 uiOutput("weekly_decision_radio")
-               )
-             ),
-             uiOutput("submit_decision_ui")
-           )
-         )
-       )
-
-    #### end Weekly decision card ####
-      ),
-
-  #### Right column ####
-      layout_columns(
-        col_widths = 12,
-        # Sub plots card (top right)
-        card(
-          card_header(
-            h6("Additional Parameters")
-            ),
-          card_body(
-            # Sub parameter selection
-              selectizeInput("sub_parameters", "Select Parameters:",
-                          choices = available_parameters,
-                          multiple = TRUE,
-                          options = list(plugins = "remove_button")),
-              selectizeInput("sub_sites", "Select Sites:",
-                          choices = available_sites,
-                          multiple = TRUE,
-                          options = list(plugins = "remove_button")),
-              div(
-                style = "height: 600px; overflow-y: auto;",  # Make this div scrollable
-                plotlyOutput("sub_plots", width = "100%", height = "100%")
-              )
-
-
-                )
-        ),
-        # Data selection card (bottom right)
-        card(
-          card_header(
-            h6("Data Brush")
-          ),
-          card_body(
-            div(
-              class = "d-flex align-items-center gap-5",
-              radioButtons("brush_action",
-                           "Select Action:",
-                           choices = c("Accept" = "A",
-                                       "Flag" = "F",
-                                       "Omit" = "O"),
-                           selected = character(0),
-                           inline = TRUE),  # This makes the radio buttons horizontal
-              actionButton("clear_brushes", "Clear Brushes")
-            ),
-            selectizeInput("user_brush_flags", "Select Flags:",
-                        choices = available_flags,
-                        multiple = TRUE,
-                        options = list(plugins = "remove_button")),
-
-            # Conditional submit button
-            uiOutput("brush_submit_ui")
-          )
-        )
-      )
-    )
-  ),
-
-#### Tab 3: Final Data View ####
-
-nav_panel(
-  title = "Finalize Data",
-  layout_columns(
-    col_widths = c(10, 2),
-
-    # Main Plot Card
-#To Do: Convert to plotly object for better data vis
-    card(
-      card_body(
-        plotlyOutput("final_plot", height = "100%", width = "100%")
-      )
-    ),
-
-    # Week Selection and Actions Card
-    card(
-        card_header("Modify Verification"),
-        card_body(
-          materialSwitch(
-            inputId = "remove_omit_finalplot",
-            label = "Remove omitted data from plot",
-            value = FALSE,
-            width = "200px",
-            status = "success"
-          ),
-          materialSwitch(
-            inputId = "log10_finalplot",
-            label = "Log Transform",
-            value = FALSE,
-            width = "200px",
-            status = "success"
-          ),
-          selectInput("final_week_selection", "Select Week:", choices = NULL),
-          actionButton("goto_final_week", "Return to Selected Week",
-                       class = "btn-primary w-100 mb-3"),
-      hr(),
-      uiOutput("submit_final_button") # Replaced the direct button with a dynamic UI output
-  )
-)
-  )
-)
-
-)
 
 
 #### Server ####
 
-# Server Definition
 server <- function(input, output, session) {
-#### Not used in internal version ####
-#
-#
-#   output$uploaded_files <- renderTable({
-#     req(input$upload)
-#
-#     # Get the uploaded file
-#     zip_file <- input$upload$datapath
-#     # Create a unique temporary directory for this upload
-#     temp_dir <- file.path(tempdir(), paste0("upload_", format(Sys.time(), "%Y%m%d_%H%M%S")))
-#     dir.create(temp_dir)
-#
-#     # Unzip the file to the temporary directory
-#     unzip(zip_file, exdir = temp_dir)
-#     files <- list.files(
-#       path = temp_dir,
-#       recursive = TRUE,
-#       full.names = TRUE
-#     )%>%
-#     #remove the temp_dir from the file path
-#     gsub(paste0(temp_dir, "/data/"), "", .)
-#     # Remove metadata folder entries
-#     # Extract folder and site-parameter combinations
-#     file_info <- data.frame(
-#       Folder = dirname(files),
-#       Site_Parameter = basename(files) %>%
-#         tools::file_path_sans_ext()  # Remove .csv extension
-#     ) %>%
-#       # Remove any empty folders or "."
-#       filter(Folder != "." & Folder != "" ) %>%
-#       filter(!grepl("meta", Folder)) %>%
-#       # Sort by folder and site-parameter
-#       arrange(Folder, Site_Parameter)%>%
-#       # Split Site_Parameter into Site and Parameter
-#       tidyr::separate(Site_Parameter,
-#                       into = c("Site", "Parameter"),
-#                       sep = "-",
-#                       remove = TRUE)%>%
-#       # Pivot wider to make folders as columns
-#       pivot_wider(
-#         names_from = Folder,
-#         values_from = Parameter,
-#         values_fn = function(x) paste(unique(x), collapse = ","),
-#         values_fill = ""
-#       ) %>%
-#       arrange(Site)
-#
-#
-# file_info
-#
-#     })
-#### Not used in internal version ####
+  #### Not used in internal version ####
+  #
+  #
+  #   output$uploaded_files <- renderTable({
+  #     req(input$upload)
+  #
+  #     # Get the uploaded file
+  #     zip_file <- input$upload$datapath
+  #     # Create a unique temporary directory for this upload
+  #     temp_dir <- file.path(tempdir(), paste0("upload_", format(Sys.time(), "%Y%m%d_%H%M%S")))
+  #     dir.create(temp_dir)
+  #
+  #     # Unzip the file to the temporary directory
+  #     unzip(zip_file, exdir = temp_dir)
+  #     files <- list.files(
+  #       path = temp_dir,
+  #       recursive = TRUE,
+  #       full.names = TRUE
+  #     )%>%
+  #     #remove the temp_dir from the file path
+  #     gsub(paste0(temp_dir, "/data/"), "", .)
+  #     # Remove metadata folder entries
+  #     # Extract folder and site-parameter combinations
+  #     file_info <- data.frame(
+  #       Folder = dirname(files),
+  #       Site_Parameter = basename(files) %>%
+  #         tools::file_path_sans_ext()  # Remove .csv extension
+  #     ) %>%
+  #       # Remove any empty folders or "."
+  #       filter(Folder != "." & Folder != "" ) %>%
+  #       filter(!grepl("meta", Folder)) %>%
+  #       # Sort by folder and site-parameter
+  #       arrange(Folder, Site_Parameter)%>%
+  #       # Split Site_Parameter into Site and Parameter
+  #       tidyr::separate(Site_Parameter,
+  #                       into = c("Site", "Parameter"),
+  #                       sep = "-",
+  #                       remove = TRUE)%>%
+  #       # Pivot wider to make folders as columns
+  #       pivot_wider(
+  #         names_from = Folder,
+  #         values_from = Parameter,
+  #         values_fn = function(x) paste(unique(x), collapse = ","),
+  #         values_fill = ""
+  #       ) %>%
+  #       arrange(Site)
+  #
+  #
+  # file_info
+  #
+  #     })
+  #### Not used in internal version ####
 
-#### Reactive values ####
+  #### Reactive values ####
   data <- reactiveVal(NULL)
   current_week <- reactiveVal(NULL) #controlled by next/prev week buttons, and submit weekly decision
   selected_data <- reactiveVal(NULL) # This is essentially site param df
@@ -347,7 +64,7 @@ server <- function(input, output, session) {
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
   selected_data_cur_filename <- reactiveVal(NULL) # Current filename of selected data, to be updated as filename is saved
 
-auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
+  auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
   # Check if data folder exists and if data/all_data subfolder has files, if files are available, show table of available files and allow user selection
   output$conditional_data_ui <- renderUI({
@@ -371,13 +88,13 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
                   accept = c(".csv", ".xlsx", ".zip", ".feather", ".rds"))
       )
     } else {
-#Show regular UI if files are present
+      #Show regular UI if files are present
       tagList(
         DT::dataTableOutput("data_files_table"),
         # Directory selection
         selectInput("directory", "Choose Directory:",
-                     choices = c("pre_verification", "intermediary"),
-                     selected = "pre_verification"),
+                    choices = c("pre_verification", "intermediary"),
+                    selected = "pre_verification"),
         selectInput("user", "Select User:",
                     choices = c("SJS",  "KH","JDT", "KW", "BS"), selected = "SJS"),
         # Site selection
@@ -397,17 +114,17 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   #constantly updating file paths for shiny app
   all_filepaths <- reactive({
 
-  sync_file_system()
+    sync_file_system()
 
-  get_filenames()%>%mutate(
-    site = map_chr(filename, ~ split_filename(.x)$site),
-    parameter = map_chr(filename, ~ split_filename(.x)$parameter),
-    datetime = map_chr(filename, ~ split_filename(.x)$datetime))
+    get_filenames()%>%mutate(
+      site = map_chr(filename, ~ split_filename(.x)$site),
+      parameter = map_chr(filename, ~ split_filename(.x)$parameter),
+      datetime = map_chr(filename, ~ split_filename(.x)$datetime))
 
-})
+  })
 
 
-#data table for available parameters and which folder they belong to
+  #data table for available parameters and which folder they belong to
   output$data_files_table <- renderDataTable({
     files <- all_filepaths() %>%
       filter(directory %in% c("pre_verification", "intermediary", "verified")) %>%
@@ -523,34 +240,34 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
     sync_file_system()
 
-#TODO: This loads all data and is probably inefficient, should be updated to only load the data needed
-      datasets <- load_all_datasets()
+    #TODO: This loads all data and is probably inefficient, should be updated to only load the data needed
+    datasets <- load_all_datasets()
 
-      datasets <- map(datasets, function(data_list) {
-        # Return immediately if data_list is empty
-        if (is_empty(data_list)) {
-          return(data_list)
-        }
-
-        # Extract filenames from list names and maintain their original order
-        file_names <- tibble(list_name = names(data_list)) %>%
-          mutate(split_data = map(list_name, split_filename)) %>%
-          unnest_wider(split_data) %>%
-          mutate(parameter = gsub("_FINAL", "", parameter) )%>% #remove _FINAL from parameter names to make it play nice with final directory
-          mutate(site_param = paste(site, parameter, sep = "-")) %>%
-          group_by(site_param) %>%
-          arrange(desc(datetime)) %>%  # Sort so the latest entry remains unchanged
-          mutate(site_param = if_else(row_number() == 1, site_param, paste0(site_param, "_backup"))) %>%
-          ungroup()
-
-        # Ensure names are applied in the correct order by matching filenames
-        names(data_list) <- file_names$site_param[match(names(data_list), file_names$filename)]
-
+    datasets <- map(datasets, function(data_list) {
+      # Return immediately if data_list is empty
+      if (is_empty(data_list)) {
         return(data_list)
-      })
+      }
+
+      # Extract filenames from list names and maintain their original order
+      file_names <- tibble(list_name = names(data_list)) %>%
+        mutate(split_data = map(list_name, split_filename)) %>%
+        unnest_wider(split_data) %>%
+        mutate(parameter = gsub("_FINAL", "", parameter) )%>% #remove _FINAL from parameter names to make it play nice with final directory
+        mutate(site_param = paste(site, parameter, sep = "-")) %>%
+        group_by(site_param) %>%
+        arrange(desc(datetime)) %>%  # Sort so the latest entry remains unchanged
+        mutate(site_param = if_else(row_number() == 1, site_param, paste0(site_param, "_backup"))) %>%
+        ungroup()
+
+      # Ensure names are applied in the correct order by matching filenames
+      names(data_list) <- file_names$site_param[match(names(data_list), file_names$filename)]
+
+      return(data_list)
+    })
 
 
-      all_datasets(datasets)
+    all_datasets(datasets)
 
     # Get the site-parameter name
     site_param_name <- paste0(input$site, "-", input$parameter)
@@ -565,13 +282,13 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           stop(paste("Dataset", site_param_name, "not found"))
         }
 
-          predata_file_name <- all_filepaths() %>%
+        predata_file_name <- all_filepaths() %>%
           filter(site == input$site & parameter == input$parameter & directory == input$directory) %>%
           pull(filename)
 
         selected_data_cur_filename(move_file_to_intermediary_directory(pre_to_int_filename = predata_file_name, pre_to_int_df = site_param_df))
 
-#refresh all_datafiles
+        #refresh all_datafiles
       } else {
         site_param_df <- datasets$intermediary_data[[site_param_name]]
 
@@ -586,7 +303,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           slice(1)%>%
           pull(filename)
 
-         selected_data_cur_filename(update_intermediary_data(int_file, site_param_df))
+        selected_data_cur_filename(update_intermediary_data(int_file, site_param_df))
       }
 
       # Store the processed data
@@ -609,14 +326,14 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   })
 
   #### Data Verification functions ####
-# Previous Tab
+  # Previous Tab
   observeEvent(input$prev_tab, {
     updateNavbarPage(session, "tabs", selected = "Data Selection")
 
-#Q: Should this update the data files or no?
+    #Q: Should this update the data files or no?
   })
 
-## Week navigation handlers
+  ## Week navigation handlers
   observeEvent(input$prev_week, {
     req(selected_data())
     weeks <- unique(selected_data()$week)
@@ -644,11 +361,11 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     }
   })
 
-## Main plot
+  ## Main plot
   output$main_plot <- renderPlot({
     req(selected_data(), current_week(), all_datasets(), input$weekly_decision)
 
-#TODO:See previous note, this should be loaded only once rather than each time the plot updates
+    #TODO:See previous note, this should be loaded only once rather than each time the plot updates
     pre_verification_data <- all_datasets()[["pre_verification_data"]]
     intermediary_data <- all_datasets()[["intermediary_data"]]
     verified_data <- all_datasets()[["verified_data"]]
@@ -661,15 +378,15 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     #grab two days on either end of the week
     week_plus_data <- selected_data() %>%
       filter(DT_round >= week_min_day - days(2) & DT_round <= week_max_day + days(2))
-      #remove data from the week
+    #remove data from the week
 
 
     year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
     flag_day <- min(week_data$DT_round)
 
 
-#This isn't being sourced correctly in the shiny app
-#TODO: Source this correctly
+    #This isn't being sourced correctly in the shiny app
+    #TODO: Source this correctly
     #picking the correct name of the data frame
     retrieve_relevant_data_name <- function(df_name_arg, year_week_arg = NULL) {
 
@@ -724,19 +441,19 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     # Remove any NULL results from the list
     relevant_sondes <- compact(relevant_sondes)
 
-     # append week_data to relevant sonde list, clean list, and bind dfs
-     relevant_dfs <- map(relevant_sondes, ~.x[[1]])
-     week_plot_data <- append(relevant_dfs, list(week_data)) %>%
-       append(., list(week_plus_data)) %>%
-       keep(~ !is.null(.)) %>%
-       keep(~ nrow(.)>0) %>%
-       bind_rows() %>%
-       arrange(day)
+    # append week_data to relevant sonde list, clean list, and bind dfs
+    relevant_dfs <- map(relevant_sondes, ~.x[[1]])
+    week_plot_data <- append(relevant_dfs, list(week_data)) %>%
+      append(., list(week_plus_data)) %>%
+      keep(~ !is.null(.)) %>%
+      keep(~ nrow(.)>0) %>%
+      bind_rows() %>%
+      arrange(day)
 
 
     # Check the decision and create appropriate plot
     if (input$weekly_decision != "s") {
-# Show final decision to user to preview weekly decision
+      # Show final decision to user to preview weekly decision
       week_choice_data <- week_data %>%
         mutate(
           final_decision = case_when(
@@ -755,7 +472,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
             # Omit any user selected omit data (assuming AA was not the choice)
             input$weekly_decision != "aa" & brush_omit ~ "OMIT"))
 
-#Remove omitted data (user or from weekly decision)
+      #Remove omitted data (user or from weekly decision)
       if (input$remove_omit) {
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "OMIT")
@@ -763,7 +480,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
         week_plus_data <- week_plus_data %>%
           filter(final_status != "OMIT"| is.na(final_status))
       }
-#Remove flagged data if user desired
+      #Remove flagged data if user desired
       if(input$remove_flag){
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "FLAGGED")
@@ -779,7 +496,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
 
 
-# Create plot for preview of weekly decision
+      # Create plot for preview of weekly decision
       p <- ggplot(week_choice_data, aes(x = DT_round))
 
       if (nrow(week_min_check) > 0) {
@@ -795,8 +512,8 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
         p <- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
       }
-        p <- p +
-          map(relevant_sondes, function(sonde_data) {
+      p <- p +
+        map(relevant_sondes, function(sonde_data) {
           add_data <- sonde_data[[1]]
           data_source <- sonde_data[[2]]
 
@@ -831,38 +548,38 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           y = input$parameter,
           fill = "Preview of Final Decision",
           color = "Sites" )+
-      theme_bw(base_size = 14)
+        theme_bw(base_size = 14)
 
 
       if(input$incl_thresholds){
         p <- add_threshold_lines(plot = p,
-                                         plot_data = week_plot_data,
-                                         site_arg = input$site,
-                                         parameter_arg = input$parameter)
+                                 plot_data = week_plot_data,
+                                 site_arg = input$site,
+                                 parameter_arg = input$parameter)
       }
-        if(input$incl_ex_days){
-          p <- p +
-            scale_x_datetime(
-              limits = c(min(week_plus_data$DT_round, na.rm = TRUE),
-                         max(week_plus_data$DT_round, na.rm = TRUE)),
-              #expand = c(0, 0), # Remove extra white space
-              date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
-              date_breaks = "1 day" # Remove extra white space
-            )
-        }else{
-          p <- p +
-            scale_x_datetime(
-              limits = c(min(week_choice_data$DT_round, na.rm = TRUE),
-                         max(week_choice_data$DT_round, na.rm = TRUE)),
-              #expand = c(0, 0), # Remove extra white space
-              date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
-              date_breaks = "1 day" # Remove extra white space
-            )
-        }
+      if(input$incl_ex_days){
+        p <- p +
+          scale_x_datetime(
+            limits = c(min(week_plus_data$DT_round, na.rm = TRUE),
+                       max(week_plus_data$DT_round, na.rm = TRUE)),
+            #expand = c(0, 0), # Remove extra white space
+            date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
+            date_breaks = "1 day" # Remove extra white space
+          )
+      }else{
+        p <- p +
+          scale_x_datetime(
+            limits = c(min(week_choice_data$DT_round, na.rm = TRUE),
+                       max(week_choice_data$DT_round, na.rm = TRUE)),
+            #expand = c(0, 0), # Remove extra white space
+            date_labels = "%b %d", # Formats as "Jan 01", "Feb 15", etc.
+            date_breaks = "1 day" # Remove extra white space
+          )
+      }
 
-        if(input$plot_log10){
-          p <- p + scale_y_log10()
-        }
+      if(input$plot_log10){
+        p <- p + scale_y_log10()
+      }
 
       p
     } else {
@@ -891,27 +608,27 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       p <-ggplot(week_data, aes(x = DT_round))
 
 
-       if(input$incl_ex_days){
+      if(input$incl_ex_days){
 
-         week_min_check <- week_plus_data %>%
-           filter(week < current_week())
+        week_min_check <- week_plus_data %>%
+          filter(week < current_week())
 
-         week_max_check <- week_plus_data %>%
-           filter(week > current_week())
+        week_max_check <- week_plus_data %>%
+          filter(week > current_week())
 
-         if (nrow(week_min_check) > 0) {
+        if (nrow(week_min_check) > 0) {
 
-           week_plus_min <- week_min_check %>%
-             summarise(xmin = min(DT_round), xmax = max(DT_round))
+          week_plus_min <- week_min_check %>%
+            summarise(xmin = min(DT_round), xmax = max(DT_round))
 
-           p <- p + annotate(geom = "rect", xmin = week_plus_min$xmin, xmax = week_plus_min$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
-         }
-         if (nrow(week_max_check) > 0) {
-           week_plus_max <- week_max_check %>%
-             summarise(xmin = min(DT_round), xmax = max(DT_round))
+          p <- p + annotate(geom = "rect", xmin = week_plus_min$xmin, xmax = week_plus_min$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+        }
+        if (nrow(week_max_check) > 0) {
+          week_plus_max <- week_max_check %>%
+            summarise(xmin = min(DT_round), xmax = max(DT_round))
 
-           p<- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
-         }
+          p<- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
+        }
 
 
       }
@@ -954,15 +671,15 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
         })
 
       # add in extra days if incl_ex_days is true
-        if(input$incl_ex_days){
-          p <- p + geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean),fill = "black",shape = 21, stroke = 0, size = 1.5, alpha = 0.5) #add two extra days on the side
-        }
+      if(input$incl_ex_days){
+        p <- p + geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean),fill = "black",shape = 21, stroke = 0, size = 1.5, alpha = 0.5) #add two extra days on the side
+      }
 
       #add in primary data
-        p <- p+ geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching  user flag column
+      p <- p+ geom_point(aes(y = mean, fill = user_flag),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching  user flag column
         #Add Omitted data in red
         geom_point(data = week_data %>%filter(brush_omit == TRUE),aes(y = mean),shape = 21, stroke = 0, size = 2, fill = "#ff1100")+
-      scale_color_manual(
+        scale_color_manual(
           name = "Sites",
           values = setNames(site_color_combo$color, site_color_combo$site)) +
         # Scale for points (flag-based colors)
@@ -972,10 +689,10 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           begin = 0.1,
           end = 0.9,
           na.value = "grey" )+
-          scale_x_datetime(
-            date_labels = "%b %d", # Formats as "Jan 01"
-            date_breaks = "1 day" # Remove extra white space
-          )+
+        scale_x_datetime(
+          date_labels = "%b %d", # Formats as "Jan 01"
+          date_breaks = "1 day" # Remove extra white space
+        )+
         labs(
           title = paste0(str_to_title(input$site), " ", input$parameter, " (", format(flag_day, "%B %d, %Y"), ")"),
           x = "Date",
@@ -1026,7 +743,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   })
 
 
-## Sub plots output
+  ## Sub plots output
   output$sub_plots <- renderPlotly({
     req(all_datasets(), current_week(), input$site, input$sub_parameters, input$sub_sites)
 
@@ -1106,96 +823,96 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       mutate(mean_verified = signif(mean_verified, digits = 3))
 
 
-      max_param <- all_sub_plot_data %>%
-        distinct(parameter, site) %>%  # ensure unique param-site pairs
-        group_by(parameter) %>%
-        summarise(site_count = n()) %>%
-        ungroup()%>%
-        #find the max and pull the parameter
-        arrange(desc(site_count)) %>%
-        slice(1) %>%
-        pull(parameter)
+    max_param <- all_sub_plot_data %>%
+      distinct(parameter, site) %>%  # ensure unique param-site pairs
+      group_by(parameter) %>%
+      summarise(site_count = n()) %>%
+      ungroup()%>%
+      #find the max and pull the parameter
+      arrange(desc(site_count)) %>%
+      slice(1) %>%
+      pull(parameter)
 
-      plots <- map(input$sub_parameters, function(param){
+    plots <- map(input$sub_parameters, function(param){
 
 
 
-        #if(param == max_param){
+      #if(param == max_param){
 
-          # Create plotly plot
-          p <- plot_ly()
+      # Create plotly plot
+      p <- plot_ly()
 
-          # Add main site as grey points
-          main_site_data <- all_sub_plot_data %>%
-            filter(site == input$site,
-                   parameter == param)
+      # Add main site as grey points
+      main_site_data <- all_sub_plot_data %>%
+        filter(site == input$site,
+               parameter == param)
 
-          if (nrow(main_site_data) > 0) {
-            p <- p %>%
-              add_markers(
-                data = main_site_data,
+      if (nrow(main_site_data) > 0) {
+        p <- p %>%
+          add_markers(
+            data = main_site_data,
+            x = ~DT_round,
+            y = ~mean_verified,
+            marker = list(color = "grey", size = 8),
+            name = input$site,
+            legendgroup = input$site,
+            showlegend = param == max_param
+            # to not have extra legends using plotly, one plot needs to have a legend, pick the one with the most sites (max_param)
+            #otherwise it is the exact same as the other param plots
+
+            #showlegend = TRUE
+          )
+      }
+
+      # Add sub sites as colored lines
+      sub_site_data <- all_sub_plot_data %>%
+        filter(site %in% input$sub_sites,
+               parameter == param)
+
+      if (nrow(sub_site_data) > 0) {
+        # Get site colors using joins
+        sub_site_data_with_colors <- sub_site_data %>%
+          left_join(site_color_combo, by = "site") %>%
+          replace_na(list(color = "red"))  # fallback color
+
+        # Add lines for each sub site using walk
+        sub_site_data_with_colors %>%
+          split(.$site) %>%
+          iwalk(~ {
+            site_color <- unique(.x$color)[1]  # Get the color for this site
+
+            p <<- p %>%
+              add_lines(
+                data = .x,
                 x = ~DT_round,
                 y = ~mean_verified,
-                marker = list(color = "grey", size = 8),
-                name = input$site,
-                legendgroup = input$site,
-                showlegend = param == max_param
-                # to not have extra legends using plotly, one plot needs to have a legend, pick the one with the most sites (max_param)
-                #otherwise it is the exact same as the other param plots
+                line = list(color = site_color, width = 3),
+                name = .y,
+                legendgroup = .y,
 
+                showlegend = param == max_param
                 #showlegend = TRUE
               )
-          }
+          })
+      }
 
-          # Add sub sites as colored lines
-          sub_site_data <- all_sub_plot_data %>%
-            filter(site %in% input$sub_sites,
-                   parameter == param)
+      # Configure layout
+      p <- p %>%
+        layout(
+          xaxis = list(title = "Date"),
+          yaxis = list(title = param),
+          showlegend = param == max_param,
+          legend = list(
+            orientation = "h",
+            x = 0.5,
+            xanchor = "center",
+            y = 1.1,
+            title = list(text = "Sites")
+          ),
+          margin = list(t = 80, b = 40)
+        )
 
-          if (nrow(sub_site_data) > 0) {
-            # Get site colors using joins
-            sub_site_data_with_colors <- sub_site_data %>%
-              left_join(site_color_combo, by = "site") %>%
-              replace_na(list(color = "red"))  # fallback color
-
-            # Add lines for each sub site using walk
-            sub_site_data_with_colors %>%
-              split(.$site) %>%
-              iwalk(~ {
-                site_color <- unique(.x$color)[1]  # Get the color for this site
-
-                p <<- p %>%
-                  add_lines(
-                    data = .x,
-                    x = ~DT_round,
-                    y = ~mean_verified,
-                    line = list(color = site_color, width = 3),
-                    name = .y,
-                    legendgroup = .y,
-
-                    showlegend = param == max_param
-                    #showlegend = TRUE
-                  )
-              })
-          }
-
-          # Configure layout
-          p <- p %>%
-            layout(
-              xaxis = list(title = "Date"),
-              yaxis = list(title = param),
-              showlegend = param == max_param,
-              legend = list(
-                orientation = "h",
-                x = 0.5,
-                xanchor = "center",
-                y = 1.1,
-                title = list(text = "Sites")
-              ),
-              margin = list(t = 80, b = 40)
-            )
-
-          return(p)
+      return(p)
     }) %>%
       compact() # remove any null plots
 
@@ -1220,7 +937,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
           )
 
 
-        } else if (length(valid_plots) > 1) {
+      } else if (length(valid_plots) > 1) {
         # Create subplot with shared x-axis for multiple plots
         tryCatch({
           all_plot <- subplot(
@@ -1269,11 +986,11 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       }
 
       all_plot
-  }
+    }
 
   })
 
-#### Brush Tools ####
+  #### Brush Tools ####
 
   # Create a reactive value to store multiple brush selections
   brushed_areas <- reactiveVal(list())
@@ -1298,10 +1015,10 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
         brush_mean_max = max(brushed$mean, na.rm = TRUE),
         brush_mean_min = min(brushed$mean, na.rm = TRUE)
       )
-#TODO: This creates duplicates for some reason but does work...
+      #TODO: This creates duplicates for some reason but does work...
       existing_brushes <- brushed_areas()
       brushed_areas(c(existing_brushes, list(current_brush)))
-        }
+    }
 
   })
 
@@ -1314,11 +1031,11 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   })
 
 
- # Brush submit button UI
+  # Brush submit button UI
   output$brush_submit_ui <- renderUI({
     can_submit <- FALSE
 
-#Can only click button if there is a brush selection and a decision has been made
+    #Can only click button if there is a brush selection and a decision has been made
     if (!is.null(input$plot_brush) & !is.null(input$brush_action)) {
 
       if(input$brush_action == "A"){
@@ -1368,64 +1085,64 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
     }else{
 
-    #go through brushed areas and apply user flags, brush omit or user id as needed
-    updated_data <- reduce(
-      brushed_areas()[seq(1, length(brushed_areas()), by = 2)], #skip everyother to reduce duplicates
-      function(data, brush) {
-        data %>%
-          mutate(
-            user_flag = case_when(
+      #go through brushed areas and apply user flags, brush omit or user id as needed
+      updated_data <- reduce(
+        brushed_areas()[seq(1, length(brushed_areas()), by = 2)], #skip everyother to reduce duplicates
+        function(data, brush) {
+          data %>%
+            mutate(
+              user_flag = case_when(
 
-              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
-                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select == "A" ~ as.character(NA), # remove flags
+                between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                  between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                  user_brush_select == "A" ~ as.character(NA), # remove flags
 
-              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
-                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select == "F" ~ paste(input$user_brush_flags, collapse = ";\n"), # add user selected flags
+                between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                  between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                  user_brush_select == "F" ~ paste(input$user_brush_flags, collapse = ";\n"), # add user selected flags
 
-              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
-                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select == "O" ~ paste(input$user_brush_flags, collapse = ";\n"), # add user selected flags
-              TRUE ~ user_flag
-            ),
-            brush_omit = case_when(
-              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
-                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select == "O" ~ TRUE, # set omit to true if brushed with Omit
-              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
-                between(mean, brush$brush_mean_min, brush$brush_mean_max) &
-                user_brush_select %in% c("A", "F") ~ FALSE, # set omit to false if brushed with Accept or Flag
-              TRUE ~ brush_omit
-            ),
-            user = ifelse(
-              between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
-                between(mean, brush$brush_mean_min, brush$brush_mean_max),
-              input$user, # set user to input$user if brushed
-              user
+                between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                  between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                  user_brush_select == "O" ~ paste(input$user_brush_flags, collapse = ";\n"), # add user selected flags
+                TRUE ~ user_flag
+              ),
+              brush_omit = case_when(
+                between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                  between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                  user_brush_select == "O" ~ TRUE, # set omit to true if brushed with Omit
+                between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                  between(mean, brush$brush_mean_min, brush$brush_mean_max) &
+                  user_brush_select %in% c("A", "F") ~ FALSE, # set omit to false if brushed with Accept or Flag
+                TRUE ~ brush_omit
+              ),
+              user = ifelse(
+                between(DT_round, brush$brush_dt_min, brush$brush_dt_max) &
+                  between(mean, brush$brush_mean_min, brush$brush_mean_max),
+                input$user, # set user to input$user if brushed
+                user
+              )
             )
-          )
-      },
-      .init = updated_data
-    )
+        },
+        .init = updated_data
+      )
 
-    # Update the data
-    selected_data(updated_data)
+      # Update the data
+      selected_data(updated_data)
 
-    selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
+      selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
 
-    # Clear brushed areas after submission
-    brushed_areas(list())
-    session$resetBrush("plot_brush")
-    #reset input$user_brush_flags to nothing
-    updateRadioButtons(session, "user_brush_flags", selected = "")
+      # Clear brushed areas after submission
+      brushed_areas(list())
+      session$resetBrush("plot_brush")
+      #reset input$user_brush_flags to nothing
+      updateRadioButtons(session, "user_brush_flags", selected = "")
 
-    showNotification("Brush Changes saved.", type = "message")
+      showNotification("Brush Changes saved.", type = "message")
     }
   })
 
 
-# Resets data to remove all brush inputs and weekly decisions
+  # Resets data to remove all brush inputs and weekly decisions
   observeEvent(input$reset_week, {
 
     req(selected_data(), current_week())
@@ -1448,12 +1165,12 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
   })
 
-#### Weekly Decision ####
+  #### Weekly Decision ####
 
   # UI for weekly decision radio buttons
   output$weekly_decision_radio <- renderUI({
 
-   week_data <-  selected_data()%>%
+    week_data <-  selected_data()%>%
       filter(week == current_week())
 
     radioButtons(
@@ -1489,52 +1206,52 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
     )
   })
 
-# Update selected_data() on backend with submitted decision
+  # Update selected_data() on backend with submitted decision
   observeEvent(input$submit_decision, {
     req(input$weekly_decision != "s", selected_data())
     #update backend data
 
-      #weekly_decision <- input$weekly_decision
+    #weekly_decision <- input$weekly_decision
     updated_week_data <- selected_data() %>%
-        filter(week == current_week())%>%
-        mutate(
-          final_status = case_when(
-            #AA:Pass all data
-            input$weekly_decision  == "aa"  ~ "PASS",
-            #ANO: Accept Non Omit
-            input$weekly_decision == "ano" & !brush_omit ~ "PASS", # pass data that is not user select omit
-            #KF: Keep FLagged, retain flag into final data (sus but on the edge)
-            input$weekly_decision == "kf" & is.na(user_flag) & !brush_omit ~ "PASS", # pass data that is not user select omit
-            input$weekly_decision == "kf" & !is.na(user_flag) & !brush_omit ~ "FLAGGED", # tag data that is flagged
-            #OF: Omit Flagged
-            input$weekly_decision == "of" & is.na(user_flag) & !brush_omit ~ "PASS", # pass data that is not user select omit
-            input$weekly_decision == "of" & !is.na(user_flag) & !brush_omit ~ "OMIT", # omit data that is flagged
-            #OA: Omit All
-            input$weekly_decision == "oa"  ~ "OMIT",
-            # Omit any user selected omit data (assuming AA was not the choice)
-            input$weekly_decision != "aa" & brush_omit ~ "OMIT"),
-          user_flag = case_when(
-            #removing all flags if user selects accept all
-            input$weekly_decision == "aa" ~ NA,
-            TRUE ~ user_flag),
-          user = input$user,
-          week_decision = input$weekly_decision,
-          is_verified = TRUE,
-#TODO: verification status seems to have a different role in the previous version
-          verification_status = final_status,
-          #Omit flagged and omitted data from mean_verified
-          mean_verified = case_when(
-            final_status %in%c("PASS", "FLAG") ~ mean,
-            TRUE ~ NA_real_)
-          )
+      filter(week == current_week())%>%
+      mutate(
+        final_status = case_when(
+          #AA:Pass all data
+          input$weekly_decision  == "aa"  ~ "PASS",
+          #ANO: Accept Non Omit
+          input$weekly_decision == "ano" & !brush_omit ~ "PASS", # pass data that is not user select omit
+          #KF: Keep FLagged, retain flag into final data (sus but on the edge)
+          input$weekly_decision == "kf" & is.na(user_flag) & !brush_omit ~ "PASS", # pass data that is not user select omit
+          input$weekly_decision == "kf" & !is.na(user_flag) & !brush_omit ~ "FLAGGED", # tag data that is flagged
+          #OF: Omit Flagged
+          input$weekly_decision == "of" & is.na(user_flag) & !brush_omit ~ "PASS", # pass data that is not user select omit
+          input$weekly_decision == "of" & !is.na(user_flag) & !brush_omit ~ "OMIT", # omit data that is flagged
+          #OA: Omit All
+          input$weekly_decision == "oa"  ~ "OMIT",
+          # Omit any user selected omit data (assuming AA was not the choice)
+          input$weekly_decision != "aa" & brush_omit ~ "OMIT"),
+        user_flag = case_when(
+          #removing all flags if user selects accept all
+          input$weekly_decision == "aa" ~ NA,
+          TRUE ~ user_flag),
+        user = input$user,
+        week_decision = input$weekly_decision,
+        is_verified = TRUE,
+        #TODO: verification status seems to have a different role in the previous version
+        verification_status = final_status,
+        #Omit flagged and omitted data from mean_verified
+        mean_verified = case_when(
+          final_status %in%c("PASS", "FLAG") ~ mean,
+          TRUE ~ NA_real_)
+      )
 
-      other_data <- selected_data() %>%
-        filter(week != current_week())
+    other_data <- selected_data() %>%
+      filter(week != current_week())
 
-      selected_data(bind_rows(other_data, updated_week_data)%>%arrange(DT_round))
+    selected_data(bind_rows(other_data, updated_week_data)%>%arrange(DT_round))
 
-      #update int file and save new filename to selected_data_cur_filename
-      selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
+    #update int file and save new filename to selected_data_cur_filename
+    selected_data_cur_filename(update_intermediary_data(selected_data_cur_filename(), selected_data()))
 
     # Get all weeks and current week
     weeks <- unique(selected_data()$week)
@@ -1548,7 +1265,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
       showNotification("All weeks have been reviewed.", type = "message")
       updateTabsetPanel(session, inputId = "tabs", selected = "Finalize Data")
 
-      }else{
+    }else{
 
       if(idx == length(weeks)){
         # Find min week where is_verified is NA
@@ -1579,7 +1296,7 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
   })
 
 
-##### Final Verification Tab ####
+  ##### Final Verification Tab ####
   # get weeks for final week selection select input
   observe({
     req(selected_data())
@@ -1614,105 +1331,105 @@ auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
 
 
-#start & end of period (still not tested on multiyear datasets)
-min_year <- min(selected_data()$year)
-max_year <- max(selected_data()$year)
-# Find the first day of the minimum week in the data
-start_date <- parse_date_time(paste(min_year, min(selected_data()$week), 1, sep="/"), 'Y/U/u')
-# Find the last day of the maximum week in the data
-end_date <- parse_date_time(paste(max_year, max(selected_data()$week), 7, sep="/"), 'Y/U/u')
-# Create vertical lines at the beginning of each week
-vline_dates <- seq(start_date,
-                   end_date,
-                   by = "week")
-#add 3 days to each vertical line to center the week
-week_dates <- vline_dates + days(3)
+    #start & end of period (still not tested on multiyear datasets)
+    min_year <- min(selected_data()$year)
+    max_year <- max(selected_data()$year)
+    # Find the first day of the minimum week in the data
+    start_date <- parse_date_time(paste(min_year, min(selected_data()$week), 1, sep="/"), 'Y/U/u')
+    # Find the last day of the maximum week in the data
+    end_date <- parse_date_time(paste(max_year, max(selected_data()$week), 7, sep="/"), 'Y/U/u')
+    # Create vertical lines at the beginning of each week
+    vline_dates <- seq(start_date,
+                       end_date,
+                       by = "week")
+    #add 3 days to each vertical line to center the week
+    week_dates <- vline_dates + days(3)
 
-final_status_colors <- c("PASS" = "#008a18",
-                         "OMIT" = "#ff1100",
-                         "FLAGGED" = "#ff8200",
-                         "NA" = "grey")
+    final_status_colors <- c("PASS" = "#008a18",
+                             "OMIT" = "#ff1100",
+                             "FLAGGED" = "#ff8200",
+                             "NA" = "grey")
 
-# Replace NA values in final_status (this will not affect the actual saved data, just for plotting)
-final_plot_data$final_status <- ifelse(is.na(final_plot_data$final_status), "NA", final_plot_data$final_status)
-# This seems to be important for the plotly to work
-final_plot_data$final_status <- as.factor(final_plot_data$final_status)
+    # Replace NA values in final_status (this will not affect the actual saved data, just for plotting)
+    final_plot_data$final_status <- ifelse(is.na(final_plot_data$final_status), "NA", final_plot_data$final_status)
+    # This seems to be important for the plotly to work
+    final_plot_data$final_status <- as.factor(final_plot_data$final_status)
 
 
-# Create plotly object
- p_plotly <- plot_ly(
-  data = final_plot_data,
-  x = ~DT_round,
-  y = ~mean,
-  type = 'scatter',
-  mode = 'markers',
-  color = ~final_status,
-  colors = final_status_colors,
-  text = ~paste0("Week ", week, "\nStatus: ", final_status),
-  hoverinfo = "text"
-) %>%
-    layout(
-      title = list(
-        text = paste0("Complete Dataset Overview: ", input$site, "-", input$parameter),
-        x = 0.5 # Centers the title
-      ),
-      xaxis = list(
-        title = "Date",
-        tickformat = "%b %d",
-        tickmode = "array",
-        tickvals = week_dates,
-        ticktext = paste0("Week ", week(week_dates), "\n", format(week_dates, "%b %d")),
-        showgrid = TRUE,
-        domain = c(0, 1)  # Ensure it spans the full width
-      ),
-      yaxis = list(
-        title = input$parameter
-      ),
-      xaxis2 = list(
-        title = "Week #",
-        tickmode = "array",
-        tickvals = week_dates,
-        ticktext = as.character(week(week_dates)),
-        overlaying = "x",
-        side = "top",
-        showgrid = FALSE,
-        zeroline = FALSE,
-        ticks = "outside",
-        ticklen = 5
-      ),
-      shapes = lapply(vline_dates, function(date) {
-        list(
-          type = "line",
-          x0 = date, x1 = date, y0 = 0, y1 = 1,
-          xref = "x", yref = "paper",
-          line = list(color = "black", width = 1)
-        )
-      })
-    )
-  if (input$remove_omit_finalplot) {
-    p_plotly <- p_plotly %>%
+    # Create plotly object
+    p_plotly <- plot_ly(
+      data = final_plot_data,
+      x = ~DT_round,
+      y = ~mean,
+      type = 'scatter',
+      mode = 'markers',
+      color = ~final_status,
+      colors = final_status_colors,
+      text = ~paste0("Week ", week, "\nStatus: ", final_status),
+      hoverinfo = "text"
+    ) %>%
       layout(
-        annotations = list(
+        title = list(
+          text = paste0("Complete Dataset Overview: ", input$site, "-", input$parameter),
+          x = 0.5 # Centers the title
+        ),
+        xaxis = list(
+          title = "Date",
+          tickformat = "%b %d",
+          tickmode = "array",
+          tickvals = week_dates,
+          ticktext = paste0("Week ", week(week_dates), "\n", format(week_dates, "%b %d")),
+          showgrid = TRUE,
+          domain = c(0, 1)  # Ensure it spans the full width
+        ),
+        yaxis = list(
+          title = input$parameter
+        ),
+        xaxis2 = list(
+          title = "Week #",
+          tickmode = "array",
+          tickvals = week_dates,
+          ticktext = as.character(week(week_dates)),
+          overlaying = "x",
+          side = "top",
+          showgrid = FALSE,
+          zeroline = FALSE,
+          ticks = "outside",
+          ticklen = 5
+        ),
+        shapes = lapply(vline_dates, function(date) {
           list(
-            text = "Omitted data removed",
-            x = 0.5,
-            y = 1.02,
-            xref = "paper",
-            yref = "paper",
-            showarrow = FALSE,
-            font = list(size = 12, color = "gray50")
+            type = "line",
+            x0 = date, x1 = date, y0 = 0, y1 = 1,
+            xref = "x", yref = "paper",
+            line = list(color = "black", width = 1)
+          )
+        })
+      )
+    if (input$remove_omit_finalplot) {
+      p_plotly <- p_plotly %>%
+        layout(
+          annotations = list(
+            list(
+              text = "Omitted data removed",
+              x = 0.5,
+              y = 1.02,
+              xref = "paper",
+              yref = "paper",
+              showarrow = FALSE,
+              font = list(size = 12, color = "gray50")
+            )
           )
         )
-      )
-  }
+    }
 
- if(input$log10_finalplot){
+    if(input$log10_finalplot){
 
-   p_plotly <- layout(p_plotly, yaxis = list(type = "log"))
- }
+      p_plotly <- layout(p_plotly, yaxis = list(type = "log"))
+    }
 
 
-  p_plotly
+    p_plotly
 
   })
 
@@ -1741,12 +1458,12 @@ final_plot_data$final_status <- as.factor(final_plot_data$final_status)
     #set is_finalized in selected_data() to true
     update_finalized <- selected_data()%>%
       mutate(is_finalized = TRUE)
-# Move the dataset to the finalized directory and print the file name for users to see
+    # Move the dataset to the finalized directory and print the file name for users to see
     final_name <- move_file_to_verified_directory(int_to_fin_filename = selected_data_cur_filename(), int_to_fin_df = update_finalized)
 
     showNotification(paste0(input$site, "-", input$parameter," finalized and saved to ", final_name ), type = "message")
     updateNavbarPage(session, inputId = "tabs", selected = "Data Selection")
-#reload the session to update the data displayed in the data selection tab and reset all reactive elements
+    #reload the session to update the data displayed in the data selection tab and reset all reactive elements
     session$reload()
 
   })
@@ -1770,4 +1487,3 @@ final_plot_data$final_status <- as.factor(final_plot_data$final_status)
 
 }
 
-shinyApp(ui, server)

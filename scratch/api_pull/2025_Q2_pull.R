@@ -95,8 +95,8 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 hv_sites <- hv_locations_all(hv_token) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE))
 
-mst_start <- ymd_hms("2025-05-30 00:00:00", tz = "America/Denver")
-mst_end <- ymd_hms("2025-07-02 23:59:59", tz = "America/Denver")
+mst_start <- ymd_hms("2025-06-30 00:00:00", tz = "America/Denver")
+mst_end <- ymd_hms("2025-08-04 23:59:59", tz = "America/Denver")
 
 # Upload the hv data
 sites <- c("archery",
@@ -127,29 +127,6 @@ walk(sites,
      }
 )
 
-# start_dt = with_tz(mst_start, tzone = "UTC")
-# end_dt = with_tz(mst_end, tzone = "UTC")
-#
-# sfm_file <- list.files(staging_directory, pattern = "sfm", full.names = TRUE)
-# #read in api data
-# sfm_hydrovu <- read_parquet(sfm_file, as_data_frame = TRUE)
-#
-# # add non logged data from SFM to SFM data file
-# sfm_livestream <- read_csv("data/manual_data_verification/2024_cycle/hydro_vu_pull/extra_data/SFM_2024-12-10_1430.csv",
-#                            show_col_types = F)%>%
-#   filter(parameter != "% Saturation O₂", !is.na(value))%>%
-#   mutate(units = ifelse(parameter == "Temperature", "C", units))%>%
-#   #only keep dates where data is not in sfm
-#   filter(timestamp >= start_dt & timestamp <= end_dt)
-#
-# sfm_final <- bind_rows( sfm_hydrovu, sfm_livestream)
-#
-# #write to final file
-# write_parquet(sfm_final,
-#               here(staging_directory, paste0("sfm_", stringr::str_replace(stringr::str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".parquet")))
-#
-
-
 
 # Load in all the raw files
 # Since the munge api data is different, we are going to do this with a "custom munge"
@@ -160,12 +137,12 @@ hv_data <- list.files(staging_directory, full.names = TRUE) %>%
     return(site_df)
   }, .progress = TRUE)
 
-data_2024 <- hv_data %>%
+data_2025 <- hv_data %>%
   data.table() %>%
   select(-id) %>%
   mutate(units = as.character(units)) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
-  #filter(!grepl("virridy", site, ignore.case = TRUE)) %>%
+  filter(!grepl("virridy", site, ignore.case = TRUE)) %>%
   mutate(
     DT = timestamp,
     DT_round = round_date(DT, "15 minutes"),
@@ -180,7 +157,7 @@ data_2024 <- hv_data %>%
   keep(~nrow(.) > 0)
 
 # Tidy all the raw files
-tidy_data <- data_2024 %>%
+tidy_data <- data_2025 %>%
   future_map(~tidy_api_data(api_data = .), .progress = TRUE) %>%  # the summarize interval default is 15 minutes
   keep(~!is.null(.))
 
@@ -476,36 +453,6 @@ v_final_flags <- final_flags%>%
 # Save the data individually.
 iwalk(v_final_flags, ~write_csv(.x, here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final", paste0(.y, ".csv"))))
 
-
-params <- paste(c("Chl-a Fluorescence","Depth", "Specific Conductivity",
-                   "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence"), collapse = "|")
-
-
-#get files in hydrovu_2024_data
-files <- tibble(filename = list.files(here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final"), full.names = TRUE))%>%
-  filter(grepl(pattern = params, filename))%>%
-  #remove extras
-  filter(!grepl(pattern = "Level|MV", filename))
-
-
-# read in files
-all_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
-  #turn into individual dataframes by site and parameter
-  split(f = list(.$site, .$parameter), sep = "-") %>%
-  keep(~nrow(.) > 0)%>%
-  bind_rows()%>%
-  #convert to MST!
-  mutate(DT_round = with_tz(DT_round, tz = "MST"),
-         DT_join = as.character(DT_round))
-
-
-min_date <- min(all_data$DT_round, na.rm = TRUE)%>%
-  format("%Y-%m-%d")
-max_date <- max(all_data$DT_round, na.rm = TRUE)%>%
-  format("%Y-%m-%d")
-
-# save to raw data file to be processed later on
-write_rds(all_data, here("data", "sharing", "quarterly_meetings", "2025_Q2", paste0("flagged_data_", min_date, "_", max_date, ".rds")))
 
 
 

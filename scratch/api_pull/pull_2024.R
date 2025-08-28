@@ -470,6 +470,41 @@ v_final_flags <- final_flags%>%
   keep(~nrow(.) > 0)
 
 # Save the data individually.
-iwalk(v_final_flags, ~write_csv(.x, here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged_sam", paste0(.y, ".csv"))))
+iwalk(v_final_flags, ~write_csv(.x, here("data","manual_data_verification", "2024_cycle" , "hydro_vu_pull", "flagged_sam", paste0(.y, ".csv"))))
 
-# TODO: delete raw data files that are virridy_virridy
+
+
+### Reformatting for Verification Tool ###
+
+# select correct verification cycle to load
+current_cycle_folder = "2024_cycle"
+
+params_to_use <- c("Chl-a Fluorescence","Depth", "Specific Conductivity",
+                   "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence")
+params <- paste(params_to_use, collapse = "|")
+
+#get files in hydrovu_2024_data
+files <- tibble(filename = list.files(here("data","manual_data_verification",current_cycle_folder, "hydro_vu_pull", "flagged_temp"), full.names = TRUE))%>%
+  filter(grepl(pattern = params, filename))%>%
+  #remove extras
+  filter(!grepl(pattern = "Level|MV", filename))
+
+
+# read in files
+all_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
+  #turn into individual dataframes by site and parameter
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  keep(~nrow(.) > 0)
+
+
+# clean up columns to match shiny app requirements
+
+all_data_tidy <- all_data%>%
+  bind_rows()%>%
+  #convert to MST!
+  mutate(DT_round = with_tz(DT_round, tz = "MST"),
+         DT_join = as.character(DT_round))
+
+
+# save to raw data file to be processed later on inside ver tool
+write_rds(all_data_tidy, here("data", "manual_data_verification", current_cycle_folder, "in_progress","raw_data","raw_data.rds" ))
