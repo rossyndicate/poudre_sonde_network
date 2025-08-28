@@ -215,7 +215,6 @@ calibration parameters.
 # Back Calibration
 
 ```{r Apply back calibration functions to the data}
-# NOTE: THIS WILL NOT RUN YET!
 calibrated_data <- prepped_snsr_cal_data %>% 
   map(function(year){
     calibrated_site_param_list <- year %>%
@@ -237,16 +236,16 @@ year, and calibration chunks within each site-parameter. While `join_sensor_cali
 and `prepare_sensor_calibration_data()` handle similar nested year/site-parameter 
 iterations internally, they abstract away this complexity from the user.
 
-The explicit nested structure in  the `back_calibration()` function call serves 
+The explicit nested structure in  the `cal_back_calibration()` function call serves 
 a purpose for future functionality. While automated calibration works well for 
 most situations, some sensor data may require manual intervention or custom 
 calibration approaches. The exposed nested maps allow users to easily extract 
 specific years, site-parameters, or individual chunks for manual processing 
 while maintaining the overall automated workflow for standard cases.
 
-## The `back_calibrate()` Function
+## The `cal_back_calibrate()` Function
 
-The `back_calibrate()` function serves as the orchestrator for the entire calibration 
+The `cal_back_calibrate()` function serves as the orchestrator for the entire calibration 
 process within each chunk. It automatically determines the appropriate calibration 
 workflow based on the sensor parameter type. Standard sensors (Chlorophyll-a, 
 FDOM, ORP, Pressure, Specific Conductivity, RDO) follow a five-step process 
