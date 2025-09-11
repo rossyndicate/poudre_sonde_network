@@ -69,8 +69,8 @@ staging_directory <- here("data","sharing","quarterly_meetings","2025_Q2", "raw_
 flagged_directory <- here("data","sharing","quarterly_meetings","2025_Q2", "flagged_data")
 
 # Read in the threshold data first
-sensor_thresholds <- read_yaml(here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "thresholds", "sensor_spec_thresholds.yml"))
-season_thresholds <- read_csv(here("data","manual_data_verification","2024_cycle", "hydro_vu_pull", "thresholds", "outdated_seasonal_thresholds.csv"), show_col_types = FALSE) %>%
+sensor_thresholds <- read_yaml(here("data","field_notes","qaqc",  "sensor_spec_thresholds.yml"))
+season_thresholds <- read_csv(here("data","field_notes","qaqc", "updated_seasonal_thresholds_2025.csv"), show_col_types = FALSE) %>%
   fix_sites()
 
 # Read in credentials
@@ -95,19 +95,19 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 hv_sites <- hv_locations_all(hv_token) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE))
 
-mst_start <- ymd_hms("2025-06-30 00:00:00", tz = "America/Denver")
-mst_end <- ymd_hms("2025-08-04 23:59:59", tz = "America/Denver")
+#ADJUST DATETIMES
+mst_start <- ymd_hms("2025-07-30 00:00:00", tz = "America/Denver")
+mst_end <- ymd_hms("2025-09-04 23:59:59", tz = "America/Denver")
 
 # Upload the hv data
-sites <- c("archery",
-           "bellvue",
-           "boxelder",
-           "cottonwood",
-           "elc",
-           "riverbluffs",
+sites <- c("bellvue",
            "salyer",
            "udall",
-           "riverbend")
+           "riverbend",
+           "cottonwood",
+           "elc",
+           "archery",
+           "riverbluffs")
 
 
 walk(sites,
@@ -449,6 +449,8 @@ v_final_flags <- final_flags%>%
   dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
+
+beepr::beep(1)
 
 # Save the data individually.
 iwalk(v_final_flags, ~write_csv(.x, here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final", paste0(.y, ".csv"))))

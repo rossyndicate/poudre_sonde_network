@@ -633,7 +633,7 @@ server <- function(input, output, session) {
 
       }
 
-
+#TODO: Not sure if this is working how I'd expect
       #set the value for the geom_crossbar, should adjust in size based on range of data
       adjustment_value = sd(week_data$mean, na.rm = TRUE)*.05
 
