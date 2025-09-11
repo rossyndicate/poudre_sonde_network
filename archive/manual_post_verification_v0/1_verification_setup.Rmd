@@ -47,7 +47,7 @@ Correct spelling of sites and parameters available in verificaiton_assignments_n
 ```{r set site and parameter variables}
 network <- "virridy"
 # Set the site and parameter to verify
-site <- "archery virridy"
+site <- "boxelder"
 parameter <- "Turbidity"
 ```
 
