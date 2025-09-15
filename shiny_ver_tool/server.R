@@ -370,6 +370,7 @@ server <- function(input, output, session) {
     intermediary_data <- all_datasets()[["intermediary_data"]]
     verified_data <- all_datasets()[["verified_data"]]
 
+    # user selected site parameter combo
     week_data <- selected_data() %>%
       filter(week == current_week())
 
@@ -403,7 +404,7 @@ server <- function(input, output, session) {
     }
 
     plot_filter <- input$add_sites
-    # Get the relevant sonde data
+    # Get the relevant sonde data THIS IS GOOD, no touch for now -JD
     relevant_sondes <- map(plot_filter, ~ {
       sonde_name <- paste0(.x, "-", input$parameter)
       data_source <- NULL
@@ -452,6 +453,8 @@ server <- function(input, output, session) {
 
 
     # Check the decision and create appropriate plot
+    # This is where the tweaks will probably happen
+    # What is this nested inside of?
     if (input$weekly_decision != "s") {
       # Show final decision to user to preview weekly decision
       week_choice_data <- week_data %>%
@@ -497,6 +500,7 @@ server <- function(input, output, session) {
 
 
       # Create plot for preview of weekly decision
+      # actually building plot, tweaks will happen here too - JD
       p <- ggplot(week_choice_data, aes(x = DT_round))
 
       if (nrow(week_min_check) > 0) {
@@ -513,13 +517,14 @@ server <- function(input, output, session) {
         p <- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
       }
       p <- p +
+        # Add relevant sites
         map(relevant_sondes, function(sonde_data) {
           add_data <- sonde_data[[1]]
           data_source <- sonde_data[[2]]
 
           y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
 
-          # Add isolated point identification
+          # Add isolated point identification, huh? -JD
           add_data_with_isolated <- add_data %>%
             arrange(site, DT_round) %>%
             group_by(site) %>%
@@ -538,6 +543,7 @@ server <- function(input, output, session) {
           )
         }) + #plot other sites
         geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching final decision
+        # this is where plotting is getting weird maybe -JD
         geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean, fill = final_status), shape = 21, stroke = 0, size = 1.5, alpha = 0.5)+ #add two extra days on the side
         #add a grey box from the end of week_data to the end of week plus data on both sides of week data
         scale_fill_manual(values = final_status_colors, na.value = "grey")+ #set fill colors to weekly status colors
@@ -557,6 +563,7 @@ server <- function(input, output, session) {
                                  site_arg = input$site,
                                  parameter_arg = input$parameter)
       }
+      # This is where the xlim is set, a problem -JD
       if(input$incl_ex_days){
         p <- p +
           scale_x_datetime(
@@ -583,10 +590,7 @@ server <- function(input, output, session) {
 
       p
     } else {
-      #TO DO: Swap with create weekly plot function call, adding in other sites, etc
-
-
-
+      # TODO: Swap with create weekly plot function call, adding in other sites, etc
 
       if(input$remove_omit){
         week_data <- week_data %>%
@@ -702,7 +706,7 @@ server <- function(input, output, session) {
         theme_bw(base_size = 14)
 
 
-      # Check if there are any brushed areas
+      # Check if there are any brushed areas, THIS IS GOOD -JD
       if(length(brushed_areas()) > 0) {
 
         # Create a data frame of all brush boundaries
@@ -744,6 +748,7 @@ server <- function(input, output, session) {
 
 
   ## Sub plots output
+  # Anything that is flagged/omitted is removed, we want to keep flags and differentiate those points somehow -JD
   output$sub_plots <- renderPlotly({
     req(all_datasets(), current_week(), input$site, input$sub_parameters, input$sub_sites)
 
