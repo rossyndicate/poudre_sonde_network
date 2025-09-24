@@ -1,7 +1,7 @@
 
 
 #### Server ####
-
+#testing PR - KH
 server <- function(input, output, session) {
   #### Not used in internal version ####
   #
@@ -310,7 +310,7 @@ server <- function(input, output, session) {
       # selected data is instantiated
       selected_data(site_param_df)
 
-      # Set initial week to earliest week with missing final_status values (unverified)
+      # Set initial week to earliest week with missing final_status values (unverified) - stores data as final values and automatically sends you to the only data without final status
       current_week(site_param_df$week[min(which(is.na(site_param_df$final_status)))])
 
 
@@ -605,7 +605,7 @@ server <- function(input, output, session) {
       }
       if(input$remove_flag){
         week_data <- week_data %>%
-          filter(is.na(user_flag) | brush_omit) # remove flagged data unless it is omitted
+          filter(is.na(user_flag) | brush_omit) # remove flagged data unless it is omitted - why keep omitted data?
 
         week_plus_data <- week_plus_data %>%
           filter(final_status != "FLAGGED"| is.na(final_status))
