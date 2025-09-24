@@ -60,7 +60,7 @@ server <- function(input, output, session) {
   data <- reactiveVal(NULL)
   current_week <- reactiveVal(NULL) #controlled by next/prev week buttons, and submit weekly decision
   selected_data <- reactiveVal(NULL) # This is essentially site param df
-  all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots?
+  all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots? (why is there a question mark here)
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
   selected_data_cur_filename <- reactiveVal(NULL) # Current filename of selected data, to be updated as filename is saved
 
@@ -240,7 +240,7 @@ server <- function(input, output, session) {
 
     sync_file_system()
 
-    #TODO: This loads all data and is probably inefficient, should be updated to only load the data needed
+    # TODO: This loads all data and is probably inefficient, should be updated to only load the data needed (efficiency notes)
     datasets <- load_all_datasets()
 
     datasets <- map(datasets, function(data_list) {
@@ -307,6 +307,7 @@ server <- function(input, output, session) {
       }
 
       # Store the processed data
+      # selected data is instantiated
       selected_data(site_param_df)
 
       # Set initial week to earliest week with missing final_status values (unverified)
@@ -361,11 +362,13 @@ server <- function(input, output, session) {
     }
   })
 
-  ## Main plot
+  ## Main plot (main plot starts here)
   output$main_plot <- renderPlot({
+
+    # requirements for this function to work
     req(selected_data(), current_week(), all_datasets(), input$weekly_decision)
 
-    #TODO:See previous note, this should be loaded only once rather than each time the plot updates
+    # TODO: See previous note, this should be loaded only once rather than each time the plot updates (efficiency notes)
     pre_verification_data <- all_datasets()[["pre_verification_data"]]
     intermediary_data <- all_datasets()[["intermediary_data"]]
     verified_data <- all_datasets()[["verified_data"]]
@@ -382,7 +385,8 @@ server <- function(input, output, session) {
     #remove data from the week
 
 
-    year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
+    # min(week_data$DT_round) is in week_min_day object, should use that instead - JD
+    year_week <- paste0(as.character(year(min(week_data$DT_round, na.rm = T))) ," - ", as.character(min(week(week_data$DT_round))))
     flag_day <- min(week_data$DT_round)
 
 
@@ -403,7 +407,7 @@ server <- function(input, output, session) {
 
     }
 
-    plot_filter <- input$add_sites
+    plot_filter <- input$add_sites # remember to check how things interact with UI -JD
     # Get the relevant sonde data THIS IS GOOD, no touch for now -JD
     relevant_sondes <- map(plot_filter, ~ {
       sonde_name <- paste0(.x, "-", input$parameter)
@@ -454,14 +458,14 @@ server <- function(input, output, session) {
 
     # Check the decision and create appropriate plot
     # This is where the tweaks will probably happen
-    # What is this nested inside of?
-    if (input$weekly_decision != "s") {
+    # What is this nested inside of: output$main_plot <- renderPlot
+    if (input$weekly_decision != "s") { # make sure these are interacting with the UI correctly
       # Show final decision to user to preview weekly decision
       week_choice_data <- week_data %>%
         mutate(
           final_decision = case_when(
             #AA:Pass all data
-            input$weekly_decision == "aa"  ~ "PASS",
+            input$weekly_decision == "aa"  ~ "PASS", # how do shiny apps update reactive values. if they are in renderPlot, do they rerun render plot automatically
             #ANO: Accept Non Omit
             input$weekly_decision == "ano" & !brush_omit ~ "PASS", # pass data that is not user select omit
             #KF: Keep Flags, data becomes flagged but kept in dataset (mildly sus)
@@ -637,7 +641,7 @@ server <- function(input, output, session) {
 
       }
 
-#TODO: Not sure if this is working how I'd expect
+      #TODO: Not sure if this is working how I'd expect
       #set the value for the geom_crossbar, should adjust in size based on range of data
       adjustment_value = sd(week_data$mean, na.rm = TRUE)*.05
 
@@ -742,10 +746,11 @@ server <- function(input, output, session) {
         p <- p + scale_y_log10()
       }
 
+      # Return the plot from renderPlot
       p
     }
   })
-
+# main plotting code ends here
 
   ## Sub plots output
   # Anything that is flagged/omitted is removed, we want to keep flags and differentiate those points somehow -JD
