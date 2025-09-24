@@ -20,6 +20,10 @@ for_azure/creds/mWaterCreds.yml
 for_azure/creds/HydroVuCreds.yml
 src/mWater_collate/mWater_API.yml
 
+# Scratch folder for Juan
+scratch_juan/
+scratch_juan
+
 # reporting
 scratch/reporting/PWQN_overview.html
 # vs code

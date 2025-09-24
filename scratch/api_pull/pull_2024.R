@@ -85,7 +85,7 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
                     client_secret = as.character(hv_creds["secret"]))
 
 # Pulling in the data from mWater
-mWater_data <- load_mWater(creds = mWater_creds)
+mWater_data <- fcw.qaqc::load_mWater(creds = mWater_creds)
 all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
   mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
          last_site_visit = with_tz(last_site_visit, tzone = "UTC"),
