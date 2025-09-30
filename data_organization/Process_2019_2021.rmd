@@ -138,7 +138,7 @@ rist <- hydrovu_utc %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all = TRUE) %>%
-  mutate(sensor = "Rist",
+  mutate(sensor = "rist",
          comments = NA)
 
 rm(hydrovu_utc)
@@ -233,7 +233,7 @@ legacy <- bind_rows(hydrovu_utc, troll_mdt, vulink_mdt, troll_mst) %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all=TRUE) %>%
-  mutate(sensor = "Legacy", comments = NA) %>%
+  mutate(sensor = "legacy", comments = NA) %>%
   select(-DT_local)
 
 rm(hydrovu_utc, troll_mdt, troll_mst, vulink_mdt)
@@ -266,7 +266,7 @@ timberline <- hydrovu_utc %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all = TRUE) %>%
-  mutate(sensor = "Timberline",
+  mutate(sensor = "timberline",
          comments = NA)
 
 rm(hydrovu_utc)
@@ -299,7 +299,7 @@ prospect <- hydrovu_utc %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all=TRUE) %>%
-  mutate(sensor = "Prospect",
+  mutate(sensor = "prospect",
          comments = NA)
 
 rm(hydrovu_utc)
@@ -372,7 +372,7 @@ elc <- bind_rows(hydrovu_utc, hydrovu_mst, troll_mdt) %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all=TRUE) %>%
-  mutate(sensor = "ELC",
+  mutate(sensor = "elc",
          comments = NA) %>%
   select(-DT_local)
 
@@ -406,7 +406,7 @@ archery <- hydrovu_utc %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all = TRUE) %>%
-  mutate(sensor = "Archery",
+  mutate(sensor = "archery",
          comments = case_when(DT == "2019-09-30 03:45:00" ~ "sensor deployed",
                               DT == "2020-01-06 21:45:00" ~ "rental sensor battery dead",
                               DT == "2020-01-10 08:45:00" ~ "rental sensor battery replaced",
@@ -425,7 +425,7 @@ archery <- hydrovu_utc %>%
 rm(hydrovu_utc)
 
 old_raw <- bind_rows(rist, legacy, timberline, prospect, elc, archery) %>%
-  mutate(sensor = ifelse(sensor == "Rist", "tamasag", sensor))
+  mutate(sensor = ifelse(sensor == "rist", "tamasag", sensor))
 
 rm(archery, elc, legacy, prospect, rist, timberline)
 
@@ -485,6 +485,7 @@ raw_data_standardized <- old_raw %>%
          id = site,
          name = site) %>%
   select(site, id, name, timestamp, parameter, value, units) %>%
+  filter(!is.na(value)) %>%
   split(f = list(.$site), sep = "-")
 ```
 
@@ -516,7 +517,7 @@ There are, in fact, no field notes during this time frame. But we are running th
 # tidy raw data (default 15-minute intervals)
 tidy_data <-  raw_data_standardized %>%
   bind_rows() %>%
-  rename(DT_round = timestamp) %>%
+  mutate(DT_round = round_date(timestamp, "15 minutes")) %>%
   mutate(DT_join = as.character(paste(DT_round))) %>%
   fcw.qaqc::fix_site_names(., site_col = "site") %>%
   select(DT_round, DT_join, site, parameter, value, units) %>%
