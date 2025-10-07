@@ -1,18 +1,18 @@
 #' @title Add a flag if the water temperature is freezing.
-#' 
+#'
 #' @description
 #' A function designed to append the 'frozen' flag to a row if the value
 #' in the `mean` column is less than or equal to 0.
-#' 
+#'
 #' @param df A data frame with a `flag` column.
-#' 
+#'
 #' @return A data frame with a `flag` column that has been updated with the
 #' 'frozen' flag.
-#' 
+#'
 #' @examples
 #' add_frozen_flag(df = all_data_flagged$`archery-Actual Conductivity`)
 #' add_frozen_flag(df = all_data_flagged$`boxelder-Temperature`)
-#' 
+#'
 #' @seealso [flag_all_data()]
 
 add_frozen_flag <- function(df){
