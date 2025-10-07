@@ -109,7 +109,10 @@ vulink_reader <- function(file) {
     slice(-1:-31) %>%
     janitor::row_to_names(row_number = 1) 
 }
+```
 
+
+```{r}
 ## Rist
 
 hydrovu_utc <- map_dfr(list.files("data/sensor_data/2018_2021/site_organized_hydrovu/rist/", full.names = T), hydrovu_reader) %>%
@@ -134,10 +137,12 @@ hydrovu_utc <- map_dfr(list.files("data/sensor_data/2018_2021/site_organized_hyd
   mutate(DT = as_datetime(DT, tz = "UTC")) 
 
 rist <- hydrovu_utc %>%
-  # mutate(DT = round_date(DT, "15 minutes")) %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all = TRUE) %>%
+  # Force time zones appropriately. MST to UTC:
+  mutate(DT = case_when(year %in% c(2019, 2020) ~ DT + hours(7),
+                        TRUE ~ DT)) %>% 
   mutate(sensor = "rist",
          comments = NA)
 
@@ -233,6 +238,9 @@ legacy <- bind_rows(hydrovu_utc, troll_mdt, vulink_mdt, troll_mst) %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all=TRUE) %>%
+  # Force time zones appropriately. MDT to UTC:
+  mutate(DT = case_when(year %in% c(2019, 2020) ~ DT + hours(6),
+                        TRUE ~ DT)) %>% 
   mutate(sensor = "legacy", comments = NA) %>%
   select(-DT_local)
 
@@ -266,6 +274,8 @@ timberline <- hydrovu_utc %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all = TRUE) %>%
+  # Force time zones appropriately. MST to UTC:
+  mutate(DT = if_else(year == 2020, DT + hours(7), DT)) %>% 
   mutate(sensor = "timberline",
          comments = NA)
 
@@ -299,6 +309,11 @@ prospect <- hydrovu_utc %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all=TRUE) %>%
+  # Force time zones appropriately. MDT to UTC:
+  mutate(DT = case_when(date < "2020-09-01" ~ DT + hours(6),
+                        # MST to UTC:
+                        date >= "2020-09-01" ~ DT + hours(7),
+                        TRUE ~ DT)) %>% 
   mutate(sensor = "prospect",
          comments = NA)
 
@@ -372,6 +387,7 @@ elc <- bind_rows(hydrovu_utc, hydrovu_mst, troll_mdt) %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all=TRUE) %>%
+  mutate(DT = if_else(year == 2019, DT + hours(6), DT)) %>%
   mutate(sensor = "elc",
          comments = NA) %>%
   select(-DT_local)
@@ -406,6 +422,11 @@ archery <- hydrovu_utc %>%
   mutate(year = lubridate::year(DT)) %>%
   mutate(date = as_date(substr(DT, 1, 10))) %>%
   distinct(.keep_all = TRUE) %>%
+  # Force time zones appropriately. MDT to UTC:
+  mutate(DT = case_when(year == 2020 ~ DT + hours(6),
+                        # MST to UTC:
+                        year == 2019 ~ DT + hours(7),
+                        TRUE ~ DT)) %>%
   mutate(sensor = "archery",
          comments = case_when(DT == "2019-09-30 03:45:00" ~ "sensor deployed",
                               DT == "2020-01-06 21:45:00" ~ "rental sensor battery dead",
@@ -427,7 +448,7 @@ rm(hydrovu_utc)
 old_raw <- bind_rows(rist, legacy, timberline, prospect, elc, archery) %>%
   mutate(sensor = ifelse(sensor == "rist", "tamasag", sensor))
 
-rm(archery, elc, legacy, prospect, rist, timberline)
+# rm(archery, elc, legacy, prospect, rist, timberline)
 
 # what we want to try to "recreate" as far as formatting:
 # raw_example <- read_parquet("data/manual_data_verification/2024_cycle/hydro_vu_pull/raw/archery_virridy2025-01-01_0659.parquet", as_data_frame = TRUE)
