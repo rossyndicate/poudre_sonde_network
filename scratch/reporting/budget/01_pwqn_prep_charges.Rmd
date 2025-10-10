@@ -15,7 +15,7 @@ Once these are done, you can go to the section "Run Above..." to tidy data for u
 
 ```{r}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
-month_select <- 7
+month_select <- 9
 year_select <- 2025
 ```
 
@@ -31,7 +31,7 @@ package_loader <- function(x) {
     library(x, character.only = TRUE)
   }
 }
-lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "yaml"), package_loader)
+lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "yaml", "here"), package_loader)
 rm(package_loader)
 # get wd
 dir <- getwd()
