@@ -239,8 +239,7 @@ tidy_data <- hv_data %>%
 # Add the field note data to all of the data
 # Quick name fix for mountain campus
 all_field_notes <- all_field_notes %>%
-  fix_site_names() %>%
-  mutate(site = ifelse(site == "mountaincampus", "mtncampus", site))
+  fix_site_names()
 
 combined_data <- tidy_data %>%
   future_map(~add_field_notes(df = ., notes = all_field_notes), .progress = TRUE)
