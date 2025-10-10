@@ -23,7 +23,7 @@ mapviewOptions(basemaps = "CartoDB.Positron")
 # get all station ids for CLP region
 
 ```{r}
-station_ids <- read_csv("data/context_data/precip/station_data.csv", show_col_types = F)%>%
+station_ids <- read_csv("data/metadata/larimer_county_station_data.csv", show_col_types = F)%>%
   filter(grepl("Precip",data_available))%>%
   # Other agencies are out of network
   filter( agency %in% c("Fort Collins", "Larimer", "Other", "Windsor"))%>%
@@ -33,7 +33,7 @@ station_ids <- read_csv("data/context_data/precip/station_data.csv", show_col_ty
   #st_as_sf(coords = c("long", "lat"), crs = 4326)%>%
   pull(station_id)
 
-#mapview::mapview(station_ids, zcol = "watershed")
+ #mapview::mapview(station_ids, zcol = "watershed")
 ```
 
 # Grab Larimer County Precip
@@ -147,7 +147,7 @@ q_total <- tibble()
                 
 for(i in 1:length(station_ids)){
   import <- larimer_co_q_pull(station_id = station_ids[i], start_dt = start_date, end_dt = end_dt)
-  
+  print(paste0("On station ", i, " of ", length(station_ids), " with id ", station_ids[i], " and n rows = ", nrow(import)))
   if(nrow(import) == 0){
     q_site <- tibble()
   }else{
@@ -170,17 +170,17 @@ return(tidy_q)
 
 }
 
-precip <- grab_new_larimer()
+#precip <- grab_new_larimer()
 
 
-meta <- read_csv("data/context_data/precip/station_data.csv", show_col_types = F) %>%
+meta <- read_csv("data/metadata/larimer_county_station_data.csv", show_col_types = F) %>%
   mutate(site = as.character(numId))%>%
   select(site,name, lat, long, agency, watershed)
 
 larimer_precip <- left_join(precip, meta, by = 'site')
 
 #Save data
-write_csv(larimer_precip, 'data/context_data/precip/select_larimerco_precip_2025_03_06.csv')
+#write_csv(larimer_precip, 'data/metadata/larimer_county_station_precip_2025.csv')
 
 
 ```
@@ -190,7 +190,7 @@ write_csv(larimer_precip, 'data/context_data/precip/select_larimerco_precip_2025
 
 ```{r}
 
-larimer_precip <- read_csv('data/context_data/precip/select_larimerco_precip_2025_03_06.csv', show_col_types = F)%>%
+larimer_precip <- read_csv('data/metadata/larimer_county_station_precip_2025.csv', show_col_types = F)%>%
   filter(site != "11525" & watershed != "out")%>%
   mutate(site = as.character(site), 
          p_in = q_cfs, 
@@ -263,7 +263,7 @@ ggplot(precip_trim, aes(x = date,y = avg_daily_precip, fill = name))+
 
 }
 #aug_storm <- 
-  ggplotly(create_precip_plot(start_date = as.Date("2025-03-25"), end_date = as.Date("2025-06-06"), grouping = "ws"))
+  ggplotly(create_precip_plot(start_date = as.Date("2025-07-25"), end_date = as.Date("2025-09-06"), grouping = "ws"))
 
 
 ggsave("aug_storm.png", aug_storm, width = 14, height = 6, units = "in")
@@ -336,8 +336,8 @@ if(nrow(zero_data) > 0){
 }
 }
 
-create_precip_map("2025-05-7")
-dates <- seq(as.Date("2024-04-01"), as.Date("2024-12-31"), by = "day")
+create_precip_map("2025-08-02")
+dates <- seq(as.Date("2025-07-01"), as.Date("2025-09-01"), by = "day")
 
 list_of_maps <- lapply(dates, create_precip_map)%>%
   #name list   elements by date
