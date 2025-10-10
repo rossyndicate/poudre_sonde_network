@@ -151,9 +151,9 @@ sensor_data_clean <- sensor_data %>%
     is.na(mal_flag), # remove any known malfunctions
     !grepl("site visit|sv window", auto_flag), # remove site visit impacted data
     !grepl("sonde unsubmerged", auto_flag),!grepl("sonde not employed", auto_flag), !grepl("sensor malfunction", auto_flag), # remove simple sensor flags
-    !(parameter == "Specific Conductivity" & mean > 2000), # remove instances of SC > 2000 uS/cm
+    !(parameter == "Specific Conductivity" & mean > 3000), # remove instances of SC > 2000 uS/cm
     !(parameter == "pH" & mean < 4.5), # remove pH < 4 (storage solution)
-    !(parameter == "pH" & mean > 10), # remove pH > 10 (sensor malfunction)
+    !(parameter == "pH" & mean > 11), # remove pH > 10 (sensor malfunction)
     !(parameter == "Temperature" & mean < 0), # remove frozen instances
     !(parameter == "Depth" & mean < 0), # remove negative depth values
     !(parameter == "Temperature" & mean > 30), # remove instances of temperature > 30 C (sensor error)
@@ -165,6 +165,10 @@ sensor_data_clean <- sensor_data %>%
     parameter == "Depth" ~ mean / 0.3048, # convert depth to ft
     TRUE ~ mean
   ))
+
+
+#save to a single file
+write_rds(sensor_data_clean, here("data", "sharing", "quarterly_meetings", "2025_Q2", paste0("cleaned_flagged_data_", min_date, "_", max_date, ".rds")))
 ```
 
 # WQ Event Time Series Plots
@@ -240,7 +244,7 @@ plot_sensor_grabs <- function(df, sites, parameters, renamed_sites, start_dt, en
       final_q <- all_q %>%
         mutate(DT_round = round_date(x = DT_mst, unit = timestep)) %>%
         group_by(site, DT_round) %>%
-        summarise(q_cfs = mean(q_cfs, na.rm = TRUE)) %>%
+        summarise(q_cfs = median(q_cfs, na.rm = TRUE)) %>%
         filter(!is.na(q_cfs))%>%
         left_join(flow_sites, by = c("site" = "abbrev"))
    
@@ -332,7 +336,7 @@ plot_sensor_grabs <- function(df, sites, parameters, renamed_sites, start_dt, en
   all_data <- all_data%>%
     mutate(DT_round = round_date(DT_round, unit = timestep))%>%
     group_by(DT_round, natural_name,site, parameter)%>%
-    summarise(mean = mean(mean, na.rm = TRUE), .groups = "drop")
+    summarise(mean = median(mean, na.rm = TRUE), .groups = "drop")
 
 
   all_plot <- map(parameters, create_plot)
@@ -478,16 +482,60 @@ ggsave(paste0(fig_dir,"/may_drawdown.png"), plot = may_2, width = 16, height = 1
 ## WQ Events: June FDOM increase
 
 ```{r}
-sites_june <- c("salyer", "udall", "riverbend", "cottonwood", "elc")
+sites_june <- c("salyer", "udall", "riverbend", "cottonwood")
 
-june_fdom <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_june,  parameters = c("Depth", "FDOM Fluorescence","Specific Conductivity" ), start_dt = "2025-06-24  00:00",
-                  end_dt = "2025-06-28 24:00",timestep =  "2 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+june_fdom <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_june,  parameters = c("Depth", "FDOM Fluorescence","Specific Conductivity", "Turbidity" ), start_dt = "2025-06-24  00:00",
+                  end_dt = "2025-06-28 24:00",timestep =  "1 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
   labs(caption = "Preliminary Data, subject to revision")
 
 june_fdom
 
 ggsave(paste0(fig_dir,"/june_fdom.png"), plot = june_fdom, width = 16, height = 10, units = "in", dpi = 300)
 ```
+
+## WQ Events: July August pH
+
+```{r}
+sites_july <- c("salyer", "elc", "archery", "riverbluffs")
+july_ph <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_july,  parameters = c("pH", "Specific Conductivity","Temperature" ), start_dt = "2025-07-10  00:00",
+                  end_dt = "2025-09-30 23:00",timestep =  "24 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+july_ph
+
+ggsave(paste0(fig_dir,"/july_aug_ph.png"), plot = july_ph, width = 18, height = 12, units = "in", dpi = 300)
+
+```
+
+## WQ Events: August Storms
+
+```{r}
+sites_august <- c("salyer", "udall","cottonwood", "elc", "archery")
+
+august_storms <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_august,  parameters = c("Depth", "Turbidity","DO", "Temperature" ), start_dt = "2025-08-20  00:00",
+                  end_dt = "2025-09-02 23:00",timestep =  "2 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+
+august_storms
+
+ggsave(paste0(fig_dir,"/august_storms.png"), plot = august_storms, width = 18, height = 12, units = "in", dpi = 300)
+
+```
+
+## WQ Events: August Drawdown
+
+```{r}
+sites_august_2 <- c("bellvue", "udall","cottonwood", "elc")
+
+august_drawdown <-  plot_sensor_grabs(df = sensor_data_clean, sites = sites_august_2,  parameters = c("Depth","DO", "Temperature", "Specific Conductivity"), start_dt = "2025-08-08  00:00",
+                  end_dt = "2025-08-20 23:00",timestep =  "2 hours", add_grabs = F, color_scheme = bg_colors,b_size = 20)+
+  labs(caption = "Preliminary Data, subject to revision")
+
+august_drawdown
+
+ggsave(paste0(fig_dir,"/august_drawdown.png"), plot = august_drawdown, width = 18, height = 12, units = "in", dpi = 300)
+
+```
+
 
 
 
@@ -682,7 +730,7 @@ generate_monthly_boxplot_summary <- function(sensor_data, year, month){
 
 ```{r}
 
-monthly_plots <- map2(1:7,2025, ~{
+monthly_plots <- map2(1:8,2025, ~{
   result<- tryCatch({
     generate_monthly_boxplot_summary(sensor_data = sensor_data_clean, month = .x, year = .y)
   }, error = function(e) {
