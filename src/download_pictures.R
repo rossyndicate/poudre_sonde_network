@@ -19,8 +19,8 @@ download_pictures <- function(field_notes, download_path = "data/field_pics/"){
   path <- here(paste0(download_path, "/sampling_pics/"))
 
   #create folder if it does not exist
-  if(!dir_exists(path)){
-    dir_create(path)
+  if(!dir.exists(path)){
+    dir.create(path)
   }
 
   #grab notes
@@ -75,25 +75,39 @@ download_pictures <- function(field_notes, download_path = "data/field_pics/"){
 
 
   # loop thru dataset and download the photo ONLY if it is not yet downloaded and not NA
+  # Loop through dataset and download the photo ONLY if it is not yet downloaded and not NA
   for (i in 1:nrow(sampling_photos)) {
+
+    site_name <- sampling_photos$site[i]
+    dt_str <- as.character(as.Date(sampling_photos$start_dt[i]))
+    message(paste0("Downloading photos for ", site_name, " on ", dt_str))
+
+    # Helper function for safe download
+    safe_download <- function(url, destfile, label) {
+      tryCatch({
+        download.file(url, destfile = destfile, quiet = TRUE)
+      }, error = function(e) {
+        message(paste("Failed to download", label, "for site", site_name, "on", dt_str, ":", conditionMessage(e)))
+      })
+    }
+
     if (!is.na(sampling_photos$upstream_downloaded[i]) && !sampling_photos$upstream_downloaded[i]) {
-      #print(sampling_photos$upstream_filename[i])
-      download.file(sampling_photos$upstream_pic[i], destfile = paste0(sampling_photos$upstream_filename[i]))
+      safe_download(sampling_photos$upstream_pic[i], sampling_photos$upstream_filename[i], "upstream photo")
     }
 
     if (!is.na(sampling_photos$downstream_downloaded[i]) && !sampling_photos$downstream_downloaded[i]) {
-      #print(sampling_photos$downstream_filename[i])
-      download.file(sampling_photos$downstream_pic[i], destfile = paste0(sampling_photos$downstream_filename[i]))
+      safe_download(sampling_photos$downstream_pic[i], sampling_photos$downstream_filename[i], "downstream photo")
     }
+
     if (!is.na(sampling_photos$clarity_downloaded[i]) && !sampling_photos$clarity_downloaded[i]) {
-      #print(sampling_photos$clarity_filename[i])
-      download.file(sampling_photos$clarity[i], destfile = paste0(sampling_photos$clarity_filename[i]))
+      safe_download(sampling_photos$clarity[i], sampling_photos$clarity_filename[i], "clarity photo")
     }
+
     if (!is.na(sampling_photos$filter_downloaded[i]) && !sampling_photos$filter_downloaded[i]) {
-      #print(sampling_photos$filter_filename[i])
-      download.file(sampling_photos$filter_pic[i], destfile = paste0(sampling_photos$filter_filename[i]))
+      safe_download(sampling_photos$filter_pic[i], sampling_photos$filter_filename[i], "filter photo")
     }
   }
+
 
 
 
