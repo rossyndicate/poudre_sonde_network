@@ -56,7 +56,7 @@ options(scipen = 999)
 
 ```
 
-## Setting up the site/time range for the data pull
+## Setting up the site/time range/parameters for the data pull
 
 ```{r}
 #Adjust dates for specific pull
@@ -71,6 +71,9 @@ sites <- c(
   #lower tribs
   "boxcreek", "springcreek")
 
+#Setting parameters of interest
+parameters <- c("Specific Conductivity", "Temperature", "DO", "pH", "ORP", "Depth", #Standard vars
+                            "Chl-a Fluorescence", "Turbidity", "FDOM Fluorescence") #optical vars
 ```
 
 ## Establishing directory paths.
@@ -133,87 +136,19 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 
 ## Pulling in the sensor data from hydrovu
 
-## Custom API puller Function
-
-```{r}
-api_puller <- function(site, 
-                       start_dt, end_dt = Sys.time(), 
-                       api_token,
-                       hv_sites_arg = hv_sites,
-                       dump_dir, 
-                       synapse_env = FALSE, fs = NULL) {
-  
-  # Synapse runs in parallel, so stagger API calls to prevent overloading server
-  Sys.sleep(runif(1, 2, 5))
-  
-  # For other sites, filter locations that contain the site name
-  site_loc <- hv_sites_arg %>%
-    dplyr::mutate(name = tolower(name)) %>%
-    dplyr::filter(grepl(site, name, ignore.case = TRUE))
-  
-  # Request data for each location ID within the specified time period
-  all_data_filtered <- purrr::map(site_loc$id, # Extract the HydroVu location IDs for API requests
-                                  function(id){
-                                    hv_data_id(loc_id = id,
-                                               start_time = start_dt,
-                                               end_time = end_dt,
-                                               token = api_token,
-                                               tz = "UTC")}) %>% 
-    # Filter out error responses (404s) and keep only valid data frames
-    purrr::keep(., is.data.frame)
-  
-  # If no data was found for this site during the time period, report, end current iteration, and continue
-  if(length(all_data_filtered) == 0){
-    message(paste0("No data at ", site, " during this time frame"))
-    return() # This will end the current iteration and move to the next one
-  } 
-  
-  # Combine all dataframes, standardize column names, and join with location metadata
-  site_df <- dplyr::bind_rows(all_data_filtered) %>%
-    data.table::data.table() %>%
-    dplyr::rename(id = Location,
-                  parameter = Parameter,
-                  units = Units) %>%
-    dplyr::left_join(., site_loc, by = "id") %>%
-    dplyr::mutate(site = tolower(site)) %>%
-    dplyr::select(site, id, name, timestamp, parameter, value, units)
-  
-  # Format the timestamp string for filenames
-  timestamp_str <- format(end_dt, "%Y%m%d-T%H%M%SZ", tz = "UTC")
-  # Create clean path (remove any double slashes) for file upload
-  file_name <- paste0(site, timestamp_str, ".parquet")
-  file_path <- file.path(dump_dir, file_name)
-  
-  if (synapse_env){
-    # Upload to ADLS via ADLS-compatible write procedure
-    tryCatch({
-      # First write to a temporary file
-      temp_file <- tempfile(fileext = ".parquet")
-      arrow::write_parquet(site_df, temp_file)
-      
-      # Upload file to ADLS 
-      AzureStor::upload_adls_file(
-        filesystem = fs, 
-        src = temp_file,
-        dest = file_path)
-      message("...Upload complete for: ", site, "\n")
-    }, error = function(e) {
-      message("...Error in upload process: ", e$message, "\n")
-    })
-  } else {
-    arrow::write_parquet(site_df, file_path)
-    message(paste("...Upload into", dump_dir, "complete for:", site, "\n"))
-  }
-}
-```
-
 ## HydroVu Pull
 
 ```{r}
-
-hv_sites <- hv_locations_all(hv_token) %>%
+# Get all the site info from HydroVu
+hv_sites <- hv_locations_all(hv_token) 
+#trim down to just the sites/types of devices we want
+hv_sites <- hv_sites %>%
+  #Remove Vulinks
   filter(!grepl("vulink", name, ignore.case = TRUE))%>%
-    filter(!grepl("2024", name, ignore.case = TRUE))
+  #Remove Virridy sites/sondes
+  filter(!grepl("virridy", name, ignore.case = TRUE))%>%
+  #remove any older sites (containing 2023 or 2024 in the name)
+  filter(!grepl("2023|2024", name, ignore.case = TRUE))
 
 
 walk(sites,
@@ -294,8 +229,7 @@ tidy_data <- hv_data %>%
   future_map(~tidy_api_data(api_data = .), .progress = TRUE, .options = set_furr_options) %>%  # the summarize interval default is 15 minutes
   keep(~!is.null(.))%>%
   # Only keep parameters we are interested in
-   keep(~unique(.$parameter) %in% c("Specific Conductivity", "Temperature", "DO", "pH", "ORP", "Depth", #Standard vars
-                                    "Chl-a Fluorescence", "Turbidity", "FDOM Fluorescence")) # Optical Vars
+   keep(~unique(.$parameter) %in% parameters) # Optical Vars
 
 ```
 
@@ -462,7 +396,7 @@ beepr::beep(1)
 iwalk(intrasensor_flags_list, ~write_parquet(.x, here(flagged_temp_dir, paste0(.y, ".parquet"))))
 
 #remove everything other than intrasensor flags from memory
-rm(list=setdiff(ls(), "intrasensor_flags_list"))
+rm(list=setdiff(ls(), "intrasensor_flags_list", "flagged_directory"))
 #clean up memory
 gc()
 
@@ -470,158 +404,12 @@ gc()
 
 ## Applying network check
 ```{r}
+#Read in site order for year/pull
+site_order_2025 <- load_site_order( here("data","field_notes","qaqc", "site_order_2025.yml"))
 
-# Because we are pulling in all of the data for all of the sites, and the
-# network check to do that is not applicable, here we make a custom net work check function
-
-site_order_2025 <- function(site_name){
-  # Primary network order
-  sites_order <-  c("joei",
-                    "cbri",
-                    "chd",
-                    "pfal",
-                    "pbr",
-                    "pman",
-                    "pbd",
-                    "bellvue",
-                    "salyer",
-                    "udall",
-                    "riverbend",
-                    "cottonwood",
-                    "elc",
-                    "archery",
-                    "riverbluffs")
-  # If the site is in the primary order, return that order
-  if(site_name %in% sites_order){
-    return(sites_order)
-  }
-  # springcreek cases
-  if(site_name == "springcreek"){
-    sites_order <- c("riverbend",
-                     "springcreek",
-                     "cottonwood")
-    return(sites_order)
-  }
-  # boxcreek cases
-  if(site_name == "boxcreek"){
-    sites_order <- c("elc",
-                     "boxcreek",
-                     "archery")
-     return(sites_order)
-  }
-  # disconnected/independant sites: mtn campus, sfm
-  if (site_name %in% c("mtncampus", "sfm")){
-    return(NULL)
-  }
-}
-
-
-custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags_list, site_order_fun) {
-  
-  site_name <- unique(na.omit(df$site))
-  parameter_name <- unique(na.omit(df$parameter))
-  
-  sites_order <- site_order_fun(site_name)
-  # If site is not in a defined order, return original df
-    if (is.null(sites_order)) {
-    return(df)  # nothing to do
-  }
-
-  # Find the index of current site in ordered list
-  site_index <- which(sites_order == sites_order[grep(site_name, sites_order, ignore.case = TRUE)])
-
-  # Create site-parameter identifier
-  site_param <- paste0(site_name, "-", parameter_name)
-
-  # Initialize empty dataframes for upstream/downstream sites
-  upstr_site_df <- tibble(DT_round = NA)
-  dnstr_site_df <- tibble(DT_round = NA)
-
-  # Try to get upstream site data
-  tryCatch({
-    # Skip trying to find upstream sites for first sites
-    if (site_index != 1){
-      previous_site <- paste0(sites_order[site_index-1], "-", parameter_name)
-      upstr_site_df <- intrasensor_flags_arg[[previous_site]] %>%
-        select(DT_round, site_up = site, flag_up = flag) %>%
-        data.table()
-    }
-  },
-  error = function(err) {
-    message(paste0("No UPSTREAM data found for ", site_param, ". Expected at site '", previous_site, "'."))
-  })
-
-  # Try to get downstream site data
-  tryCatch({
-    # Skip trying to find downstream sites for first sites
-    if (site_index != length(sites_order)){
-      next_site <- paste0(sites_order[site_index+1], "-", parameter_name)
-      dnstr_site_df <- intrasensor_flags_arg[[next_site]] %>%
-        select(DT_round, site_down = site, flag_down = flag) %>%
-        data.table()
-    }
-  },
-  error = function(err) {
-    message(paste0("No DOWNSTREAM data found for ", site_param, ". Expected at site '", next_site, "'."))
-  })
-
-  # Join current site data with upstream and downstream data
-  up_down_join <- df %>%
-    left_join(upstr_site_df, by = "DT_round") %>%
-    left_join(dnstr_site_df, by = "DT_round")
-
-  # Helper functions
-  # Function to add column if it doesn't exist
-  add_column_if_not_exists <- function(df, column_name, default_value = NA) {
-    if (!column_name %in% colnames(df)) {
-      df <- df %>% dplyr::mutate(!!sym(column_name) := default_value)
-    }
-    return(df)
-  }
-
-  # Function to check if any flags exist in a time window
-  check_2_hour_window_fail <- function(x) {
-    sum(x) >= 1
-  }
-
-  # Establish helper objects
-  # String object that is used to ignore flags that we do not want to remove.
-  ignore_flags <- "drift|DO interference|repeat|sonde not employed|frozen|
-  unsubmerged|missing data|site visit|sv window|sensor malfunction|burial|
-  sensor biofouling|improper level cal|sonde moved"
-
-  # Numeric object that determines the width for the rolling window check (2 hours)
-  width_fun = 17
-
-  # Process flags based on upstream/downstream patterns
-  final_df <- up_down_join %>%
-    # Add placeholder columns if joinging didn't provide them
-    add_column_if_not_exists("flag_down") %>%
-    add_column_if_not_exists("flag_up") %>%
-    add_column_if_not_exists("site_down") %>%
-    add_column_if_not_exists("site_up") %>%
-    # Create binary indicator for upstream/downstream flags
-    ## 0 = no relevant flags upstream/downstream
-    ## 1 = at least one site has relevant flags
-    dplyr::mutate(flag_binary = dplyr::if_else(
-      (is.na(flag_up) | grepl(ignore_flags, flag_up)) &
-        (is.na(flag_down) | grepl(ignore_flags, flag_down)), 0, 1
-    )) %>%
-    # Check for flags in 4-hour window (+/-2 hours around each point, 17 observations at 15-min intervals)
-    dplyr::mutate(overlapping_flag = zoo::rollapply(flag_binary, width = width_fun, FUN = check_2_hour_window_fail, fill = NA, align = "center")) %>%
-    add_column_if_not_exists(column_name = "auto_flag") %>%
-    # If flag exists but is also present up/downstream, it likely represents a real event
-    # In that case, remove the flag (set auto_flag to NA)
-    dplyr::mutate(auto_flag = ifelse(!is.na(flag) & !grepl(ignore_flags, flag) &
-                                       (overlapping_flag == TRUE & !is.na(overlapping_flag)), NA, flag)) %>%
-    dplyr::select(-c(flag_up, flag_down, site_up, site_down, flag_binary, overlapping_flag))
-
-  return(final_df)
-}
-
-# I really don't understand how network check would work in parallel, so I don't.
+#Applying Network check (non parrallel so only map used)
 final_flags <- intrasensor_flags_list %>%
-  purrr::map(~custom_network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list, site_order_fun = site_order_2025)) %>%
+  purrr::map(~network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list, site_order_arg = site_order_2025)) %>%
   rbindlist(fill = TRUE) %>%
   tidy_flag_column() %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
