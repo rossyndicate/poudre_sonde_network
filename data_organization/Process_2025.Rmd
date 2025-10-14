@@ -1,0 +1,438 @@
+---
+title: "2025 Hydro Vu API Pull"
+author: "Sam Struthers - CSU ROSSyndicate"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Set up
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# loading packages
+package_loader <- function(x) {
+  if (x %in% installed.packages()) {
+    suppressMessages({
+      library(x, character.only = TRUE)
+    })
+  } else {
+    suppressMessages({
+      install.packages(x)
+      library(x, character.only = TRUE)
+    })
+  }
+}
+
+invisible(
+  lapply(c("arrow",
+           "data.table",
+           "httr2",
+           "tidyverse",
+           "lubridate",
+           "zoo",
+           "padr",
+           "stats",
+           "RcppRoll",
+           "yaml",
+           "here",
+           "fcw.qaqc",
+           "furrr"
+  ),
+  package_loader)
+)
+
+# Set up parallel processing
+num_workers <- min(availableCores() - 1, 4) # Use at most 4 workers
+plan(multisession, workers = num_workers)
+set_furr_options <- furrr_options(
+  globals = TRUE,
+  packages = c("arrow", "data.table", "httr2", "tidyverse","dplyr", "lubridate", "zoo",
+               "padr", "stats", "RcppRoll", "yaml", "here", "fcw.qaqc")
+)
+
+# suppress scientific notation to ensure consistent formatting
+options(scipen = 999)
+
+```
+
+## Setting up the site/time range/parameters for the data pull
+
+```{r}
+#Adjust dates for specific pull
+mst_start <- ymd_hms("2025-03-01 00:00:00", tz = "America/Denver")
+mst_end <- ymd_hms("2025-11-30 23:59:59", tz = "America/Denver")
+
+sites <- c(
+  #Upper sites
+  "joei", "cbri", "chd", "pbr", "pfal", "pman", "pbd",
+  #Lower sites
+  "bellvue","salyer", "udall", "riverbend","cottonwood", "elc","archery","riverbluffs", 
+  #lower tribs
+  "boxcreek", "springcreek")
+
+#Setting parameters of interest
+parameters <- c("Specific Conductivity", "Temperature", "DO", "pH", "ORP", "Depth", #Standard vars
+                            "Chl-a Fluorescence", "Turbidity", "FDOM Fluorescence") #optical vars
+```
+
+## Establishing directory paths.
+
+```{r}
+#folder with downloaded logs
+log_directory <- here("data", "sensor_data", "2025")  #Change as needed
+
+#Change as needed
+staging_directory <- here("data","manual_data_verification","2025_cycle","hydro_vu_pull" ,"raw_data")
+flagged_temp_dir <- here("data","manual_data_verification","2025_cycle","hydro_vu_pull" ,"flagged_data_temp")
+flagged_directory <- here("data","manual_data_verification","2025_cycle","hydro_vu_pull" ,"flagged_data")
+
+#check to make sure these all exist and create if needed
+if (!dir.exists(staging_directory)) {
+  dir.create(staging_directory, recursive = TRUE)
+}
+if (!dir.exists(flagged_temp_dir)) {
+  dir.create(flagged_temp_dir, recursive = TRUE)
+}
+if (!dir.exists(flagged_directory)) {
+  dir.create(flagged_directory, recursive = TRUE)
+}
+
+```
+
+## Read in thresholds and credentials
+
+```{r}
+# Read in the threshold data first
+sensor_thresholds <- read_yaml(here("data","field_notes","qaqc",  "sensor_spec_thresholds.yml"))
+season_thresholds <- read_csv(here("data","field_notes","qaqc", "updated_seasonal_thresholds_2025_sjs.csv"), show_col_types = FALSE) %>%
+  fix_site_names()
+
+# Read in credentials
+mWater_creds <- read_yaml(here("creds", "mWaterCreds.yml"))
+
+hv_creds <- read_yaml(here("creds", "HydroVuCreds.yml"))
+hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
+                    client_secret = as.character(hv_creds["secret"]))
+
+```
+
+# Data Pulls
+
+## Pulling in field notes from mWater
+```{r}
+
+mWater_data <- load_mWater(creds = mWater_creds)
+
+all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
+  mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
+         last_site_visit = with_tz(last_site_visit, tzone = "UTC"),
+         DT_join = as.character(DT_round))
+
+sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data)%>%
+  mutate(start_DT = with_tz(start_DT, tzone = "UTC"),
+         end_DT = with_tz(end_DT, tzone = "UTC"))
+```
+
+## Pulling in the sensor data from hydrovu
+
+## HydroVu Pull
+
+```{r}
+# Get all the site info from HydroVu
+hv_sites <- hv_locations_all(hv_token) 
+#trim down to just the sites/types of devices we want
+hv_sites <- hv_sites %>%
+  #Remove Vulinks
+  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+  #Remove Virridy sites/sondes
+  filter(!grepl("virridy", name, ignore.case = TRUE))%>%
+  #remove any older sites (containing 2023 or 2024 in the name)
+  filter(!grepl("2023|2024", name, ignore.case = TRUE))
+
+
+walk(sites,
+     function(site) {
+       message("Requesting HV data for: ", site)
+       api_puller(
+         site = site,
+         start_dt = with_tz(mst_start, tzone = "UTC"),
+         end_dt = with_tz(mst_end, tzone = "UTC"),
+         api_token = hv_token,
+         hv_sites_arg = hv_sites,
+         dump_dir = staging_directory
+       )
+     }
+)
+
+# beep to let you know when it's done
+beepr::beep(1)
+```
+
+## Pulling in any downloaded log data
+
+Some logs (Vulink Log if sonde is AT600/800) cannot be backed up to HydroVu. If you have any of these files, you can read them in here.
+
+```{r}
+log_files <- list.files(log_directory, pattern = "\\vulink.html$", full.names = TRUE)%>%
+  #only keep files with our sites in them
+  keep(~any(str_detect(tolower(.x), sites)))
+
+log_files_simp <- log_files%>%
+  str_replace(log_directory, "")%>%
+  str_replace("/", "")%>%
+  str_replace_all("\\.html", "")%>%
+  str_squish()
+
+html_content <- map(log_files, ~rvest::read_html(.x))
+
+log_data <- map(html_content, ~parse_insitu_html_log(.x))
+
+names(log_data) <- log_files_simp
+
+cleaned_log_data <- log_data%>%
+  rbindlist()%>%
+  #fixing a few specific location names before passing to fix_site_names
+  mutate( site = tolower(site),
+          id = as.double(sensor_sn),
+         timestamp = with_tz(DT, tzone = "UTC"), 
+         site = case_when(site == "archery range"~ "archery", 
+                         site == "boxelder creek" ~ "boxcreek", 
+                         TRUE ~ site), 
+         name = paste0("Vulink Log - ", site))%>%
+  fix_site_names()%>%
+  select(site, id, name, timestamp, parameter, value, units = unit) %>%
+  distinct(.keep_all = TRUE) %>%
+  split(f = list(.$site), sep = "-") %>%
+  keep(~nrow(.) > 0)
+
+#write out the log data to the staging directory so it can be processed with the HV data
+iwalk(cleaned_log_data, ~write_parquet(.x, here(staging_directory, paste0(.y, "_log_data.parquet"))))
+
+# beep to let you know when it's done
+beepr::beep(1)
+
+```
+
+
+# Raw Data Processing
+## Load in and tidy the raw files
+
+```{r}
+#Since we no longer have any virridy sites in the network, we can just use a normal munge!
+hv_data <- munge_api_data(api_dir = staging_directory,synapse_env = F)%>%
+  # split into site-parameter combinations for parallel processing
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  keep(~nrow(.) > 0)
+
+tidy_data <- hv_data %>%
+  future_map(~tidy_api_data(api_data = .), .progress = TRUE, .options = set_furr_options) %>%  # the summarize interval default is 15 minutes
+  keep(~!is.null(.))%>%
+  # Only keep parameters we are interested in
+   keep(~unique(.$parameter) %in% parameters) # Optical Vars
+
+```
+
+## Combine with field notes & add summary stats
+
+```{r}
+# Add the field note data to all of the data
+# Quick name fix for mountain campus
+all_field_notes <- all_field_notes %>%
+  fix_site_names()
+
+combined_data <- tidy_data %>%
+  future_map(~add_field_notes(df = ., notes = all_field_notes), .progress = TRUE)
+
+# Add summary statistics
+summarized_data <- combined_data %>%
+  map(~generate_summary_statistics(.))
+
+# beep to let you know when it's done
+beepr::beep(1)
+```
+
+# Data Flagging
+
+## Single Sensor Flags
+
+```{r}
+# Chunk the data for furrr
+summarized_data_chunks <- split(1:length(summarized_data),
+                                ceiling(seq_along(1:length(summarized_data))/10))
+# Flag data...
+# Single parameter flags
+single_sensor_flags <- list()
+for (chunk_idx in seq_along(summarized_data_chunks)) {
+  message("\n=== Processing chunk ", chunk_idx, " of ", length(summarized_data_chunks), " ===")
+
+  # Get the indices for this chunk
+  indices <- summarized_data_chunks[[chunk_idx]]
+  chunk_data <- summarized_data[indices]
+
+  # Process the chunk in parallel
+  chunk_results <- chunk_data %>%
+    future_map(
+      function(data) {
+        flagged_data <- data %>%
+          data.table(.) %>%
+          # flag field visits
+          add_field_flag(df = .) %>%
+          # flag missing data
+          add_na_flag(df = .) %>%
+          # flag DO noise
+          find_do_noise(df = .) %>%
+          # flag repeating values
+          add_repeat_flag(df = .) %>%
+          # find times when sonde was moved up/down in housing
+          add_depth_shift_flag(df = ., level_shift_table =  all_field_notes, post2024 = TRUE) %>%
+          # find instances of sensor drift (FDOM, Chl-a, Turbidity only)
+          add_drift_flag(df = .)
+
+        if (unique(data$parameter) %in% names(sensor_thresholds)) {
+          # flag instances outside the spec range
+          flagged_data <- flagged_data %>%
+            data.table(.) %>%
+            add_spec_flag(df = ., spec_table = sensor_thresholds)
+        }
+
+        if (unique(data$parameter) %in% unique(season_thresholds$parameter)) {
+          # flag instances outside the spec range
+          flagged_data <- flagged_data %>%
+            data.table(.) %>%
+            add_seasonal_flag(df = ., threshold_table = season_thresholds)
+        }
+
+        flagged_data <- flagged_data %>%
+          data.table(.)
+
+        return(flagged_data)
+      },
+      .progress = TRUE, .options = set_furr_options
+    )
+
+  # Add chunk to list
+  single_sensor_flags <- c(single_sensor_flags, chunk_results)
+
+  if (chunk_idx < length(summarized_data_chunks)) {
+    message("Taking a short break before next chunk...")
+    gc()
+    Sys.sleep(0.1)
+  }
+}
+
+# beep to let you know when it's done
+beepr::beep(1)
+
+```
+
+## Intrasensor flags
+
+```{r}
+
+intrasensor_flags <- single_sensor_flags %>%
+  rbindlist(fill = TRUE) %>%
+  split(by = "site")
+
+# Chunk the data for furrr
+intrasensor_data_chunks <- split(1:length(intrasensor_flags),
+                                 ceiling(seq_along(1:length(intrasensor_flags))/3))
+
+intrasensor_flags_list <- list()
+for (chunk_idx in seq_along(intrasensor_data_chunks)) {
+  message("\n=== Processing chunk ", chunk_idx, " of ", length(intrasensor_data_chunks), " ===")
+
+  # Get the indices for this chunk
+  indices <- intrasensor_data_chunks[[chunk_idx]]
+  chunk_data <- intrasensor_flags[indices]
+  # Process the chunk in parallel
+  chunk_results <- chunk_data %>%
+    future_map(
+      function(data) {
+        # A chunk is a site df
+        flagged_data <- data %>%
+          data.table() %>%
+          # flag times when water was below freezing
+          add_frozen_flag(.) %>%
+          # overflagging correction. remove slope violation flag if it occurs concurrently
+          # with temp or depth
+          intersensor_check(.) %>%
+          # add sonde burial. If DO is noise is long-term, likely burial:
+          add_burial_flag(.) %>%
+          # flag times when sonde was unsubmerged
+          add_unsubmerged_flag(.)
+
+        return(flagged_data)
+      }, .progress = TRUE, .options = set_furr_options
+    ) %>%
+    rbindlist(fill = TRUE) %>%
+    # lil' cleanup of flag column contents
+    dplyr::mutate(flag = ifelse(flag == "", NA, flag)) %>%
+    # transform back to site-parameter dfs
+    split(f = list(.$site, .$parameter), sep = "-") %>%
+    purrr::discard(~ nrow(.) == 0) %>%
+    # Add in KNOWN instances of sensor malfunction
+    map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes))
+
+  # Add chunk to list
+  intrasensor_flags_list <- c(intrasensor_flags_list, chunk_results)
+
+  if (chunk_idx < length(intrasensor_data_chunks)) {
+    message("Taking a short break before next chunk...")
+    gc()
+    Sys.sleep(0.1)
+  }
+}
+
+# beep to let you know when it's done
+beepr::beep(1)
+
+```
+
+### Let's temporarily save this data so i can remove everything else from memory
+
+```{r}
+iwalk(intrasensor_flags_list, ~write_parquet(.x, here(flagged_temp_dir, paste0(.y, ".parquet"))))
+
+#remove everything other than intrasensor flags from memory
+rm(list=setdiff(ls(), c("intrasensor_flags_list", "flagged_directory")))
+#clean up memory
+gc()
+
+```
+
+## Applying network check
+```{r}
+#Read in site order for year/pull
+site_order_2025 <- load_site_order( here("data","field_notes","qaqc", "site_order_2025.yml"))
+
+#Applying Network check (non parrallel so only map used)
+final_flags <- intrasensor_flags_list %>%
+  purrr::map(~network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list, site_order_arg = site_order_2025)) %>%
+  rbindlist(fill = TRUE) %>%
+  tidy_flag_column() %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  purrr::map(~add_suspect_flag(.)) %>%
+  rbindlist(fill = TRUE)
+
+v_final_flags <- final_flags%>%
+  dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA,
+                                   ifelse(auto_flag == "suspect data" & is.na(lag(auto_flag, 1)) & is.na(lead(auto_flag, 1)), NA, auto_flag))) %>%
+  dplyr::select(c("DT_round", "DT_join", "site", "parameter", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit")) %>%
+  dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  keep(~nrow(.) > 0)
+
+# beep to let you know when it's done
+beepr::beep(1)
+
+```
+
+# Save Final Flagged Dataset
+
+```{r}
+
+# Save the data individually.
+iwalk(v_final_flags, ~write_csv(.x, here(flagged_directory, paste0(.y, ".csv"))))
+
+```

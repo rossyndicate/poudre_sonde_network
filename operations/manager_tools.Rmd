@@ -106,7 +106,7 @@ source("src/download_pictures.R")
 # It takes about 2-5 minutes to download ~25-50 photos
 # Sometimes the request to mWater time out, just re run the function below if that happens
 
-download_pictures(field_notes = all_notes_cleaned, download_path = "data/sampling_pics")
+download_pictures(field_notes = all_notes_cleaned, download_path = "data/field_pics")
 ```
 
 
