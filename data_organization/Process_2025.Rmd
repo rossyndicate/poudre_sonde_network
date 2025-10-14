@@ -395,7 +395,7 @@ beepr::beep(1)
 iwalk(intrasensor_flags_list, ~write_parquet(.x, here(flagged_temp_dir, paste0(.y, ".parquet"))))
 
 #remove everything other than intrasensor flags from memory
-rm(list=setdiff(ls(), "intrasensor_flags_list", "flagged_directory"))
+rm(list=setdiff(ls(), c("intrasensor_flags_list", "flagged_directory")))
 #clean up memory
 gc()
 
