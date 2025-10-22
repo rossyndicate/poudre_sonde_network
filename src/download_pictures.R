@@ -9,9 +9,9 @@
 #' @example
 #' source("src/download_pictures.R")
 #' download_pictures(field_notes = all_notes_cleaned,
-#'               download_path = "data/field_pics/")
+#'               download_path = here("data", "raw", "field_notes", "field_pics"))
 
-download_pictures <- function(field_notes, download_path = "data/field_pics/"){
+download_pictures <- function(field_notes, download_path = here("data", "raw", "field_notes", "field_pics")){
 
   # Find all the downloaded pictures
   all_file_names <- list.files(path = here(download_path), recursive = TRUE, full.names = T)

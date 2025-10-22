@@ -9,6 +9,8 @@
 #' @param field_notes A dataframe containing field notes with columns: site, crew, start_DT,end_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd
 #' @param sonde_tracking_file_path A string filepath to the current file where sonde info is tracked. This is an .xslx file with the sheet "station_info" where we will update the sonde numbers,
 #' and the sheet "ownership" where we will look for sensors that are not to be included in the current sensor deployments.
+#' @param cal_report_file_path (optional) A string filepath to the folder where calibration reports are stored. Default is here("data", "raw", "calibration_reports")
+#' @param log_dwnl_data_file_path (optional) A string filepath to the folder where sensor logs are stored. Default is here("data", "raw", "sensor_data", year(Sys.Date()))
 #' @param logical A boolean indicating whether to return a logical vector of missing files (default is FALSE, which only prints to console)
 #'@example
 #' source("src/files_missing")
@@ -19,18 +21,16 @@
 #'               sonde_tracking_file_path = "data/metadata/2025_sensor_tracking.xlsx",
 #'               logical = T)
 
-files_missing <- function(field_notes, sonde_tracking_file_path, logical = F){
+files_missing <- function(field_notes, sonde_tracking_file_path, cal_report_file_path = here("data", "raw","sensor", "calibration_reports"),
+                          log_dwnl_data_file_path  = here("data", "raw", "sensor", "log_download"), logical = F){
 
   `%nin%` = Negate(`%in%`)
-  # #source clean mwater script for all notes cleaned
-  #
-  # source("src/mWater_collate/load_mWater_notes.R")
 
   field_season <- year(Sys.Date())
 
   #grab cal reports from folder
-  cal_reports_simple <- str_extract(list.files(path = "data/calibration_reports/"), ".*_\\d{8}" )%>%tolower()
-  logs_simple <- str_extract(list.files(path = paste0("data/sensor_data/", field_season), recursive = TRUE), "\\w+_\\d{8}_(vulink|troll)")%>%tolower()
+  cal_reports_simple <- str_extract(list.files(path = cal_report_file_path), ".*_\\d{8}" )%>%tolower()
+  logs_simple <- str_extract(list.files(path = here(log_dwnl_data_file_path, field_season), recursive = TRUE), "\\w+_\\d{8}_(vulink|troll)")%>%tolower()
 
 
   # Find relevant sonde SN
