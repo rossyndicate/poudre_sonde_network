@@ -527,7 +527,7 @@ generate_monthly_boxplot_summary <- function(sensor_data, year, month){
   #Parameter (DO, pH, Temp) thresholds: Reg 31, Table I 
   # Site classifications: Reg 38, ~ Pg 410
   
-  month_standard <- readxl::read_xlsx(path = here"data","raw", "spatial", "metadata", "site_cdphe_classification_2025.xlsx") %>%
+  month_standard <- readxl::read_xlsx(path = here("data","raw", "spatial", "metadata", "site_cdphe_classification_2025.xlsx")) %>%
     # Convert season_1 to pipe-separated months
     mutate(season = sapply(season, convert_season_to_months))%>%
     # Split ph column into ph_low and ph_high
