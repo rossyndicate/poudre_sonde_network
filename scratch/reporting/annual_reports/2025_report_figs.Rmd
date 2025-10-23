@@ -87,7 +87,7 @@ invisible(
 
 ```{r}
 # Create a folder to save figures
-fig_dir <- "data/sharing/figures/2025/"
+fig_dir <- "docs/pwqn/figs/2025/"
 if (!dir.exists(fig_dir)) {
   dir.create(fig_dir, recursive = TRUE)
 }
@@ -129,7 +129,7 @@ colors <- c("#01377D","#009DD1", "#D55E00")
 params <- paste(c("Chl-a Fluorescence","Depth", "Specific Conductivity",
                    "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence"), collapse = "|")
 
-files <- tibble(filename = list.files(here("data","manual_data_verification","2025_cycle", "hydro_vu_pull", "flagged_data"), full.names = TRUE))%>%
+files <- tibble(filename = list.files(here("data", "raw", "sensor","manual_data_verification","2025_cycle", "hydro_vu_pull", "flagged_data"), full.names = TRUE))%>%
   filter(grepl(pattern = params, filename))%>%
   #remove extras
   filter(!grepl(pattern = "Level|MV", filename))
@@ -527,7 +527,7 @@ generate_monthly_boxplot_summary <- function(sensor_data, year, month){
   #Parameter (DO, pH, Temp) thresholds: Reg 31, Table I 
   # Site classifications: Reg 38, ~ Pg 410
   
-  month_standard <- readxl::read_xlsx(path = "data/metadata/site_cdphe_classification_2025.xlsx") %>%
+  month_standard <- readxl::read_xlsx(path = here("data","raw", "spatial", "metadata", "site_cdphe_classification_2025.xlsx")) %>%
     # Convert season_1 to pipe-separated months
     mutate(season = sapply(season, convert_season_to_months))%>%
     # Split ph column into ph_low and ph_high

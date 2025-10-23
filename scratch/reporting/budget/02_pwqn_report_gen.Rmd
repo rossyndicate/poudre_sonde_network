@@ -50,7 +50,7 @@ lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "here"), packag
 
 
 # read in data created by 01_pwqn_data_prep.Rmd
-all_data <- read_csv(paste0(dir, "/data/sharing/budget/charges_final/charges_final_", month_select, "_", year_select,  ".csv"), show_col_types = FALSE)
+all_data <- read_csv(paste0(dir, "/docs/pwqn/docs/monthly_budget/charges_final/charges_final_", month_select, "_", year_select,  ".csv"), show_col_types = FALSE)
 
   # calculate totals
 final_summary <- tibble(`Hours x Rate (if applicable)` = c("Total CSU Contribution: ",
@@ -62,7 +62,7 @@ final_summary <- tibble(`Hours x Rate (if applicable)` = c("Total CSU Contributi
 final <- all_data%>%
   bind_rows(final_summary)
 
-field_summary <- read_csv(paste0(dir, "/data/sharing/budget/field_summary/field_summary_",month_select, "_", year_select,".csv"), show_col_types = FALSE)
+field_summary <- read_csv(paste0(dir, "/docs/pwqn/docs/monthly_budget/field_summary/field_summary_",month_select, "_", year_select,".csv"), show_col_types = FALSE)
 
 
 ```

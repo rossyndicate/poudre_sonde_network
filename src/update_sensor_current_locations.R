@@ -4,10 +4,11 @@
 #' @param sonde_tracking_file_path A string filepath to the current file where sonde info is tracked. This is an .xslx file with the sheet "station_info" where we will update the sonde numbers,
 #' and the sheet "ownership" where we will look for sensors that are not to be included in the current sensor deployments.
 #' @param field_notes A dataframe containing field notes with columns: site, crew, start_DT,end_dt, cal_report_collected, cals_performed, log_downloaded, log1_type,log1_mmdd,  log2_type, log2_mmdd
+#' @param cal_report_file_path (optional) A string filepath to the folder where calibration reports are stored. Default is here("data", "raw","sensor", "calibration_reports")
 #'@example
 #' source("src/current_sensor_locations.R")
 #' current_sensor_locations()
-update_sensor_current_locations <- function(field_notes, sonde_tracking_file_path){
+update_sensor_current_locations <- function(field_notes, sonde_tracking_file_path, cal_report_file_path = here("data", "raw","sensor", "calibration_reports")){
 
 #check for missing files before proceeding
   source("src/files_missing.R")
@@ -28,7 +29,7 @@ all_sensors <- readxl::read_xlsx(here(sonde_tracking_file_path), sheet = "owners
 field_season <- year(Sys.Date())
 
 #get all files in calibration report folder
-calibration_reports <- list.files(here("data", "calibration_reports"), full.names = T)%>%
+calibration_reports <- list.files(cal_report_file_path, full.names = T)%>%
   # filter to current field season
   .[grepl(field_season, .)]
 

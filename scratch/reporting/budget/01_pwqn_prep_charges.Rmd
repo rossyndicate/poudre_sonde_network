@@ -58,7 +58,7 @@ Update with new staff/salaries at the start of each year
 
 ###### ----- HOURLY RATES ------ #######
 #      UPDATE AS NEEDED               #
-hourly_rates <- read_csv(file = paste0(dir,"/data/sharing/budget/employee_hourly_rates.csv"), show_col_types = F)%>%
+hourly_rates <- read_csv(file = paste0(dir,"/docs/pwqn/docs/monthly_budget/employee_hourly_rates.csv"), show_col_types = F)%>%
   mutate(fringe = case_when(type == "Salary" ~ .286, 
                             type == "Hourly" ~ .012), 
     hourly_n_fringe = case_when(type == "Salary" ~ (rate) / 1230 , 
@@ -67,7 +67,7 @@ hourly_rates <- read_csv(file = paste0(dir,"/data/sharing/budget/employee_hourly
                                    type == "Hourly" ~  rate + (rate* fringe)))
 
 # Pull in personnel budget
-senior_staff <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_reporting.xlsx"), sheet = "staff_timeclock")%>%
+senior_staff <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "staff_timeclock")%>%
   mutate(month = month(date), 
          year = year(date))%>%
   # filter for months and year selected above and pwqn project
@@ -96,7 +96,7 @@ mutate(hourly_billed = round(hourly_billed, 2),
 
 # Pull in equipment budget
 
-equipment <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_reporting.xlsx"), sheet = "equipment_charges")%>%
+equipment <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "equipment_charges")%>%
   mutate(month = month(date), 
          year = year(date))%>%
   # filter for months and year selected above and pwqn project
@@ -113,7 +113,7 @@ equipment <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_repo
 
 # Pull in travel budget
 
-travel <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_reporting.xlsx"), sheet = "travel")%>%
+travel <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "travel")%>%
   mutate(month = month(date), 
          year = year(date))%>%
   # filter for months and year selected above and pwqn project
@@ -199,7 +199,7 @@ all_field_notes <- grab_monthly_notes(full = T)%>%
   arrange(site, DT_round)
 
 # write field notes summary to csv for 02 script
-write_csv(field_summary, paste0(dir, "/data/sharing/budget/field_summary/field_summary_",month_select, "_", year_select,".csv"))
+write_csv(field_summary, paste0(dir, "/docs/pwqn/docs/monthly_budget/field_summary/field_summary_",month_select, "_", year_select,".csv"))
 
 
 rm(grab_monthly_notes)
@@ -237,7 +237,7 @@ print(all_data)
 ```{r}
 
 # write to csv for 02 script
-write_csv(all_data, paste0(dir,"/data/sharing/budget/charges_final/charges_final_", month_select, "_", year_select,  ".csv"))
+write_csv(all_data, paste0(dir,"/docs/pwqn/docs/monthly_budget/charges_final/charges_final_", month_select, "_", year_select,  ".csv"))
 
 #clear all environment
 rm(list = ls())

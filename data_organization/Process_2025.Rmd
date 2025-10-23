@@ -80,12 +80,12 @@ parameters <- c("Specific Conductivity", "Temperature", "DO", "pH", "ORP", "Dept
 
 ```{r}
 #folder with downloaded logs
-log_directory <- here("data", "sensor_data", "2025")  #Change as needed
+log_directory <- here("data","raw", "sensor",  "log_download", "2025")  #Change as needed
 
 #Change as needed
-staging_directory <- here("data","manual_data_verification","2025_cycle","hydro_vu_pull" ,"raw_data")
-flagged_temp_dir <- here("data","manual_data_verification","2025_cycle","hydro_vu_pull" ,"flagged_data_temp")
-flagged_directory <- here("data","manual_data_verification","2025_cycle","hydro_vu_pull" ,"flagged_data")
+staging_directory <- here("data","raw", "sensor","manual_data_verification","2025_cycle","hydro_vu_pull" ,"raw_data")
+flagged_temp_dir <- here("data","raw", "sensor","manual_data_verification","2025_cycle","hydro_vu_pull" ,"flagged_data_temp")
+flagged_directory <- here("data","raw", "sensor","manual_data_verification","2025_cycle","hydro_vu_pull" ,"flagged_data")
 
 #check to make sure these all exist and create if needed
 if (!dir.exists(staging_directory)) {
@@ -104,8 +104,8 @@ if (!dir.exists(flagged_directory)) {
 
 ```{r}
 # Read in the threshold data first
-sensor_thresholds <- read_yaml(here("data","field_notes","qaqc",  "sensor_spec_thresholds.yml"))
-season_thresholds <- read_csv(here("data","field_notes","qaqc", "updated_seasonal_thresholds_2025_sjs.csv"), show_col_types = FALSE) %>%
+sensor_thresholds <- read_yaml(here("data","derived","auto_qaqc_files", "thresholds",  "sensor_spec_thresholds.yml"))
+season_thresholds <- read_csv(here("data","derived","auto_qaqc_files", "thresholds", "updated_seasonal_thresholds_2025_sjs.csv"), show_col_types = FALSE) %>%
   fix_site_names()
 
 # Read in credentials
@@ -404,7 +404,7 @@ gc()
 ## Applying network check
 ```{r}
 #Read in site order for year/pull
-site_order_2025 <- load_site_order( here("data","field_notes","qaqc", "site_order_2025.yml"))
+site_order_2025 <- load_site_order( here("data","derived","auto_qaqc_files", "site_order", "site_order_2025.yml"))
 
 #Applying Network check (non parrallel so only map used)
 final_flags <- intrasensor_flags_list %>%
