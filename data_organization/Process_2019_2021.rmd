@@ -31,7 +31,7 @@ package_loader <- function(x) {
 # load all required packages
 invisible(
   lapply(c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo",
-           "padr", "stats", "RcppRoll", "yaml", "here", "furrr", "fcw.qaqc"),
+           "padr", "stats", "RcppRoll", "yaml", "here", "furrr", "ross.wq.tools"),
          package_loader)
 )
 
@@ -43,7 +43,7 @@ plan(multisession, workers = num_workers)
 furrr_options(
   globals = TRUE,
   packages = c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo",
-               "padr", "stats", "RcppRoll", "yaml", "here", "fcw.qaqc")
+               "padr", "stats", "RcppRoll", "yaml", "here", "ross.wq.tools")
 )
 
 ```
@@ -284,7 +284,7 @@ timberline <- hydrovu_utc %>%
 rm(hydrovu_utc)
 
 ## Prospect
-
+# Was not deployed in 2021 due to damage to the PVC.
 hydrovu_utc <- map_dfr(list.files(here(base_path, "prospect"), full.names = T), hydrovu_reader) %>%
   select(DT = `Date Time`,
          Water_Temp_C = `Temperature (C)`,
@@ -689,7 +689,7 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
 }
 ```
 
-## 9) Simple network consistency check
+## 8) Simple network consistency check
 
 We apply a lightweight, order-aware comparison (upstream/downstream) to remove flags that are likely true environmental events observed across neighboring sites in a ±2-hour window. The site order defaults to CSU/FCW segments, with overrides for alternative networks.
 
@@ -706,7 +706,7 @@ final_flags <- intrasensor_flags_list %>%
   data.table::rbindlist(fill = TRUE)
 ```
 
-## 10) Final post-processing & save outputs
+## 9) Final post-processing & save outputs
 
 We remove isolated one-off “suspect data” points and write per-site/parameter CSVs for the reporting cycle.
 
