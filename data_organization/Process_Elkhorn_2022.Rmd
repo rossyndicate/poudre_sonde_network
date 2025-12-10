@@ -91,14 +91,14 @@ vulink_reader <- function(file, row = -32) {
 #' Creating a calibration table from each site visit's calibration reports
 cal_tabler <- function(){
   
-  cal_files <- list.files("data/raw/sensor/calibration_reports", pattern=".html") %>%
+  cal_files <- list.files(here("data","raw","sensor","calibration_reports"), pattern=".html") %>%
     stringr::str_subset("elkhorn")
   
   cal_table <- vector("list", length = length(cal_files))
   
   for(i in 1:length(cal_table)){
     
-    cal <- rvest::read_html(paste0("data/raw/sensor/calibration_reports/", cal_files[i])) %>%
+    cal <- rvest::read_html(here("data", "raw", "sensor", "calibration_reports", cal_files[i]) ) %>%
       rvest::html_nodes('div') %>%
       rvest::html_text() %>%
       as_tibble()
@@ -224,7 +224,7 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 
 Loading in field notes and calibration reports for Elkhorn sites specifically:
 ```{r}
-field_notes_elk <- readxl::read_excel('data/raw/field_notes/sensor_field_notes.xlsx') %>%
+field_notes_elk <- readxl::read_excel(here("data","raw","field_notes","sensor_field_notes.xlsx")) %>%
   mutate(DT = (paste0(date, " ", start_time_mst))) %>%
   mutate(DT = ymd_hm(DT)) %>%
   arrange(DT) %>%
@@ -245,7 +245,7 @@ cal_table <- cal_tabler()
 # requires some extra TLC compared to other data sets in the data folder. It's also
 # a csv, when all others are html's.
 
-csv <- read_csv('data/raw/sensor/log_download/2022/elkhornupper/manual/elkhornupper_20220708_20220713_vulink.csv')
+csv <- read_csv(here("data","raw","sensor","log_download","2022","elkhornupper","manual","elkhornupper_20220708_20220713_vulink.csv"))
 
 names(csv) <- make.names(names(csv), unique = T)
 
@@ -266,7 +266,7 @@ csv <- csv %>%
          DT_instrument = as.character(DT_instrument))
 
 # Pull in all datasets that were downloaded from the field using the VuLink reader
-rawless_elkhornupper <- map_dfr(list.files("data/raw/sensor/log_download/2022/elkhornupper/manual", 
+rawless_elkhornupper <- map_dfr(list.files(here("data","raw","sensor","log_download","2022","elkhornupper","manual"), 
                                            pattern = "*htm", full.names = T), vulink_reader) %>%
   #select(-c(Water_Temp_C3)) %>%
   rename(Water_Temp_C = Water_Temp_C2,

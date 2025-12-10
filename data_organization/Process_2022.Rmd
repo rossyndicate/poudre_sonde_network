@@ -692,7 +692,7 @@ timberline_ph <- timberline_all %>%
 
 timberline_turbidity <- timberline_all %>%
   ungroup() %>%
-  dplyr::select(DT, pH1) %>%
+  dplyr::select(DT, Turbidity_NTU) %>%
   rename(value = 2) %>%
   mutate(parameter = "Turbidity",
          units = "NTU") %>%
@@ -1055,7 +1055,7 @@ legacy_depth_corrected <- all_sites %>%
   filter(parameter == "Depth",
          site == "legacy") %>%
   # First correction: 2022-04-06 to 2022-04-12
-  mutate(value_p1 = ifelse(timestamp >= ymd_hms('2022-04-06 06:00:00') & timestamp < ymd_hms('2022-04-12 09:30:00'), 
+  mutate(value_p1 = ifelse(timestamp >= ymd_hms('2022-04-06 06:00:00') & timestamp < ymd_hms('2022-04-12 16:30:00'), 
                            value + 
                              abs(
                                filter(., timestamp == ymd_hms('2022-04-12 09:15:00'))$value - 
