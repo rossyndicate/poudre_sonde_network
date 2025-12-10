@@ -520,7 +520,7 @@ Lincoln was the newest site and was run by In-Situ. We have access to this site 
 
 ```{r}
 # Full Dataset:
-raw <- readxl::read_excel('data/raw/sensor/log_download/2022/lincoln/lincoln.xlsx')
+raw <- readxl::read_excel(here(data","raw","sensor","log_download","2022","lincoln","lincoln.xlsx"))
 
 names(raw) <- make.names(names(raw), unique = T)
 
