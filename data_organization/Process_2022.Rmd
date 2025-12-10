@@ -345,7 +345,51 @@ rist_orp <- rist_all %>%
   arrange(DT) %>%
   mutate(value = na_if(value, NaN)) %>%
   filter(!is.na(DT))
-
+rist_final_cleaned <- rist_all %>%
+  pivot_longer( cols = any_of(c("Water_Temp_C", "Depth_ft", "Specific_Conductivity_µS_cm", "DO_ppm", "pH1", "ORP_mV", "Turbidity_NTU")),
+                names_to = "source_name",values_to = "value") %>%
+  mutate(value = na_if(value, NaN)) %>%
+  mutate(
+    # define parameters
+    parameter = case_when(
+      source_name == "Water_Temp_C" ~ "Temperature",
+      source_name == "Depth_ft" ~ "Depth",
+      source_name == "Specific_Conductivity_µS_cm" ~ "Specific Conductivity",
+      source_name == "DO_ppm" ~ "DO",
+      source_name == "pH1" ~ "pH",
+      source_name == "Turbidity_NTU" ~ "Turbidity", 
+      source_name == "ORP_mV" ~ "ORP",
+      TRUE ~ source_name
+    ),
+    #name units
+    units = case_when(
+      source_name == "Water_Temp_C" ~ "C",
+      source_name == "Depth_ft" ~ "m",
+      source_name == "Specific_Conductivity_µS_cm" ~ "µS/cm",
+      source_name == "DO_ppm" ~ "mg/L",
+      source_name == "pH1" ~ "pH",
+      source_name == "Turbidity_NTU" ~ "NTU", 
+      source_name == "ORP_mV" ~ "V",
+      TRUE ~ NA_character_
+    ),
+    #Unit conversions
+    value = case_when(
+      source_name == "Depth_ft" ~ value * 0.3048, # ft to m conversion
+      source_name == "ORP_mV" ~ value / 1000,     # mV to V conversion
+      TRUE ~ value                               
+    )
+  ) %>%
+  mutate(
+    site = "rist",
+    id = "rist",
+    name = "rist"
+  ) %>%
+  filter(!is.na(DT)) %>%
+  select(site,id,name,timestamp = DT,parameter,value,units) %>%
+  # Apply final timezone correction
+  mutate(
+    timestamp = timestamp + hours(7) 
+  )
 rist_final <- bind_rows(rist_conductivity, rist_depth, rist_do, rist_ph, rist_temp, rist_turbidity, rist_orp) %>%
   mutate(site = "rist",
          id = "rist",
