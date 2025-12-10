@@ -300,7 +300,7 @@ rawless_elkhornupper <- map_dfr(list.files("data/raw/sensor/log_download/2022/el
 ### Lower Elkhorn
 ```{r}
 # Pull in all datasets that were downloaded from the field using the VuLink reader
-rawless_elkhornlower <- map_dfr(list.files("data/raw/sensor/log_download/2022/elkhornlower/manual/", 
+rawless_elkhornlower <- map_dfr(list.files(here("data","raw","sensor","log_download","2022","elkhornlower","manual"), 
                                            pattern = "*htm", full.names = T), vulink_reader) %>%
   rename(Water_Temp_C = Water_Temp_C2,
          Air_Temp_C = Water_Temp_C1,
