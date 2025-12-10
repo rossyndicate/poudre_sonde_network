@@ -239,7 +239,7 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 #### Pulling in field notes
 
 ```{r}
-all_field_notes <- readxl::read_excel('data/raw/field_notes/sensor_field_notes.xlsx') %>%
+all_field_notes <- readxl::read_excel(here("data","raw","field_notes","sensor_field_notes.xlsx")) %>%
   mutate(DT = (paste0(date, " ", start_time_mst))) %>%
   mutate(DT = ymd_hm(DT) + hours(7)) %>%
   arrange(DT) %>%
