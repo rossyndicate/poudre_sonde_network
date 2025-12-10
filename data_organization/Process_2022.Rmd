@@ -405,7 +405,7 @@ So far in 2022, all data has been sent to HydroVu outside of genomic sampling on
 
 ```{r}
 # No VuLink connection during final genomic survey (water was too low for full deployment)
-raw_troll_legacy <- map_dfr(grep(list.files("data/raw/sensor/log_download/2022/legacy/manual/", full.names = T), pattern = "trolled", invert = F, value = T), troll_reader)
+raw_troll_legacy <- map_dfr(grep(list.files(here("data","raw","sensor","log_download","2022","legacy","manual"), full.names = T), pattern = "trolled", invert = F, value = T), troll_reader)
 names(raw_troll_legacy) <- make.names(names(raw_troll_legacy), unique = T)
 
 rawless_troll_legacy <- raw_troll_legacy %>% 
