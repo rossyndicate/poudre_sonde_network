@@ -485,7 +485,7 @@ legacy_ph <- legacy_all %>%
 
 legacy_turbidity <- legacy_all %>%
   ungroup() %>%
-  dplyr::select(DT, pH1) %>%
+  dplyr::select(DT, Turbidity_NTU) %>%
   rename(value = 2) %>%
   mutate(parameter = "Turbidity",
          units = "NTU") %>%
