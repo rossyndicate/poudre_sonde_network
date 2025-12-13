@@ -27,25 +27,29 @@ package_loader <- function(x) {
     })
   }
 }
+non_cran_packages <- c("rossyndicate/ross.wq.tools")
+invisible(
+  lapply(non_cran_packages, function(x) {
+    pack_name <- unlist(strsplit(x, "/"))[2] #get package name (no GH username)
 
+    if (pack_name %in% installed.packages()) {
+      suppressMessages({
+        library(pack_name, character.only = TRUE)
+      })
+    } else {
+      suppressMessages({
+        devtools::install_github(x)
+        library(pack_name, character.only = TRUE)
+      })
+    }
+  })
+)
 # load all required packages
 invisible(
-  lapply(c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo",
+  lapply(c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo", "ggpubr",
            "padr", "stats", "RcppRoll", "yaml", "here", "furrr", "ross.wq.tools"),
          package_loader)
 )
-
-
-# Configure parallel processing
-max_workers <- 4  # Maximum number of parallel workers
-num_workers <- min(availableCores() - 1, max_workers)
-plan(multisession, workers = num_workers)
-furrr_options(
-  globals = TRUE,
-  packages = c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo",
-               "padr", "stats", "RcppRoll", "yaml", "here", "ross.wq.tools")
-)
-
 ```
 
 ## 2) Thresholds, credentials, and field notes data
