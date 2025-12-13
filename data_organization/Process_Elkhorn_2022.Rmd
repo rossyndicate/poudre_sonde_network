@@ -27,67 +27,33 @@ package_loader <- function(x) {
     })
   }
 }
+non_cran_packages <- c("rossyndicate/ross.wq.tools")
+invisible(
+  lapply(non_cran_packages, function(x) {
+    pack_name <- unlist(strsplit(x, "/"))[2] #get package name (no GH username)
 
+    if (pack_name %in% installed.packages()) {
+      suppressMessages({
+        library(pack_name, character.only = TRUE)
+      })
+    } else {
+      suppressMessages({
+        devtools::install_github(x)
+        library(pack_name, character.only = TRUE)
+      })
+    }
+  })
+)
 # load all required packages
 invisible(
   lapply(c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo", "ggpubr",
            "padr", "stats", "RcppRoll", "yaml", "here", "furrr", "ross.wq.tools"),
          package_loader)
 )
-
-
-# Configure parallel processing
-max_workers <- 4  # Maximum number of parallel workers
-num_workers <- min(availableCores() - 1, max_workers)
-plan(multisession, workers = num_workers)
-furrr_options(
-  globals = TRUE,
-  packages = c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo",
-               "padr", "stats", "RcppRoll", "yaml", "here", "ross.wq.tools")
-)
-
 ```
 
 Elkhorn specific functions:
 ```{r}
-# From VuLink, in the field:
-vulink_reader <- function(file, row = -32) {
-  
-  raw_data <- file %>%
-    rvest::read_html() %>%
-    rvest::html_node("table") %>%
-    rvest::html_table(fill = TRUE) %>%
-    tibble::as_tibble()
-  
-  # Find header row (first row containing "Date")
-  header_row <- raw_data %>%
-    mutate(row_id = row_number()) %>%
-    filter(if_any(everything(), ~ str_detect(.x, regex("date", ignore_case = TRUE)))) %>%
-    pull(row_id) %>%
-    first()
-  
-  # Apply header + return rows below it
-  raw_data <- raw_data %>%
-    slice((header_row + 1):n()) %>%
-    setNames(as.character(unlist(raw_data[header_row, ])))
-  
-  
-  names(raw_data) <- make.names(names(raw_data), unique = T)
-  
-  raw_data <- raw_data %>%
-    dplyr::select(DT_instrument = contains('Date.Time'),
-                  Water_Temp_C = as.numeric(contains("Temperature")),
-                  pH = contains('pH'),
-                  ORP_mV = contains('ORP'),
-                  Specific_Conductivity_µS_cm = contains("Specific") & contains("Conductivity"),
-                  DO_ppm = contains("RDO") & !contains("Saturation"),
-                  Turbidity_NTU = contains('Turbidity'),
-                  Depth_ft = contains("Depth") & contains("ft"))
-  
-  return(raw_data)
-  
-}
-
 #' Creating a calibration table from each site visit's calibration reports
 cal_tabler <- function(){
   
@@ -168,7 +134,8 @@ cal_tabler <- function(){
   cal_table <- bind_rows(cal_table) %>%
     distinct(.keep_all = TRUE) %>%
     group_by(site) %>%
-    mutate(DT = round_date(DT, "15 minutes"))
+    mutate(DT = round_date(DT, "15 minutes"),
+           DT_join = as.character(DT))
   
   return(cal_table)
   
@@ -179,22 +146,19 @@ cal_tabler <- function(){
 
 ```{r}
 # Read in the threshold data first
-sensor_thresholds <- read_yaml(here("data","derived","auto_qaqc_files", "thresholds", "sensor_spec_thresholds.yml"))
-season_thresholds <- read_csv(
-  here("data","derived","auto_qaqc_files","thresholds","updated_seasonal_thresholds_2025_sjs.csv"),
-  show_col_types = FALSE
-) %>% 
-  filter(site == "pbr") %>%
+sensor_thresholds <- read_yaml(here::here("data","derived","auto_qaqc_files", "thresholds", "sensor_spec_thresholds.yml"))
+season_thresholds <- read_csv(here::here("data","derived","auto_qaqc_files","thresholds","updated_seasonal_thresholds_2025_sjs.csv"),
+  show_col_types = FALSE) %>% 
+  # PBR as placeholder...?
+  dplyr::filter(site == "pbr") %>%
   { 
-    bind_rows(
-      mutate(., site = "elkhornupper"),
-      mutate(., site = "elkhornlower")
-    )
+    dplyr::bind_rows(dplyr::mutate(., site = "elkhornupper"),
+      dplyr::mutate(., site = "elkhornlower"))
   }
 
 
 # Configure your credentials files
-mwater_creds_file <- here("creds","mWaterCreds.yml")
+mwater_creds_file <- here::here("creds","mWaterCreds.yml")
 mWater_creds <- read_yaml(mwater_creds_file)
 
 # pull field data from mWater API
@@ -228,11 +192,14 @@ field_notes_elk <- readxl::read_excel(here("data","raw","field_notes","sensor_fi
   mutate(DT = (paste0(date, " ", start_time_mst))) %>%
   mutate(DT = ymd_hm(DT)) %>%
   arrange(DT) %>%
-  mutate(DT = round_date(DT, "15 minutes")) %>%
+  mutate(DT_round = round_date(DT, "15 minutes"),
+         DT_join = as.character(DT)) %>% 
   filter(grepl("elkhorn", site)) %>%
   select(-c(date, start_time_mst))
 
 cal_table <- cal_tabler()
+
+cal_cols <- setdiff(names(cal_table), c("site", "DT_join", "DT"))
 ```
 
 ## 3) Ingest & standardize raw data
@@ -245,11 +212,11 @@ cal_table <- cal_tabler()
 # requires some extra TLC compared to other data sets in the data folder. It's also
 # a csv, when all others are html's.
 
-csv <- read_csv(here("data","raw","sensor","log_download","2022","elkhornupper","manual","elkhornupper_20220708_20220713_vulink.csv"))
+csv <- read_csv(here("data", "raw", "sensor", "log_download", "2022", "elkhornupper", "manual", "elkhornupper_20220708_20220713_vulink.csv"))
 
 names(csv) <- make.names(names(csv), unique = T)
 
-csv <- csv %>%
+csv_nice <- csv %>%
   select(DT_instrument = contains('DT_MST'),
          Water_Temp_C = contains('Temperature'),
          pH_1 = contains('pH'),
@@ -261,121 +228,208 @@ csv <- csv %>%
          Air_Temp_C = Water_Temp_C1,
          pH = pH_11,
          pH_mV = pH_12) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric) %>%
-  mutate(DT = as.POSIXct(DT_instrument, tz = "UTC", format = "%Y-%m-%d %H:%M:%S"),
-         DT_instrument = as.character(DT_instrument))
+   dplyr::mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  tidyr::pivot_longer(-DT_instrument, names_to = "var", values_to = "value") %>%
+  dplyr::mutate(value = as.numeric(value),
+                parameter = dplyr::case_when(var == "Water_Temp_C" ~ "Temperature",
+                                             var == "pH" ~ "pH",
+                                             var == "ORP_mV" ~ "ORP",
+                                             var == "Specific_Conductivity_µS_cm" ~ "Specific Conductivity",
+                                             var == "DO_ppm" ~ "DO",
+                                             var == "Depth_ft" ~ "Depth",
+                                             var ==  "Turbidity_NTU" ~ "Turbidity"),
+                # Original units
+                original_unit = dplyr::case_when(var == "Water_Temp_C" ~ "C",
+                                                 var == "pH" ~ "pH",
+                                                 var == "ORP_mV" ~ "mV",
+                                                 var == "Depth_ft" ~ "ft",
+                                                 var == "Specific_Conductivity_µS_cm" ~ "µS/cm",
+                                                 var == "DO_ppm" ~ "ppm",
+                                                 var == "Turbidity_NTU" ~ "NTU"),
+                # Target units
+                unit = dplyr::case_when(var == "Water_Temp_C" ~ "C",
+                                         var == "pH" ~ "pH",
+                                         var == "ORP_mV" ~ "V",
+                                         var == "Depth_ft" ~ "m",
+                                         var == "Specific_Conductivity_µS_cm" ~ "µS/cm",
+                                         var == "DO_ppm" ~ "mg/L",
+                                         var == "Turbidity_NTU" ~ "NTU"),
+                # Convert values to new units
+                value = dplyr::case_when(var == "DO_ppm" ~ value, # ppm is equivalent to mg/L for dissolved oxygen 
+                                         var == "Depth_ft" ~ value * 0.3048, # feet to meters
+                                         var == "ORP_mV" ~ value / 1000, # millivolts to volts
+                                         TRUE ~ value),
+                site = "elkhornupper") %>%
+  filter(!is.na(parameter)) %>%
+  mutate(DT = ymd_hms(DT_instrument),
+          DT_round = round_date(DT, "15 minutes"),
+         DT_join = as.character(DT)) %>%
+  select(-c(var, original_unit, DT_instrument))
 
-# Pull in all datasets that were downloaded from the field using the VuLink reader
-rawless_elkhornupper <- map_dfr(list.files(here("data","raw","sensor","log_download","2022","elkhornupper","manual"), 
-                                           pattern = "*htm", full.names = T), vulink_reader) %>%
-  #select(-c(Water_Temp_C3)) %>%
-  rename(Water_Temp_C = Water_Temp_C2,
-         Air_Temp_C = Water_Temp_C1,
-         pH = pH1,
-         pH_mV = pH2) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric) %>%
-  mutate(DT = as.POSIXct(DT_instrument, tz = "UTC", format = "%Y-%m-%d %H:%M:%S")) %>%
-  bind_rows(csv) %>%
-  arrange(ymd_hms(DT)) %>%
-  mutate(DT = round_date(DT, "15 minutes")) %>%
+# Pull in all datasets that were downloaded from the field
+rawless_elkhornupper_raw <- map_dfr(list.files(here("data", "raw", "sensor", "log_download", "2022", "elkhornupper", "raw"), 
+                                           pattern = "*htm", full.names = T), ~ xml2::read_html(.) %>% ross.wq.tools::parse_insitu_html_log()) %>%
+  # UTC to MST
+  dplyr::mutate(DT = lubridate::ymd_hms(DT) - lubridate::hours(7),
+                DT_round = lubridate::ymd_hms(DT_round) - lubridate::hours(7),
+                DT_join = as.character(DT_round)) %>%
+  bind_rows(csv_nice) %>%
   # for removing duplicates that come from accidental downloads from the field:
   distinct(.keep_all = TRUE) %>%
-  mutate(date = as_date((DT)),
-         hour = hour(DT),
-         year = year(DT),
-         month = month(DT),
-         site = "elkhornupper") %>%
+  mutate(site = "elkhornupper") %>%
   # time of deployment
-  filter(DT >= ymd_hms('2022-05-17 13:45:00') & DT <= ymd_hms('2022-10-21 09:20:00')) %>%
-  padr::pad(by = 'DT') %>%
-  full_join(filter(field_notes_elk, site == "elkhornupper"), by = c('DT','site')) %>%
-  # Link up calibration data, and propagate that value until next cal
-  full_join(na.locf(na.locf(filter(cal_table, site == "elkhornupper")), fromLast = TRUE), 
-            by = c('site','DT')) %>%
+  filter(DT_round >= ymd_hms('2022-05-17 13:45:00') & DT_round <= ymd_hms('2022-10-21 09:20:00')) %>%
+  select(-c(DT, DT_round)) %>%
+  full_join(., filter(field_notes_elk, site == "elkhornupper"), by = c('DT_join','site')) %>%
+  full_join(., filter(cal_table, site == "elkhornupper"), by = c("site", "DT_join")) %>%
+  arrange(parameter, ymd_hms(DT_round)) %>%
+  mutate(across(all_of(cal_cols), ~ zoo::na.locf(.x, fromLast = TRUE, na.rm = FALSE))) %>%
+  ungroup() %>%
+  dplyr::mutate(site = "elkhornupper",
+                id = "elkhornupper",
+                name = "elkhornupper") %>%
+  dplyr::select(site, id, name, timestamp = DT_join, parameter, value, unit,
+                ntu_offset, ntu_slope, rdo_offset, rdo_slope) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::filter(!is.na(parameter)) %>%
+  dplyr::filter(!is.na(timestamp)) %>%
+  dplyr::arrange(timestamp) 
+
+rawless_elkhornupper_manual <- map_dfr(list.files(here("data", "raw", "sensor", "log_download", "2022", "elkhornupper", "manual"), 
+                                           pattern = "*htm", full.names = T), ~ xml2::read_html(.) %>% ross.wq.tools::parse_insitu_html_log()) %>%
+  # UTC to MST
+  dplyr::mutate(DT = lubridate::ymd_hms(DT) - lubridate::hours(7),
+                DT_round = lubridate::ymd_hms(DT_round) - lubridate::hours(7),
+                DT_join = as.character(DT_round)) %>%
+  bind_rows(csv_nice) %>%
+  # for removing duplicates that come from accidental downloads from the field:
   distinct(.keep_all = TRUE) %>%
-  filter(!is.na(DT_instrument),
-         !grepl("Started", DT_instrument, ignore.case = TRUE))#)2022-05-17 13:43:02 Started
+  mutate(site = "elkhornupper") %>%
+  # time of deployment
+  filter(DT_round >= ymd_hms('2022-05-17 13:45:00') & DT_round <= ymd_hms('2022-10-21 09:20:00')) %>%
+  select(-c(DT, DT_round)) %>%
+  full_join(., filter(field_notes_elk, site == "elkhornupper"), by = c('DT_join','site')) %>%
+  full_join(., filter(cal_table, site == "elkhornupper"), by = c("site", "DT_join")) %>%
+  arrange(parameter, ymd_hms(DT_round)) %>%
+  mutate(across(all_of(cal_cols), ~ zoo::na.locf(.x, fromLast = TRUE, na.rm = FALSE))) %>%
+  ungroup() %>%
+  dplyr::mutate(site = "elkhornupper",
+                id = "elkhornupper",
+                name = "elkhornupper") %>%
+  dplyr::select(site, id, name, timestamp = DT_join, parameter, value, unit,
+                ntu_offset, ntu_slope, rdo_offset, rdo_slope) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::filter(!is.na(parameter)) %>%
+  dplyr::filter(!is.na(timestamp)) %>%
+  dplyr::arrange(timestamp)
+
+rawless_elkhornupper <- bind_rows(rawless_elkhornupper_manual, rawless_elkhornupper_raw) %>%
+  distinct(.keep_all = TRUE)
+
+ggplot(data = rawless_elkhornupper) + geom_point(aes(x = as_datetime(timestamp), y = value)) + facet_wrap(~parameter, scales = "free_y")
 ```
 
 ### Lower Elkhorn
 ```{r}
-# Pull in all datasets that were downloaded from the field using the VuLink reader
-rawless_elkhornlower <- map_dfr(list.files(here("data","raw","sensor","log_download","2022","elkhornlower","manual"), 
-                                           pattern = "*htm", full.names = T), vulink_reader) %>%
-  rename(Water_Temp_C = Water_Temp_C2,
-         Air_Temp_C = Water_Temp_C1,
-         pH = pH1,
-         pH_mV = pH2) %>%
-  mutate_at(vars(2:ncol(.)), as.numeric) %>%
-  mutate(DT = as.POSIXct(DT_instrument, tz = "UTC", format = "%Y-%m-%d %H:%M:%S")) %>%
-  arrange(ymd_hms(DT)) %>%
-  mutate(DT = round_date(DT, "15 minutes")) %>%
+# Pull in all datasets that were downloaded from the field 
+rawless_elkhornlower_raw <- map_dfr(list.files(here("data", "raw", "sensor", "log_download", "2022", "elkhornlower", "raw"), 
+                                           pattern = "*htm", full.names = T), ~ xml2::read_html(.) %>% ross.wq.tools::parse_insitu_html_log()) %>%
+    # UTC to MST
+    dplyr::mutate(DT = lubridate::ymd_hms(DT) - lubridate::hours(7),
+                DT_round = lubridate::ymd_hms(DT_round) - lubridate::hours(7),
+                DT_join = as.character(DT_round)) %>%
+  bind_rows(csv_nice) %>%
   # for removing duplicates that come from accidental downloads from the field:
   distinct(.keep_all = TRUE) %>%
-  mutate(date = as_date((DT)),
-         hour = hour(DT),
-         year = year(DT),
-         month = month(DT),
-         site = "elkhornlower") %>%
+  mutate(site = "elkhornlower") %>%
   # time of deployment
-  filter(DT >= ymd_hms('2022-05-17 15:00:00') & DT <= ymd_hms('2022-10-21 09:40:00')) %>%
-  padr::pad(by = 'DT') %>%
-  full_join(filter(field_notes_elk, site == "elkhornlower"), by = c('DT','site')) %>%
-  # Link up calibration data, and propagate that value until next cal
-  full_join(na.locf(na.locf(filter(cal_table, site == "elkhornlower")), fromLast = TRUE), 
-            by = c('site','DT')) %>%
+  filter(DT_round >= ymd_hms('2022-05-17 15:00:00') & DT_round <= ymd_hms('2022-10-21 09:40:00')) %>%
+  select(-c(DT, DT_round)) %>%
+  full_join(., filter(field_notes_elk, site == "elkhornlower"), by = c('DT_join','site')) %>%
+  full_join(., filter(cal_table, site == "elkhornlower"), by = c("site", "DT_join")) %>%
+  arrange(parameter, ymd_hms(DT_round)) %>%
+  mutate(across(all_of(cal_cols), ~ zoo::na.locf(.x, fromLast = TRUE, na.rm = FALSE))) %>%
+  ungroup() %>%
+    dplyr::mutate(site = "elkhornlower",
+                id = "elkhornlower",
+                name = "elkhornlower") %>%
+  dplyr::select(site, id, name, timestamp = DT_join, parameter, value, unit,
+                ntu_offset, ntu_slope, rdo_offset, rdo_slope) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::filter(!is.na(parameter)) %>%
+  dplyr::filter(!is.na(timestamp)) %>%
+  dplyr::arrange(timestamp)
+
+rawless_elkhornlower_manual <- map_dfr(list.files(here("data", "raw", "sensor", "log_download", "2022", "elkhornlower", "manual"), 
+                                           pattern = "*htm", full.names = T), ~ xml2::read_html(.) %>% ross.wq.tools::parse_insitu_html_log()) %>%
+    # UTC to MST
+    dplyr::mutate(DT = lubridate::ymd_hms(DT) - lubridate::hours(7),
+                DT_round = lubridate::ymd_hms(DT_round) - lubridate::hours(7),
+                DT_join = as.character(DT_round)) %>%
+  bind_rows(csv_nice) %>%
+  # for removing duplicates that come from accidental downloads from the field:
   distinct(.keep_all = TRUE) %>%
-  filter(!is.na(DT_instrument),
-         !grepl("Started", DT_instrument, ignore.case = TRUE))
+  mutate(site = "elkhornlower") %>%
+  # time of deployment
+  filter(DT_round >= ymd_hms('2022-05-17 15:00:00') & DT_round <= ymd_hms('2022-10-21 09:40:00')) %>%
+  select(-c(DT, DT_round)) %>%
+  full_join(., filter(field_notes_elk, site == "elkhornlower"), by = c('DT_join','site')) %>%
+  full_join(., filter(cal_table, site == "elkhornlower"), by = c("site", "DT_join")) %>%
+  arrange(parameter, ymd_hms(DT_round)) %>%
+  mutate(across(all_of(cal_cols), ~ zoo::na.locf(.x, fromLast = TRUE, na.rm = FALSE))) %>%
+  ungroup() %>%
+    dplyr::mutate(site = "elkhornlower",
+                id = "elkhornlower",
+                name = "elkhornlower") %>%
+  dplyr::select(site, id, name, timestamp = DT_join, parameter, value, unit,
+                ntu_offset, ntu_slope, rdo_offset, rdo_slope) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::filter(!is.na(parameter)) %>%
+  dplyr::filter(!is.na(timestamp)) %>%
+  dplyr::arrange(timestamp)
+
+rawless_elkhornlower <- bind_rows(rawless_elkhornlower_manual, rawless_elkhornlower_raw) %>%
+  distinct(.keep_all = TRUE)
+
+ggplot(data = rawless_elkhornlower) + geom_point(aes(x = as_datetime(timestamp), y = value)) + facet_wrap(~parameter, scales = "free_y")
 ```
 
 ### Bind together and standardize
 ```{r}
-raw_data_standardized <- bind_rows(rawless_elkhornlower, rawless_elkhornupper) %>%
+raw_data_complete <- bind_rows(rawless_elkhornlower, rawless_elkhornupper) #
+
+turb_fixed <- raw_data_complete %>%
   filter(!is.na(site)) %>%
+  filter(parameter == "Turbidity") %>%
   # Reverting ALL turbidity to factory defaults...
   # 2022/07/13 - 2022/08/27 was ALREADY reverted to factory defaults, but no cal report was collected. See field notes. 
-  mutate(Turbidity_NTU = ifelse(DT >= ymd_hms("2022-07-13 08:00:00") & DT <= ymd_hms("2022-08-27 13:00:00") & site == "elkhornupper",
-                                Turbidity_NTU, 
-                                ifelse(is.na(ntu_offset), Turbidity_NTU, 
-                                       ((Turbidity_NTU - as.numeric(ntu_offset))/as.numeric(ntu_slope))))) %>%
-  # Reverting ALL RDO to factory defaults...
-  mutate(DO_ppm = ifelse(is.na(rdo_offset), DO_ppm, ((DO_ppm - as.numeric(rdo_offset))/as.numeric(rdo_slope)))) %>%
-  select(DT, site, Water_Temp_C, pH, ORP_mV, Specific_Conductivity_µS_cm, DO_ppm, Turbidity_NTU) %>%
-  pivot_longer(-c(DT, site), values_to = "value", names_to = "var") %>%
-  rename(timestamp = DT) %>%
-  mutate(value = as.numeric(value),
-         parameter = case_when(var == "Water_Temp_C" ~ "Temperature",
-                               var == "pH" ~ "pH",
-                               var == "ORP_mV" ~ "ORP",
-                               var == "Specific_Conductivity_µS_cm" ~ "Specific Conductivity",
-                               var == "DO_ppm" ~ "DO",
-                               var ==  "Turbidity_NTU" ~ "Turbidity"),
-         # Original units
-         original_unit = case_when(var == "Water_Temp_C" ~ "C",
-                                   var == "pH" ~ "pH",
-                                   var == "ORP_mV" ~ "mV",
-                                   var == "Specific_Conductivity_µS_cm" ~ "µS/cm",
-                                   var == "DO_ppm" ~ "ppm",
-                                   var == "Turbidity_NTU" ~ "NTU"),
-         # Target units
-         units = case_when(var == "Water_Temp_C" ~ "C",
-                           var == "pH" ~ "pH",
-                           var == "ORP_mV" ~ "V",
-                           var == "Specific_Conductivity_µS_cm" ~ "µS/cm",
-                           var == "DO_ppm" ~ "mg/L",
-                           var == "Turbidity_NTU" ~ "NTU"),
-         # Convert values to new units
-         value = case_when(var == "DO_ppm" ~ value,  # ppm is equivalent to mg/L for dissolved oxygen # feet to meters
-                           var == "ORP_mV" ~ value / 1000,  # millivolts to volts
-                           TRUE ~ value),
-         id = site,
-         name = site) %>%
-  select(site, id, name, timestamp, parameter, value, units) %>%
-  mutate(timestamp = timestamp + hour(7)) %>%
+  mutate(value = ifelse(timestamp >= ymd_hms("2022-07-13 08:00:00") & timestamp <= ymd_hms("2022-08-27 13:00:00") & site == "elkhornupper",
+                                value, 
+                ifelse(is.na(ntu_offset), 
+                       value,
+                       ((value - as.numeric(ntu_offset))/as.numeric(ntu_slope))))) #%>%
+  
+do_fixed <- raw_data_complete %>%
+    filter(!is.na(site)) %>%
+  filter(parameter == "DO") %>%
+# Reverting ALL RDO to factory defaults...
+  mutate(value = ifelse(is.na(rdo_offset), value, ((value - as.numeric(rdo_offset))/as.numeric(rdo_slope))))#
+
+raw_data_standardized <- raw_data_complete %>%
+  filter(!parameter %in% c("Turbidity", "DO")) %>%
+  bind_rows(turb_fixed, do_fixed) %>%
+  arrange(site, timestamp) %>%
+  select(site, id, name, timestamp, parameter, value, units = unit) %>%
+  # Convert to UTC
+  mutate(timestamp = ymd_hms(timestamp) + hours(7)) %>%
   filter(!is.na(value)) %>%
   split(f = list(.$site), sep = "-")
 
+ggplot(data = raw_data_standardized %>% rbindlist()) + geom_point(aes(x = timestamp, y = value, color = site)) + facet_wrap(~parameter, scales = "free_y")
 ```
 
 ## 4) Save site-year raw data (Parquet)
