@@ -242,7 +242,12 @@ lincoln_final <- raw %>%
   dplyr::filter(!is.na(value)) %>%
   dplyr::filter(!is.na(parameter)) %>%
   dplyr::filter(!is.na(timestamp)) %>%
-  dplyr::arrange(timestamp)
+  dplyr::arrange(timestamp)%>%
+  pivot_wider(id_cols = c(site, id, name, timestamp),
+              names_from = parameter, values_from = value)%>%
+  filter( !(is.na(pH) & Temperature <= 0))%>%
+  pivot_longer( cols = any_of(c("Temperature", "Depth", "Specific Conductivity", "DO", "pH", "Turbidity", "ORP")),
+                names_to = "parameter",values_to = "value")
 
 ggplot(data = lincoln_final) + geom_point(aes(x = timestamp, y = value)) + facet_wrap(~parameter, scales = "free_y")
 ```
