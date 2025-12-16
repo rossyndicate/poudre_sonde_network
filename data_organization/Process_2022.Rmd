@@ -403,7 +403,7 @@ legacy_depth_corrected <- all_sites %>%
     filter(parameter == "Depth",
          site == "legacy") %>%
   # Data stored in UTC... convert to MST to link with field note times...
-  dplyr::mutate(timestamp_ = timestamp - lubridate::hours(7)) %>%
+  dplyr::mutate(timestamp = timestamp - lubridate::hours(7)) %>%
   # First correction: 2022-04-06 to 2022-04-12
   mutate(value_p1 = ifelse(timestamp >= ymd_hms('2022-04-06 06:00:00') & timestamp < ymd_hms('2022-04-12 16:20:00'), 
                            value + 
