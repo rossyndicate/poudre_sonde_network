@@ -729,8 +729,8 @@ iwalk(v_final_flags, ~ {
   site_name <- str_split(.y, "_")[[1]][1]  # Extract just the site name (first part)
   parm <- str_split(.y, "_")[[1]][2]
   year <- str_split(.y, "_")[[1]][3]
-  filename <- here("data","raw", "sensor", "manual_data_verification", paste0(year, "_cycle"), "hydro_vu_pull", "flagged", paste0(tolower(site_name), "_", parm, ".csv"))
-  .x %>% select(-year) %>% write_csv(filename)
+  filename <- here("data","raw", "sensor", "manual_data_verification", paste0(year, "_cycle"), "hydro_vu_pull", "flagged", paste0(tolower(site_name), "_", parm, ".parquet"))
+  .x %>% select(-year) %>% write_parquet(filename)
   cat("Saved:", filename, "\n")
 })
 ```
