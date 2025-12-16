@@ -27,25 +27,29 @@ package_loader <- function(x) {
     })
   }
 }
+non_cran_packages <- c("rossyndicate/ross.wq.tools")
+invisible(
+  lapply(non_cran_packages, function(x) {
+    pack_name <- unlist(strsplit(x, "/"))[2] #get package name (no GH username)
 
+    if (pack_name %in% installed.packages()) {
+      suppressMessages({
+        library(pack_name, character.only = TRUE)
+      })
+    } else {
+      suppressMessages({
+        devtools::install_github(x)
+        library(pack_name, character.only = TRUE)
+      })
+    }
+  })
+)
 # load all required packages
 invisible(
-  lapply(c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo",
-           "padr", "stats", "RcppRoll", "yaml", "here", "furrr", "fcw.qaqc"),
+  lapply(c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo", "ggpubr",
+           "padr", "stats", "RcppRoll", "yaml", "here", "furrr", "ross.wq.tools"),
          package_loader)
 )
-
-
-# Configure parallel processing
-max_workers <- 4  # Maximum number of parallel workers
-num_workers <- min(availableCores() - 1, max_workers)
-plan(multisession, workers = num_workers)
-furrr_options(
-  globals = TRUE,
-  packages = c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo",
-               "padr", "stats", "RcppRoll", "yaml", "here", "fcw.qaqc")
-)
-
 ```
 
 ## 2) Thresholds, credentials, and field notes data
@@ -284,7 +288,7 @@ timberline <- hydrovu_utc %>%
 rm(hydrovu_utc)
 
 ## Prospect
-
+# Was not deployed in 2021 due to damage to the PVC.
 hydrovu_utc <- map_dfr(list.files(here(base_path, "prospect"), full.names = T), hydrovu_reader) %>%
   select(DT = `Date Time`,
          Water_Temp_C = `Temperature (C)`,
@@ -689,7 +693,7 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
 }
 ```
 
-## 9) Simple network consistency check
+## 8) Simple network consistency check
 
 We apply a lightweight, order-aware comparison (upstream/downstream) to remove flags that are likely true environmental events observed across neighboring sites in a ±2-hour window. The site order defaults to CSU/FCW segments, with overrides for alternative networks.
 
@@ -706,7 +710,7 @@ final_flags <- intrasensor_flags_list %>%
   data.table::rbindlist(fill = TRUE)
 ```
 
-## 10) Final post-processing & save outputs
+## 9) Final post-processing & save outputs
 
 We remove isolated one-off “suspect data” points and write per-site/parameter CSVs for the reporting cycle.
 
@@ -725,8 +729,8 @@ iwalk(v_final_flags, ~ {
   site_name <- str_split(.y, "_")[[1]][1]  # Extract just the site name (first part)
   parm <- str_split(.y, "_")[[1]][2]
   year <- str_split(.y, "_")[[1]][3]
-  filename <- here("data","raw", "sensor", "manual_data_verification", paste0(year, "_cycle"), "hydro_vu_pull", "flagged", paste0(tolower(site_name), "_", parm, ".csv"))
-  .x %>% select(-year) %>% write_csv(filename)
+  filename <- here("data","raw", "sensor", "manual_data_verification", paste0(year, "_cycle"), "hydro_vu_pull", "flagged", paste0(tolower(site_name), "_", parm, ".parquet"))
+  .x %>% select(-year) %>% write_parquet(filename)
   cat("Saved:", filename, "\n")
 })
 ```
