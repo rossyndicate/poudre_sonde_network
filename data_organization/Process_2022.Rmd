@@ -424,7 +424,7 @@ legacy_depth_corrected <- legacy_depth_corrected %>%
                            value_p1 + 
                              abs(
                                filter(legacy_depth_corrected, timestamp == ymd_hms('2022-07-25 21:15:00'))$value_p1 -
-                                 filter(legacy_depth_corrected, timestamp == ymd_hms('2022-07-25 21:29:00'))$value_p1
+                                 filter(legacy_depth_corrected, timestamp == ymd_hms('2022-07-25 14:29:00'))$value_p1
                              ), 
                            value_p1)) %>%
   mutate(value = value_p2) %>%
