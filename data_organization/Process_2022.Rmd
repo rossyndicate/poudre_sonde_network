@@ -413,7 +413,7 @@ legacy_depth_corrected <- all_sites %>%
   mutate(value_p1 = ifelse(timestamp >= ymd_hms('2022-04-06 06:00:00') & timestamp < ymd_hms('2022-04-12 16:20:00'), 
                            value + 
                              abs(
-                               filter(., timestamp == ymd_hms('2022-04-12 16:15:00'))$value - 
+                               filter(., timestamp == ymd_hms('2022-04-12 09:15:00'))$value - 
                                  filter(., timestamp == ymd_hms('2022-04-12 16:30:00'))$value
                              ), 
                            value))
