@@ -36,8 +36,9 @@ invisible(
            "RcppRoll",
            "yaml",
            "here",
-           "fcw.qaqc",
-           "furrr"
+           "ross.wq.tools",
+           "furrr",
+           "plotly"
   ),
   package_loader)
 )
@@ -65,7 +66,7 @@ mst_end <- ymd_hms("2025-11-30 23:59:59", tz = "America/Denver")
 
 sites <- c(
   #Upper sites
-  "joei", "cbri", "chd", "pbr", "pfal", "pman", "pbd",
+  "joei", "cbri", "chd","pfal", "pbr", "sfm",  "pman", "pbd",
   #Lower sites
   "bellvue","salyer", "udall", "riverbend","cottonwood", "elc","archery","riverbluffs", 
   #lower tribs
@@ -138,79 +139,89 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 
 ## HydroVu Pull
 
+Commenting out since data has already been pulled
+
 ```{r}
-# Get all the site info from HydroVu
-hv_sites <- hv_locations_all(hv_token) 
-#trim down to just the sites/types of devices we want
-hv_sites <- hv_sites %>%
-  #Remove Vulinks
-  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
-  #Remove Virridy sites/sondes
-  filter(!grepl("virridy", name, ignore.case = TRUE))%>%
-  #remove any older sites (containing 2023 or 2024 in the name)
-  filter(!grepl("2023|2024", name, ignore.case = TRUE))
-
-
-walk(sites,
-     function(site) {
-       message("Requesting HV data for: ", site)
-       api_puller(
-         site = site,
-         start_dt = with_tz(mst_start, tzone = "UTC"),
-         end_dt = with_tz(mst_end, tzone = "UTC"),
-         api_token = hv_token,
-         hv_sites_arg = hv_sites,
-         dump_dir = staging_directory
-       )
-     }
-)
-
-# beep to let you know when it's done
-beepr::beep(1)
+# # Get all the site info from HydroVu
+# hv_sites <- hv_locations_all(hv_token)
+# #trim down to just the sites/types of devices we want
+# hv_sites <- hv_sites %>%
+#   #Remove Vulinks
+#   filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+#   #Remove Virridy sites/sondes
+#   filter(!grepl("virridy", name, ignore.case = TRUE))#%>%
+#    #remove any older sites (containing 2023 or 2024 in the name)
+#   filter(!grepl("2023", name, ignore.case = TRUE))
+# 
+# 
+# walk(sites,
+#      function(site) {
+#        message("Requesting HV data for: ", site)
+#        api_puller(
+#          site = site,
+#          start_dt = with_tz(mst_start, tzone = "UTC"),
+#          end_dt = with_tz(mst_end, tzone = "UTC"),
+#          api_token = hv_token,
+#          hv_sites_arg = hv_sites,
+#          dump_dir = staging_directory
+#        )
+#      }
+# )
+# 
+# # beep to let you know when it's done
+# beepr::beep(1)
 ```
 
 ## Pulling in any downloaded log data
 
 Some logs (Vulink Log if sonde is AT600/800) cannot be backed up to HydroVu. If you have any of these files, you can read them in here.
 
+Commenting out since logs have already been processed
+
 ```{r}
-log_files <- list.files(log_directory, pattern = "\\vulink.html$", full.names = TRUE)%>%
-  #only keep files with our sites in them
-  keep(~any(str_detect(tolower(.x), sites)))
-
-log_files_simp <- log_files%>%
-  str_replace(log_directory, "")%>%
-  str_replace("/", "")%>%
-  str_replace_all("\\.html", "")%>%
-  str_squish()
-
-html_content <- map(log_files, ~rvest::read_html(.x))
-
-log_data <- map(html_content, ~parse_insitu_html_log(.x))
-
-names(log_data) <- log_files_simp
-
-cleaned_log_data <- log_data%>%
-  rbindlist()%>%
-  #fixing a few specific location names before passing to fix_site_names
-  mutate( site = tolower(site),
-          id = as.double(sensor_sn),
-         timestamp = with_tz(DT, tzone = "UTC"), 
-         site = case_when(site == "archery range"~ "archery", 
-                         site == "boxelder creek" ~ "boxcreek", 
-                         TRUE ~ site), 
-         name = paste0("Vulink Log - ", site))%>%
-  fix_site_names()%>%
-  select(site, id, name, timestamp, parameter, value, units = unit) %>%
-  distinct(.keep_all = TRUE) %>%
-  split(f = list(.$site), sep = "-") %>%
-  keep(~nrow(.) > 0)
-
-#write out the log data to the staging directory so it can be processed with the HV data
-iwalk(cleaned_log_data, ~write_parquet(.x, here(staging_directory, paste0(.y, "_log_data.parquet"))))
-
-# beep to let you know when it's done
-beepr::beep(1)
+# log_files <- list.files(log_directory, pattern = "\\vulink.html$", full.names = TRUE)%>%
+#   #only keep files with our sites in them
+#   keep(~any(str_detect(tolower(.x), sites)))
+# 
+# log_files_simp <- log_files%>%
+#   str_replace(log_directory, "")%>%
+#   str_replace("/", "")%>%
+#   str_replace_all("\\.html", "")%>%
+#   str_squish()
+# 
+# log_data <- map(log_files, ~rvest::read_html(.x)%>%
+#                             parse_insitu_html_log())
+# 
+# log_data <- map(html_content, ~parse_insitu_html_log(.x))
+# 
+# names(log_data) <- log_files_simp
+# 
+# cleaned_log_data <- log_data%>%
+#   rbindlist()%>%
+#   #fixing a few specific location names before passing to fix_site_names
+#   mutate( site = tolower(site),
+#           id = as.double(sensor_sn),
+#          timestamp = with_tz(DT, tzone = "UTC"), 
+#          site = case_when(site == "archery range"~ "archery", 
+#                          site == "boxelder creek" ~ "boxcreek", 
+#                          site == "spring creek" ~ "springcreek",
+#                          TRUE ~ site), 
+#          name = paste0("Vulink Log - ", site), 
+#          #Correcting for parse log where temp is saved with degrees C rather than C
+#          units = case_when(parameter == "Temperature" ~ "C", 
+#                            TRUE ~ unit)
+#          )%>%
+#   fix_site_names()%>%
+#   select(site, id, name, timestamp, parameter, value, units) %>%
+#   distinct(.keep_all = TRUE) %>%
+#   split(f = list(.$site), sep = "-") %>%
+#   keep(~nrow(.) > 0)
+# 
+# #write out the log data to the staging directory so it can be processed with the HV data
+# iwalk(cleaned_log_data, ~write_parquet(.x, here(staging_directory, paste0(.y, "_log_data.parquet"))))
+# 
+# # beep to let you know when it's done
+# beepr::beep(1)
 
 ```
 
@@ -221,6 +232,7 @@ beepr::beep(1)
 ```{r}
 #Since we no longer have any virridy sites in the network, we can just use a normal munge!
 hv_data <- munge_api_data(api_dir = staging_directory,synapse_env = F)%>%
+  #distinct(site, parameter, DT_round, value, .keep_all = T)%>%
   # split into site-parameter combinations for parallel processing
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
@@ -229,30 +241,234 @@ tidy_data <- hv_data %>%
   future_map(~tidy_api_data(api_data = .), .progress = TRUE, .options = set_furr_options) %>%  # the summarize interval default is 15 minutes
   keep(~!is.null(.))%>%
   # Only keep parameters we are interested in
-   keep(~unique(.$parameter) %in% parameters) # Optical Vars
+   keep(~unique(.$parameter) %in% parameters)
+
+```
+## Double check that pulls were successful
+
+We are giving it a quick look over to make sure there aren't any large data gaps (>1 day) in the data pulled, that all site names are being applied correctly and that we don't have duplicate data. 
+
+```{r}
+
+data_check_plots <- tidy_data%>%
+  bind_rows()%>%
+  mutate(DT_hourly = floor_date(DT_round, unit = "1 hour"))%>%
+  group_by(site, parameter, DT_hourly)%>%
+  summarize(hourly_med = median(mean,na.rm = T ))%>%
+  split(f = list(.$site))%>%
+  map(., function(df) {
+  
+  field_notes <- all_field_notes %>%filter(site == unique(df$site) & year(DT_round) == "2025")%>%
+    select(DT_round,sonde_employed)%>%
+    mutate(sonde_changed = case_when(sonde_employed == 0 ~ "Deployed",
+                                     sonde_employed == 1 ~ "Pulled",
+                                     TRUE ~ "Active"))
+  
+       ggplot(df, aes(x = DT_hourly, y = hourly_med)) +
+         geom_point() +
+         geom_vline(data = field_notes, aes(xintercept = DT_round, color = sonde_changed))+
+         facet_wrap(~parameter, scales = "free_y")+
+         labs(title = unique(df$site),
+              x = "Date",
+              y = "Hourly Median Value", 
+              color = "Sonde Status")
+     }
+)
+walk(.x = data_check_plots, .f = print)
 
 ```
 
-## Combine with field notes & add summary stats
+
+# Apply Back-calibration as needed
+
+This uses the Shiny App (https://github.com/juandlt-csu/manual_calibration_verification) developed by Juan. We are essentially deciding when a sensor needs to be back-calibrated based on field notes and applying the back-calibration to the raw data before flagging. The majority of calibrations are fine as is but we want to "skip" over the bad ones. 
+
+## Read in calibration data
 
 ```{r}
+#This creates calibration_data list object needed for the back-calibration functions
+# load_calibration_data(
+#   cal_data_file_path = here::here("data", "collated", "sensor", "cal_reports", "munged_calibration_data.RDS"),
+#     update = FALSE, # set to TRUE when running for the first time
+#   field_cal_dir = here::here("data", "raw", "sensor", "calibration_reports")
+# )
+
+```
+
+## Organize sensor data to match formatting
+
+```{r}
+# sensor_data <- tidy_data %>%
+#   bind_rows()%>%
+#   split(f = year(.$DT_round)) %>%
+#   map(~ {
+#     split_data <- split(.x, f = list(.x$site, .x$parameter), sep = "-")
+#     discard(split_data, ~is.null(.) || nrow(.) == 0)
+#   })
+```
+
+## Join to calibration data and apply back-calibration
+
+```{r}
+
+sensor_calibration_data <- cal_join_sensor_calibration_data(
+  sensor_data_list = sensor_data,
+  calibration_data_list = calibration_data
+)
+
+prepped_snsr_cal_data <- cal_prepare_calibration_windows(
+  sensor_calibration_data_list = sensor_calibration_data
+)
+
+calibrated_data <- prepped_snsr_cal_data%>%
+  map(function(year){
+    year%>%
+      map(function(site_param){
+        site_param %>% 
+          map_dfr(function(chunk){
+            cal_back_calibrate(chunk)
+          })
+      })
+    })
+beepr::beep(1)
+```
+
+
+## Save to back calibrated folder
+
+```{r}
+
+write_rds(calibrated_data, here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","hydro_vu_pull","back_calibration", "calibrated_sensor_data_2025.rds"))
+
+```
+
+Take ^ file and run through the shiny app to verify back-calibration and make any manual adjustments as needed. 
+
+## Read in user corrected back-calibrated data
+
+```{r}
+calibrated_data_final <- read_rds(here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","hydro_vu_pull","back_calibration", "calibrated_sensor_field_data_finalized_2025.rds"))[["2025"]]
+
+```
+
+## Quick look at the back-calibrated data
+
+```{r}
+
+plots <- map(names(calibrated_data_final), 
+    function(site_param) {
+plot_data <- calibrated_data_final[[site_param]]
+
+ vline_df <- plot_data %>% 
+    group_by(sensor_date) %>% 
+    slice_min(DT_round, n = 1) %>%
+    arrange(DT_round)%>%
+  ungroup()%>%
+  select(DT_round, file_date)%>%
+  mutate(file_date_mst = with_tz(file_date, tzone = "MST"), 
+         file_date_mst_utc = force_tz(file_date_mst, tzone = "UTC"))
+
+param <- unique(plot_data$parameter)
+site <- unique(plot_data$site)
+
+ggplotly(ggplot(plot_data, aes(DT_round))+
+  geom_line(aes(y = mean, color = "raw"))+
+  geom_line(aes(y = mean_cal, color = "final"))+
+  geom_vline(xintercept = vline_df$file_date_mst_utc, linetype = "dashed")+
+  scale_color_manual(name = "Data Type", values = c("raw" = "blue", "final" = "green4"))+
+  labs(title = paste0(site, " - ", param),
+       x = "Date",
+       y = param))
+})%>%
+  set_names(names(calibrated_data_final))
+  
+#plot plots with "pH" in the name
+plots[grepl("pH", names(plots))]
+
+```
+
+## Remove columns as needed
+
+```{r}
+
+cal_corrected_data <- calibrated_data_final%>%
+  map(., function(df){
+    
+    site <- unique(df$site)
+    parameter <- unique(df$parameter)
+    
+    site_param = paste0(site, "-", parameter)
+    
+    add_data <- tidy_data[[site_param]]%>%
+      select( DT_join, units, n_obs, spread, flag)
+    
+    if("updated_slope_from" %in% names(df)){
+      df <- df%>%
+      mutate(back_cal_performed = if_else(slope == updated_slope_to & slope == updated_slope_from, F, T))
+    } else {
+      df <- df%>%
+        mutate(back_cal_performed = F)
+    }
+    
+    df%>%
+      select(,
+                DT_round,
+                site,
+                parameter,
+                mean_pre_cal = mean,
+                mean = mean_cal,
+                back_cal_performed
+    )%>%
+      mutate(DT_join = as.character(DT_round))%>%
+      left_join(add_data, by = c("DT_join"))
+  })
+
+# We will also need to grab the Depth and Temperature data (not back calibrated) and merge it here
+non_cal_corrected_data <- tidy_data%>%
+  keep(~unique(.$parameter) %in% c("Depth", "Temperature"))%>%
+  map(., function(df){
+    df%>%
+      mutate(back_cal_performed = FALSE,
+             mean_pre_cal = mean)%>%
+      select(,
+             DT_round,
+             site,
+             parameter,
+             mean_pre_cal,
+             mean,
+             back_cal_performed,
+             DT_join,
+             units,
+             n_obs,
+             spread,
+             flag
+      )
+  })
+
+# Bind all data together
+tidy_cal_data <- c(cal_corrected_data, non_cal_corrected_data)
+
+```
+
+
+# Data Flagging
+
+```{r}
+## Combine with field notes
+
 # Add the field note data to all of the data
-# Quick name fix for mountain campus
 all_field_notes <- all_field_notes %>%
   fix_site_names()
 
-combined_data <- tidy_data %>%
+combined_data <- tidy_cal_data %>%
   future_map(~add_field_notes(df = ., notes = all_field_notes), .progress = TRUE)
 
 # Add summary statistics
 summarized_data <- combined_data %>%
   map(~generate_summary_statistics(.))
 
-# beep to let you know when it's done
-beepr::beep(1)
 ```
 
-# Data Flagging
 
 ## Single Sensor Flags
 
@@ -368,6 +584,7 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
     rbindlist(fill = TRUE) %>%
     # lil' cleanup of flag column contents
     dplyr::mutate(flag = ifelse(flag == "", NA, flag)) %>%
+    distinct(site, parameter, DT_round, mean, .keep_all = TRUE) %>%
     # transform back to site-parameter dfs
     split(f = list(.$site, .$parameter), sep = "-") %>%
     purrr::discard(~ nrow(.) == 0) %>%
@@ -418,7 +635,7 @@ final_flags <- intrasensor_flags_list %>%
 v_final_flags <- final_flags%>%
   dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA,
                                    ifelse(auto_flag == "suspect data" & is.na(lag(auto_flag, 1)) & is.na(lead(auto_flag, 1)), NA, auto_flag))) %>%
-  dplyr::select(c("DT_round", "DT_join", "site", "parameter", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit")) %>%
+  dplyr::select(c("DT_round", "DT_join", "site", "parameter","mean_pre_cal", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit", "depth_change")) %>%
   dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
@@ -428,11 +645,37 @@ beepr::beep(1)
 
 ```
 
+## Check final output
+```{r}
+all_flagged_data <- v_final_flags%>%
+  bind_rows()%>%
+  split(f = list(.$site))
+
+
+map(all_flagged_data, function(df) {
+       ggplot(df, aes(x = DT_round, y = mean, color = auto_flag)) +
+         geom_point() +
+         facet_wrap(~parameter, scales = "free_y")+
+         labs(title = unique(df$site),
+              x = "Date",
+              y = "Mean Value")
+     }
+) %>%
+  walk(plot)
+```
+
+
 # Save Final Flagged Dataset
 
 ```{r}
 
 # Save the data individually.
-iwalk(v_final_flags, ~write_csv(.x, here(flagged_directory, paste0(.y, ".csv"))))
+iwalk(v_final_flags, ~write_parquet(.x, here(flagged_directory,  paste0(.y, ".parquet"))))
 
+#saving our data into the "raw_data" folder of the manual verification folder for use in the shiny app
+write_parquet(v_final_flags%>%bind_rows(),
+          here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","in_progress","raw_data", "raw_data_2025.parquet"))
 ```
+
+
+
