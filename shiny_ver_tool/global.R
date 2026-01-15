@@ -17,6 +17,8 @@ library(shinyFiles)
 library(shinyWidgets)
 library(glue)
 library(anytime)
+library(arrow)
+
 options(shiny.maxRequestSize = 10000 * 1024^2)
 options(shiny.autoload.r = TRUE)
 
@@ -26,7 +28,7 @@ options(shiny.autoload.r = TRUE)
 walk(list.files(here("shiny_ver_tool", "R"), pattern = "\\.R$", full.names = TRUE), source)
 ##### Colors + parameters #####
 
-site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbd","bellvue","salyer", "udall", "riverbend_virridy", "riverbend",
+site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "pbr", "pman", "pbd","bellvue","salyer", "udall", "riverbend_virridy", "riverbend",
                                     "cottonwood_virridy", "cottonwood","elc",  "archery_virridy", "archery", "boxcreek", "springcreek", "riverbluffs"),
                            color = c("#771155", "#AA4488", "#CC99BB", "#114477", "#4477AA", "#77AADD", "#117777", "#44AAAA", "#77CCCC",
                                      "#117744", "#44AA77", "#88CCAA", "#777711", "#AAAA44","#DDDD77", "#774411", "#AA7744", "#DDAA77", "#771122", "#AA4455", "#DD7788"))
