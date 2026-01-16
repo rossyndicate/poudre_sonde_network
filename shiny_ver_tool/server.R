@@ -92,18 +92,28 @@ server <- function(input, output, session) {
       tagList(
         DT::dataTableOutput("data_files_table"),
         # Directory selection
-        selectInput("directory", "Choose Directory:",
-                    choices = c("pre_verification", "intermediary"),
-                    selected = "pre_verification"),
-        selectInput("user", "Select User:",
-                    choices = c("SJS",  "KH","JDT", "KW", "BS"), selected = "SJS"),
-        # Site selection
-        selectInput("site", "Select Site:",
-                    choices = NULL),
-
-        # Main parameter selection (single selection)
-        selectInput("parameter", "Select Parameter:",
-                    choices = NULL),
+        fluidRow(
+          column(3,
+                 selectInput("directory", "Choose Directory:",
+                             choices = c("pre_verification", "intermediary"),
+                             selected = "pre_verification")
+          ),
+          # User Selection
+          column(3,
+                 selectInput("user", "Select User:",
+                             choices = c("SJS", "JDT", "KW", "BS"),
+                             selected = "SJS")
+          ),
+          # Site Selection
+          column(3,
+                 selectInput("site", "Select Site:", choices = NULL)
+          ),
+          # Parameter Selection
+          column(3,
+                 selectInput("parameter", "Select Parameter:", choices = NULL)
+          )
+        ),
+        br(),
 
         actionButton("load_data", "Load Data", class = "btn-primary"),
 
