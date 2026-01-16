@@ -386,7 +386,7 @@ server <- function(input, output, session) {
     #remove data from the week
 
     #Setup year week (eg "2024 - 13")
-    year_week <- paste0(as.character(year(week_min_day)) ," - ", as.character(min(week(week_data$DT_round))))
+    year_week <- paste0(as.character(year(week_min_day)) ," - ", current_week())
     flag_day <- week_min_day
 
 
@@ -784,7 +784,7 @@ server <- function(input, output, session) {
     week_max_day = max(week_data$DT_round, na.rm = T)
 
 
-    year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
+    year_week <- paste0(as.character(year(week_min_day)), " - ", current_week())
     all_sub_sites <- c(input$site, input$sub_sites)
     #picking the correct name of the data frame
     retrieve_relevant_data_name <- function(df_name_arg, year_week_arg = NULL) {
@@ -799,7 +799,6 @@ server <- function(input, output, session) {
         return("pre_verification_data")
       }
     }
-
 
     # Create individual plots for each sub parameter
     all_sub_plot_data <- map_dfr(input$sub_parameters, function(param) {
