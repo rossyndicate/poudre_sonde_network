@@ -99,7 +99,7 @@ check_int_ver_dir <- function(int_file_name) {
 
   tryCatch({
     # Only read in the verification columns
-    df <- read_rds(here(int_dir_path, int_file_name)) %>%
+    df <- read_parquet(here(int_dir_path, int_file_name)) %>%
       select(verification_status, is_verified, is_finalized)
 
     # Check conditions without storing full data
@@ -154,7 +154,7 @@ check_fin_ver_dir <- function(ver_file_name) {
 
   tryCatch({
     # Only read verification columns
-    df <- read_rds(here(ver_dir_path, ver_file_name)) %>%
+    df <- read_parquet(here(ver_dir_path, ver_file_name)) %>%
       select(verification_status, is_verified)
 
     if (any(df$verification_status == 'SKIP') | any(!df$is_verified)) {
@@ -290,7 +290,7 @@ move_file_to_intermediary_directory <- function(pre_to_int_filename, pre_to_int_
   # Generate conflict-safe filename
   timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
   data_hash <- digest::digest(pre_to_int_df)
-  new_filename <- glue("{site}-{parameter}_{timestamp}_{data_hash}.rds")
+  new_filename <- glue("{site}-{parameter}_{timestamp}_{data_hash}.parquet")
 
   tryCatch({
     # Check for existing intermediary versions
@@ -306,7 +306,7 @@ move_file_to_intermediary_directory <- function(pre_to_int_filename, pre_to_int_
     }
 
     # Save new version
-    saveRDS(pre_to_int_df, file.path(int_dir_path, new_filename))
+    write_parquet(pre_to_int_df, file.path(int_dir_path, new_filename))
 
     # Remove from pre-verification using sync logic
     pre_files <- list.files(pre_dir_path, pattern = glue("^{site}-{parameter}"))
@@ -328,7 +328,7 @@ move_file_to_intermediary_directory <- function(pre_to_int_filename, pre_to_int_
 
 # Update intermediary data. Needs to be able to update the file and rename the file
 # with an updated datetime and hash. file name structure is: `site-parameter_DT_hash`.
-# the file should be an RDS
+# the file should be an parquet
 update_intermediary_data <- function(int_df_filename, updated_df) {
 
    pre_dir_path <- here("shiny_ver_tool",  "data", "pre_verification_directory")# pre_verification_path
@@ -347,7 +347,7 @@ update_intermediary_data <- function(int_df_filename, updated_df) {
   # Generate versioned filename
   timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
   data_hash <- digest::digest(updated_df)
-  new_filename <- glue("{site}-{parameter}_{timestamp}_{data_hash}.rds")
+  new_filename <- glue("{site}-{parameter}_{timestamp}_{data_hash}.parquet")
 
   tryCatch({
     # Archive previous versions
@@ -355,7 +355,7 @@ update_intermediary_data <- function(int_df_filename, updated_df) {
     file.remove(existing_files)
 
     # Save new version
-    saveRDS(updated_df, file.path(int_dir_path, new_filename))
+    write_parquet(updated_df, file.path(int_dir_path, new_filename))
 
     # Run sync and duplicate check
     sync_file_system()
@@ -398,7 +398,7 @@ move_file_to_verified_directory <- function(int_to_fin_filename, int_to_fin_df) 
   file_meta <- split_filename(int_to_fin_filename)
   timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
   data_hash <- digest::digest(int_to_fin_df)
-  new_filename <- glue("{file_meta$site}-{file_meta$parameter}_FINAL_{timestamp}_{data_hash}.rds")
+  new_filename <- glue("{file_meta$site}-{file_meta$parameter}_FINAL_{timestamp}_{data_hash}.parquet")
 
   tryCatch({
     # Check for existing final versions
@@ -414,7 +414,7 @@ move_file_to_verified_directory <- function(int_to_fin_filename, int_to_fin_df) 
     }
 
     # Move and validate
-    saveRDS(int_to_fin_df, file.path(ver_dir_path, new_filename))
+    write_parquet(int_to_fin_df, file.path(ver_dir_path, new_filename))
     #remove all old int files that match the site-param
     int_files <- list.files(int_dir_path, pattern = glue("^{file_meta$site}-{file_meta$parameter}"), full.names = T)
     file.remove(int_files)

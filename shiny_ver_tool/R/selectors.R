@@ -10,10 +10,16 @@ relevant_sonde_selector <- function(site_arg) {
     plot_filter <- c("cbri", "pfal")
   }
   if (site_arg == "pfal") {
-    plot_filter <- c("chd", "sfm")
+    plot_filter <- c("chd", "pbr")
+  }
+  if (site_arg == "pbr") {
+    plot_filter <- c("pfal", "pman")
   }
   if (site_arg == "sfm") {
-    plot_filter <- c("pfal", "pbd")
+    plot_filter <- c("pfal", "pbr")
+  }
+  if (site_arg == "pman") {
+    plot_filter <- c("pbr", "pbd")
   }
   if (site_arg == "penn") {
     plot_filter <- c("sfm")
@@ -22,7 +28,7 @@ relevant_sonde_selector <- function(site_arg) {
     plot_filter <- c("sfm")
   }
   if (site_arg == "pbd") {
-    plot_filter <- c("sfm", "bellvue")
+    plot_filter <- c("pman", "bellvue")
   }
   if (site_arg == "bellvue") {
     plot_filter <- c("pbd", "salyer")
@@ -31,28 +37,26 @@ relevant_sonde_selector <- function(site_arg) {
     plot_filter <- c("bellvue", "udall")
   }
   if (site_arg == "udall") {
-    plot_filter <- c("salyer", "riverbend", "riverbend_virridy")
+    plot_filter <- c("salyer", "riverbend")
   }
   if (site_arg == "riverbend") {
-    plot_filter <- c("udall", "riverbend_virridy", "cottonwood")
+    plot_filter <- c("udall", "cottonwood")
   }
   if (site_arg == "riverbend_virridy") {
-    plot_filter <- c("udall", "riverbend", "cottonwood", "cottonwood_virridy")
+    plot_filter <- c("udall", "riverbend", "cottonwood")
   }
   if (site_arg == "springcreek") {
-    plot_filter <- c("cottonwood_virridy", "cottonwood")
+    plot_filter <- c("riverbend", "cottonwood")
   }
   if (site_arg == "cottonwood") {
     plot_filter <- c("riverbend", "cottonwood virridy", "elc")
   }
   if (site_arg == "cottonwood_virridy") {
-    plot_filter <- c("riverbend_virridy", "cottonwood", "elc")
+    plot_filter <- c( "cottonwood", "elc")
   }
   if (site_arg == "elc") {
     plot_filter <- c("cottonwood",
-                     "cottonwood_virridy",
-                     "archery",
-                     "archery_virridy")
+                     "archery")
   }
   if (site_arg == "boxcreek") {
     plot_filter <- c("archery", "archery_virridy")

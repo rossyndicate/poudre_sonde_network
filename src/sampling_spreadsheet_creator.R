@@ -19,10 +19,10 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
   source("src/load_mWater_notes.R")
 
   #pull in site meta data
-  site_meta <- read_csv("data/metadata/water_sampling_sites.csv",show_col_types = FALSE)%>%
+  site_meta <- read_csv(here("data","raw","spatial","metadata","water_sampling_sites.csv"),show_col_types = FALSE)%>%
     select(site = site_code, Site_Name, site_label_rmrs)
   # sort for sites in upper network (ie. acronyms rather than street names)
-  upper_sites <- read_csv("data/metadata/water_sampling_sites.csv",show_col_types = FALSE)%>%
+  upper_sites <- read_csv(here("data","raw","spatial","metadata","water_sampling_sites.csv"),show_col_types = FALSE)%>%
     filter(watershed != "CLP  Mainstem-Fort Collins")%>%
     #this is to help match with user input
     mutate(site_code = tolower(site_code))
@@ -68,8 +68,10 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
      # select only the needed columns, saved in the correct order and fix column names
      select(site_code = site, Date = date, DT_round, SampleType = sample_collected, time_mst = time,chla_volume_ml,  do_mgl, cond_ms_cm, temp_c, visit_comments)
 
+   max_date = max(sampling_notes_output$Date, na.rm = T)%>% as.character()
+
    # write to csv
-   write_csv(x = sampling_notes_output, file = paste0("data/field_notes/all_samples_as_of_",as.character(Sys.Date()),".csv" ))
+   write_csv(x = sampling_notes_output, file = here("data","raw","field_notes", paste0("ROSS_field_meas_upto_",max_date,".csv" )))
  }else{
    #grab desired date
    date_oi_clean <- as.Date(date_oi, tz = "America/Denver")
@@ -83,7 +85,7 @@ sampling_spreadsheet_creator <- function(date_oi = "2023-10-16", all_dates = FAL
      select(Site = site ,SiteDescr, SiteLabel = site_label_rmrs , Date, SampleType = sample_collected, q_cfs,
             time, do_mgl, cond_ms_cm, temp_c, notes = visit_comments  )
    # write to csv
-   write_csv(x = samples_of_day, file = paste0("data/field_notes/samples_of_",date_oi,".csv" ))
+   write_csv(x = samples_of_day, file = here("data","raw","field_notes","all_samples_as_of_", paste0("samples_of_", date_oi,".csv" )))
  }
 }
 

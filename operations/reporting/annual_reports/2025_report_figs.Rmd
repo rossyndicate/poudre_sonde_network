@@ -136,7 +136,7 @@ files <- tibble(filename = list.files(here("data", "raw", "sensor","manual_data_
 
 
 # read in files
-sensor_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
+sensor_data <- map_dfr(files$filename, ~read_parquet(.x)) %>%
   #turn into individual dataframes by site and parameter
   # split(f = list(.$site, .$parameter), sep = "-") %>%
   # keep(~nrow(.) > 0)%>%
@@ -662,7 +662,7 @@ generate_monthly_boxplot_summary <- function(sensor_data, year, month){
 
 ```{r}
 
-monthly_plots <- map2(1:9,2025, ~{
+monthly_plots <- map2(1:11,2025, ~{
   result<- tryCatch({
     generate_monthly_boxplot_summary(sensor_data = sensor_data_clean, month = .x, year = .y)
   }, error = function(e) {
@@ -687,5 +687,131 @@ walk(monthly_plots, ~ ggsave(.x, filename = paste0(fig_dir, "monthly_boxplot_sum
 
 ```
 
+# Down Days Plot
+```{r}
+# AI description of what my code is doing :)
+# This script identifies and summarizes "bad data days" for continuous
+# water quality sensors in 2023 and 2024 across multiple monitoring sites.
+#
+# Two types of bad data days are flagged:
+#   (1) Sensor malfunction days, where field notes indicate issues
+#       (e.g., sensor malfunction, burial, biofouling) and at least
+#       half of the day’s observations are affected.
+#   (2) Missing-data days, identified using temperature records as a
+#       proxy for full sensor outages when at least half of the day’s
+#       values are NA.
+#
+# For each year, the script:
+#   - Aggregates bad data to the site–day level
+#   - Counts total monitoring days and bad data days per site
+#   - Calculates the percentage of bad days by site
+#   - Compares 2023 vs. 2024 bad-day totals and percentages
+#   - Produces side-by-side visualizations showing the timing of bad
+#     data days by site across each monitoring season
+
+plot_down_days <- function(sensor_df, year){
+
+  sensor_data <- sensor_df %>%
+    filter(lubridate::year(DT_round) == year)
+  
+  if(nrow(sensor_data) == 0){
+    stop(paste("No data available for year:", year))
+  }
+  
+down_days_all_data <- sensor_data %>%
+  filter(!parameter %in% c("Depth", "FDOM Fluorescence", "Chl-a Fluorescence")) %>%
+  filter(site %in% c("bellvue", "salyer", "udall", "riverbend", "cottonwood",
+                     "elc", "archery", "riverbluffs")) %>%
+  mutate(site_id = as.numeric(factor(site, levels = c("bellvue", "salyer", "udall", "riverbend", "cottonwood",
+                     "elc", "archery", "riverbluffs")))) %>%
+  mutate(date = as_date(DT_join)) 
+
+counts <- down_days_all_data%>%
+  filter(!is.na(auto_flag) & !grepl("suspect", auto_flag)) %>%
+  filter(grepl("sonde unsubmerged|outside of sensor specification range", auto_flag) | #looking for sensor malfunctions or when a sensor is unsubmerged
+           !is.na(mal_flag)| #looking for any inputted malfunction notes
+           (parameter == "Turbidity" & grepl("drift", auto_flag) & mean >= 40) # looking for excessive drift (ie high turbidity values due to biofouling)
+         ) %>%
+  filter(!is.na(mean)) %>%
+  group_by(site, site_id, parameter, date) %>%
+  summarize(total = n()) %>%
+  filter(total >= 64) %>%
+  ungroup() %>%
+  distinct(site, site_id, date)
+
+counts_p2 <- down_days_all_data%>%
+  filter(parameter == "Temperature") %>%
+  filter(is.na(mean)) %>%
+  group_by(site, site_id, parameter, date) %>%
+  summarize(total = n()) %>%
+  filter(total >= 64) %>%
+  ungroup() %>%
+  select(site, site_id, date) %>%
+  bind_rows(counts) %>%
+  distinct(site, site_id, date)
+
+total_days <- down_days_all_data%>%
+  distinct(site, date) %>%
+  group_by(site) %>%
+  summarize(days = n()) %>%
+  left_join(., counts_p2 %>% group_by(site) %>% summarize(bad_days = n()))
+
+days <- total_days %>%
+  mutate(bad_days_tot = ifelse(is.na(bad_days), 0, bad_days)) %>%
+  mutate(perc_days_tot = 100 * (bad_days_tot / days))
+
+# new site names
+site_order <- c("Bellvue", "Salyer", "Udall", "Riverbend", "Cottonwood", "ELC", "Archery", "River Bluffs")
+
+# get date range
+date_range <- range(down_days_all_data$date)
+
+complete <- expand.grid(date = seq(date_range[1], date_range[2], by = "day"),
+                             natural_name = site_order) %>%
+  mutate(natural_name = factor(natural_name,
+                               levels = rev(site_order)))
+
+counts <- counts_p2 %>%
+  left_join(site_names, by = c("site" = "site")) %>%
+  # add factor levels for site ordering
+  mutate(natural_name = factor(natural_name,
+                               levels = rev(site_order)))
+#plot theme
+plot_theme <- theme_bw(base_size = 24) +
+  theme(text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 15),
+        legend.position = "none",
+        plot.margin = unit(c(0.5, 0.5, 0.5, 0.5), "cm"))
+
+color_palette <- c("#185BB4", "#009DD1", "#00F5DC", "#00F0C0",
+                     "#00D684", "#00BD48", "#00DB58", "#0FFF6B")
+message(paste0("The PWQN was down for ", nrow(counts), " site days across the ", length(site_order), " sites."))
+
+ ggplot() +
+  # add full dataset as invisible points to maintain data structure
+  geom_point(data = complete,
+             aes(x = date, y = natural_name),
+             color = "transparent") +
+  geom_point(data = counts,
+             aes(x = date, y = natural_name, color = natural_name),
+             size = 3) +
+  scale_x_date(limits = date_range,
+               date_breaks = "1 month",
+               date_labels = "%b") +
+  scale_y_discrete(limits = rev(site_order)) +
+  scale_color_manual(values = rev(color_palette)) +
+  labs(x = "Date", y = NULL,
+       title = paste0("PWQN Down Days for ", year)
+       #subtitle = paste0("The PWQN was down for ", nrow(counts), " site days across the ", length(site_order), " sites.")
+       ) +
+  plot_theme
+
+
+}
+
+down_day_plot_2025 <- plot_down_days(sensor_data, 2025)
+
+ggsave(paste0(fig_dir,"down_days_2025.png"), plot = down_day_plot_2025, width = 10, height = 8, units = "in", dpi = 300)
+```
 
 

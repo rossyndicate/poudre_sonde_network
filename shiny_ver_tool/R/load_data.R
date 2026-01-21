@@ -30,18 +30,18 @@ load_all_datasets <- function() {
 
   list(
     # all_data = set_names(
-    #   map(list.files(paths$all_path, full.names = TRUE), read_rds),
+    #   map(list.files(paths$all_path, full.names = TRUE), read_parquet),
     #   list.files(paths$all_path)
     # ),
-    pre_verification_data = set_names( map(list.files(pre_verification_path, full.names = TRUE), read_rds),
+    pre_verification_data = set_names( map(list.files(pre_verification_path, full.names = TRUE), read_parquet),
                                        list.files(pre_verification_path)
     ),
     intermediary_data = set_names(
-      map(list.files(intermediary_path, full.names = TRUE), read_rds),
+      map(list.files(intermediary_path, full.names = TRUE), read_parquet),
       list.files(intermediary_path)
     ),
     verified_data = set_names(
-      map(list.files(verified_path, full.names = TRUE), read_rds),
+      map(list.files(verified_path, full.names = TRUE), read_parquet),
       list.files(verified_path)
     )
   )
@@ -60,19 +60,19 @@ load_all_datasets <- function() {
 # load_all_datasets <- function(paths) {
 #   list(
 #     all_data = set_names(
-#       map(list.files(paths$all_path, full.names = TRUE), read_rds),
+#       map(list.files(paths$all_path, full.names = TRUE), read_parquet),
 #       list.files(paths$all_path)
 #     ),
 #     pre_verification_data = set_names(
-#       map(list.files(paths$pre_verification_path, full.names = TRUE), read_rds),
+#       map(list.files(paths$pre_verification_path, full.names = TRUE), read_parquet),
 #       list.files(paths$pre_verification_path)
 #     ),
 #     intermediary_data = set_names(
-#       map(list.files(paths$intermediary_path, full.names = TRUE), read_rds),
+#       map(list.files(paths$intermediary_path, full.names = TRUE), read_parquet),
 #       list.files(paths$intermediary_path)
 #     ),
 #     verified_data = set_names(
-#       map(list.files(paths$verified_path, full.names = TRUE), read_rds),
+#       map(list.files(paths$verified_path, full.names = TRUE), read_parquet),
 #       list.files(paths$verified_path)
 #     )
 #   )

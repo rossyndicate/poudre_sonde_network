@@ -1,0 +1,264 @@
+---
+title: "WR417 Data Sharing"
+author: "Sam Struthers"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(here)
+library(arrow)
+```
+
+# Prep
+
+
+```{r}
+
+file_2024 <- list.files(path = "data/collated/sensor", pattern = "2024", full.names = T)
+
+data <- read_parquet(file_2024)
+
+trim_data <- data%>%
+  filter(site %in% c("salyer", "udall", "riverbend", "cottonwood", "elc", "archery"))%>%
+  distinct(site, parameter, hourly_median, DT_group)%>%
+  filter(parameter %in% c("DO","Depth","Specific Conductivity", "Temperature", "pH" ))%>%
+  mutate(hourly_median = case_when(parameter == "Depth" ~ hourly_median*3.28084,
+                                   TRUE ~ hourly_median), 
+         units = case_when(parameter == "Depth" ~ "ft",
+                           parameter == "Specific Conductivity" ~ "uS/cm",
+                           parameter == "Temperature" ~ "C",
+                           parameter == "pH" ~ "pH",
+                           parameter == "DO" ~ "mg/L"))%>%
+  select(site, DT_round_mst = DT_group, parameter, units, value =  hourly_median)
+
+
+file_2025 <- list.files(path = "data/collated/sensor", pattern = "all_2025", full.names = T)[2]
+
+data <- read_parquet(file_2025)
+
+trim_data <- data%>%
+  filter(site %in% c("salyer", "udall", "riverbend", "cottonwood", "elc", "archery"))%>%
+  distinct(site, parameter, hourly_median, DT_group)%>%
+  filter(parameter %in% c("DO","Depth","Specific Conductivity", "Temperature", "pH" ))%>%
+  mutate(hourly_median = case_when(parameter == "Depth" ~ hourly_median*3.28084,
+                                   TRUE ~ hourly_median), 
+         units = case_when(parameter == "Depth" ~ "ft",
+                           parameter == "Specific Conductivity" ~ "uS/cm",
+                           parameter == "Temperature" ~ "C",
+                           parameter == "pH" ~ "pH",
+                           parameter == "DO" ~ "mg/L"))%>%
+  select(site, DT_round_mst = DT_group, parameter, units, value =  hourly_median)
+
+
+
+ggplot(trim_data%>% filter(parameter %in% c("DO","pH","Temperature")), aes(x = DT_round_mst, y = value, color = site)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~parameter, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "2024 Data for Selected Sites and Parameters",
+       x = "Date",
+       y = "Value",
+       color = "Site")
+
+write_csv_arrow(trim_data, "poudre_water_quality_network_2025.csv")
+
+grab_samples <- list.files(path = "data/raw/chem/ross_clp_chem/v2025.07.01/data/cleaned", pattern = "rds", full.names = T)
+
+grab_samples <- read_rds(grab_samples)
+
+grab_trim <- grab_samples%>%
+  mutate(site_code = tolower(site_code), 
+         site = case_when(site_code == "legacy" ~ "salyer",
+                          site_code == "lincoln" ~ "udall",
+                          site_code == "boxelder" ~ "elc",
+                          site_code == "prospect" ~ "cottonwood",
+                          site_code == "timberline" ~ "riverbend",
+                          site_code == "archery" ~ "archery",
+                          TRUE ~ site_code))%>%
+  filter(site %in% c("salyer", "udall", "riverbend", "cottonwood", "elc", "archery") 
+         & Date >= ymd("2024-01-01"))%>%
+  select(site, Date:SO4)
+
+write_csv_arrow(grab_trim, "poudre_water_quality_network_grab_samples.csv")
+```
+
+
+
+This rmd will be for sharing WQ data with the WR 417 class in F2025. 
+
+```{r}
+data_dir <- here("data","raw", "sensor","manual_data_verification")
+years <- c("2024","2025")
+
+generate_ross_sensor_data <- function(year){
+  #get correct file path
+  path <- get_correct_folder(year)
+  #read in all data from that folder
+  files <- list.files(path = path, full.names = T)
+  all_data <- files %>%
+    map(~ read_ext(.x))
+  #apply cleaning
+  cleaned_data <- all_data %>%
+    map(~ clean_ross_sensor_data(.x, year))
+  
+}
+
+get_correct_folder <- function(year){
+  #check to see if cycle exists
+  folders <- list.files(path = file.path(data_dir, paste0(year, "_cycle")), full.names = T)
+  if(length(folders) == 0){
+    stop(paste("No data found for year", year))
+  }
+  #check for post verification first
+  if(any(grepl("post_verification", folders)) == TRUE){
+    files <- list.files(path = file.path(data_dir, paste0(year, "_cycle"), "post_verification"), full.names = T)
+    if(length(files) == 0){
+      message(paste("No post verification data found for year", year, ";moving to in_progress"))
+    }else{
+      message(paste("Reading in post_verification data for year", year))
+      path <- file.path(data_dir, paste0(year, "_cycle"), "post_verification")
+      return(path)
+    }
+  }
+  
+  #Check for in progress next
+  if(any(grepl("in_progress", folders)) == TRUE ){
+    files <- list.files(path = file.path(data_dir, paste0(year, "_cycle"), "in_progress"), full.names = T)
+    if(length(files) == 0){
+      message(paste("No in progress verification data found for year", year, ", moving to autoqaqc/raw data"))
+    }else{
+      path <- file.path(data_dir, paste0(year, "_cycle"), "in_progress")
+      return(path)
+    }
+  }else{
+    message(paste("No in progress verification data found for year", year, ", moving to autoqaqc/raw data"))
+  }
+  #check for HV folder
+  if(any(grepl("hydro_vu_pull", folders)) == TRUE){
+    folders <- list.files(path = file.path(data_dir, paste0(year, "_cycle"), "hydro_vu_pull"), full.names = T)
+    if(length(folders) == 0){
+      stop(paste("No raw data found for year", year))
+    }else{
+      #see if any have flagged data in the folder name
+      if(any(grepl("flagged_data", folders)) == TRUE ){
+        path = file.path(data_dir, paste0(year, "_cycle"), "hydro_vu_pull", "flagged_data")
+        return(path)
+      }else{
+        #if flagged data is not present, check for raw data
+        if(any(grepl("raw_data", folders)) == TRUE){
+          path = file.path(data_dir, paste0(year, "_cycle"), "hydro_vu_pull", "raw_data")
+          return(path)
+        }else{
+          stop(paste("No raw or flagged data found for year", year))
+        }
+        
+      }
+      
+    }
+    
+  }
+}
+
+map(years, get_correct_folder)
+
+```
+
+# Saving
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+# OLD DO NOT RUN
+
+```{r, eval=FALSE}
+
+data <- readRDS("data/virridy_verification/all_data_flagged_complete.RDS")
+
+sites_selected <- c("legacy", "timberline", "lincoln")
+
+select_param <- c("Temperature", "Specific Conductivity", "pH", "DO", "Depth")
+
+
+site_param_combos <- crossing(site_select = sites_selected, param = select_param) %>%
+  mutate(combo = paste(site_select, param, sep = "-")) %>%
+  pull(combo)
+
+#grab the data for the site and parameter combos the user selected
+all_select_data <- site_param_combos %>%
+  keep(~ .x %in% names(data)) %>%
+  map_dfr(~ data[[.x]])
+#grab start and end dates
+start_date <- as.POSIXct("2023-01-01")%>% force_tz("MST")
+end_date <- as.POSIXct("2024-01-01")%>% force_tz("MST")
+
+#remove basic bad data
+bad_data <- tibble(site = c("lincoln"),
+                     start_dt = c("2024-08-22"),
+                     end_dt = c("2024-08-28"))%>%
+  mutate(start_dt = as.POSIXct(start_dt, tz = "MST"),
+         end_dt = as.POSIXct(end_dt, tz = "MST"),
+         remove = T)
+
+
+# # Do any transformations...
+# if(input$transformation == "None"){
+#   #trim to just the dates selected
+trim_select_data <- all_select_data %>%
+  filter(DT_round >= start_date & DT_round <= end_date)%>%
+  #convert depth to ft (easier to see changes than meters)
+  mutate(mean = case_when(parameter == "Depth"~ mean*3.28084,
+                          TRUE ~ mean))%>%
+  #remove rows where "missing data" is included in the flag string but still include rows with NA
+  filter(grepl("missing data", flag) == FALSE | is.na(flag))%>%
+  #remove all flagged data
+  filter(is.na(flag))
+
+final_data <- trim_select_data%>%
+  filter(!(site == "lincoln" & DT_round > as.POSIXct("2023-08-22", tz = "MST") & DT_round < as.POSIXct("2023-08-29", tz = "MST")))%>%
+#filter(!(site == "timberline" & DT_round > as.POSIXct("2023-05-02", tz = "MST") & DT_round < as.POSIXct("2023-05-04", tz = "MST")))%>%
+  #param filters
+  filter(!(parameter == "pH" & mean < 5))%>%
+  filter(!(site == "legacy" & parameter == "Depth" & DT_round > as.POSIXct("2023-11-25", tz = "MST") & DT_round < as.POSIXct("2023-12-03", tz = "MST")))
+
+# using the bad_data tibble, filter out those instances in trim select data
+
+
+#make a plot of the data
+p <- ggplot(final_data, aes(x = DT_round, y = mean, color = site)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~parameter, scales = "free_y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Data for Selected Sites and Parameters",
+       x = "Date",
+       y = "Value",
+       color = "Site")
+ggplotly(p)
+
+concise_df_long <- final_data %>%
+  select(site, parameter, DT_round_mst = DT_round, mean)%>%
+  mutate(parameter = case_when(parameter == "Temperature" ~ "Temperature_C",
+                               parameter == "Specific Conductivity" ~ "Specific_Conductivity_uS/cm",
+                               parameter == "pH" ~ "pH",
+                               parameter == "DO" ~ "DO_mg/L",
+                               parameter == "Depth" ~ "Depth_ft"))
+
+concise_df_wide <- concise_df_long %>%
+  pivot_wider(names_from = parameter, values_from = mean, id_cols = c(site, DT_round_mst))
+
+
+
+#save to CSV and RDS
+write_csv(concise_df_long, "data/sharing/wr417_2023_data/concise_df_long.csv")
+write_csv(concise_df_wide, "data/sharing/wr417_2023_data/concise_df_wide.csv")
+write_rds(concise_df_long, "data/sharing/wr417_2023_data/concise_df_long.RDS")
+write_rds(concise_df_wide, "data/sharing/wr417_2023_data/concise_df_wide.RDS")
+
+
+```
+

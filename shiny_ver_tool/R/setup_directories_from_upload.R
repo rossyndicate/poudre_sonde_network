@@ -115,27 +115,28 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
       raw_data <- read_rds(file_path)
     } else if(file_type == "xlsx"){
       raw_data <- read_xlsx(file_path)
+    }else if(file_type == "parquet"){
+      raw_data <- read_parquet(file_path)
+    } else{
+      return(paste0("File type ", file_type, " not supported. Please upload a .feather, .csv, .rds, .xlsx, or .parquet file."))
     }
     #check to make sure site, parameter, DT round and mean all exist as columns
-    if(!all(c("site", "parameter", "DT_round", "value") %in% colnames(raw_data))){
+    if(!all(c("site", "parameter", "DT_round", "mean") %in% colnames(raw_data))){
       #find which column is missing
-      missing_cols <- paste(setdiff(c("site", "parameter", "DT_round","value"), colnames(raw_data)), collapse = ", ")
+      missing_cols <- paste(setdiff(c("site", "parameter", "DT_round","mean"), colnames(raw_data)), collapse = ", ")
       return(paste0("Columns (", missing_cols, ") must exist in the file: ", file_path))
     }
 
     raw_data_parsed <- raw_data %>%
       #convert DT_round to date time
-      mutate(DT_round = anytime(DT_round, tz = timezone))
-
-    #if there is no flag column, add one
-    if(!("flag" %in% colnames(raw_data_parsed))){
-      raw_data_parsed$flag = NA
-    }
+      mutate(DT_round = anytime(DT_round, tz = timezone))%>%
+      ross.wq.tools::add_column_if_not_exists("flag", NA)
 
     return(raw_data_parsed)
   }
+
   #read in all data (either from uploaded file or from raw data folder)
-  all_data_parsed <- map_dfr(uploaded_file_path, parse_raw_file)%>%
+  all_data_parsed <- map(uploaded_file_path, parse_raw_file)%>%
     bind_rows()
   #Taking all_data_parsed and formatting to save into all and pre directories
   site_params <- expand_grid(site = unique(all_data_parsed$site), parameter = unique(all_data_parsed$parameter))
@@ -149,7 +150,6 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   pre_processed_data <- map(.x = flagged_list, \(x)
                             x %>%
                               mutate(
-                                #mean = value, # actual data for DS use
                                 mean_verified = mean, # if verification status pass or flag, this is mean. set default to mean so that it can be used in the app
                                 is_verified = FALSE, # whether or not the data has been verified
                                 verification_status = NA, # can only be pass/fail/skip
@@ -189,8 +189,8 @@ setup_directories_from_upload <- function(uploaded_file_path, timezone = "MST"){
   iwalk(pre_processed_data, \(x, idx) {
     timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
     data_hash <- digest::digest(x)
-    new_filename <- glue("{idx}_{timestamp}_{data_hash}.rds")
-    saveRDS(x, here(all_path, new_filename))  # Ensure you use new_filename, not idx
+    new_filename <- glue("{idx}_{timestamp}_{data_hash}.parquet")
+    write_parquet(x, here(all_path, new_filename))  # Ensure you use new_filename, not idx
   })
 
   R.utils::copyDirectory(all_path, pre_verification_path)

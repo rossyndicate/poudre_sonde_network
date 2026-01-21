@@ -31,15 +31,15 @@ ui <- page_navbar(
       layout_columns(
         col_widths = 12,
         # Main plot (top left)
-        card(
-          card_header(
-            div(
-              actionButton("prev_tab", "← Back to Selection", class = "btn-info"),
-              keys::useKeys(),
-              keys::keysInput("q_key", "q"),
-              actionButton("quit_app", "Quit", class = "btn-danger")
-            )
-          ),
+         card(
+        #   card_header(
+        #     div(
+        #       actionButton("prev_tab", "← Back to Selection", class = "btn-info"),
+        #       keys::useKeys(),
+        #       keys::keysInput("q_key", "q"),
+        #       actionButton("quit_app", "Quit", class = "btn-danger")
+        #     )
+        #   ),
           card_body(
             plotOutput("main_plot",
                        brush = brushOpts(
@@ -99,7 +99,10 @@ ui <- page_navbar(
               ),
               actionButton("prev_week","← Previous Week", class = "btn-secondary", style = "width: 200px;"),
               actionButton("next_week","Next Week →", class = "btn-secondary", style = "width: 200px;"),
-              actionButton("reset_week", "Reset Data", class = "btn-danger")
+              actionButton("reset_week", "Reset Data", class = "btn-danger"),
+              keys::useKeys(),
+                     keys::keysInput("q_key", "q"),
+                     actionButton("quit_app", "Quit", class = "btn-danger")
             )
           )
         ),
