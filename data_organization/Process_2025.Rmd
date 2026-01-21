@@ -232,7 +232,6 @@ Commenting out since logs have already been processed
 ```{r}
 #Since we no longer have any virridy sites in the network, we can just use a normal munge!
 hv_data <- munge_api_data(api_dir = staging_directory,synapse_env = F)%>%
-  #distinct(site, parameter, DT_round, value, .keep_all = T)%>%
   # split into site-parameter combinations for parallel processing
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
