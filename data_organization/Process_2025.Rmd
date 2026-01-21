@@ -74,7 +74,7 @@ sites <- c(
 
 #Setting parameters of interest
 parameters <- c("Specific Conductivity", "Temperature", "DO", "pH", "ORP", "Depth", #Standard vars
-                            "Chl-a Fluorescence", "Turbidity", "FDOM Fluorescence") #optical vars
+                "Chl-a Fluorescence", "Turbidity", "FDOM Fluorescence") #optical vars
 ```
 
 ## Establishing directory paths.
@@ -240,7 +240,7 @@ tidy_data <- hv_data %>%
   future_map(~tidy_api_data(api_data = .), .progress = TRUE, .options = set_furr_options) %>%  # the summarize interval default is 15 minutes
   keep(~!is.null(.))%>%
   # Only keep parameters we are interested in
-   keep(~unique(.$parameter) %in% parameters)
+  keep(~unique(.$parameter) %in% parameters)
 
 ```
 ## Double check that pulls were successful
@@ -256,23 +256,23 @@ data_check_plots <- tidy_data%>%
   summarize(hourly_med = median(mean,na.rm = T ))%>%
   split(f = list(.$site))%>%
   map(., function(df) {
-  
-  field_notes <- all_field_notes %>%filter(site == unique(df$site) & year(DT_round) == "2025")%>%
-    select(DT_round,sonde_employed)%>%
-    mutate(sonde_changed = case_when(sonde_employed == 0 ~ "Deployed",
-                                     sonde_employed == 1 ~ "Pulled",
-                                     TRUE ~ "Active"))
-  
-       ggplot(df, aes(x = DT_hourly, y = hourly_med)) +
-         geom_point() +
-         geom_vline(data = field_notes, aes(xintercept = DT_round, color = sonde_changed))+
-         facet_wrap(~parameter, scales = "free_y")+
-         labs(title = unique(df$site),
-              x = "Date",
-              y = "Hourly Median Value", 
-              color = "Sonde Status")
-     }
-)
+    
+    field_notes <- all_field_notes %>%filter(site == unique(df$site) & year(DT_round) == "2025")%>%
+      select(DT_round,sonde_employed)%>%
+      mutate(sonde_changed = case_when(sonde_employed == 0 ~ "Deployed",
+                                       sonde_employed == 1 ~ "Pulled",
+                                       TRUE ~ "Active"))
+    
+    ggplot(df, aes(x = DT_hourly, y = hourly_med)) +
+      geom_point() +
+      geom_vline(data = field_notes, aes(xintercept = DT_round, color = sonde_changed))+
+      facet_wrap(~parameter, scales = "free_y")+
+      labs(title = unique(df$site),
+           x = "Date",
+           y = "Hourly Median Value", 
+           color = "Sonde Status")
+  }
+  )
 walk(.x = data_check_plots, .f = print)
 
 ```
@@ -328,7 +328,7 @@ calibrated_data <- prepped_snsr_cal_data%>%
             cal_back_calibrate(chunk)
           })
       })
-    })
+  })
 beepr::beep(1)
 ```
 
@@ -355,32 +355,32 @@ calibrated_data_final <- read_rds(here("data", "raw", "sensor", "manual_data_ver
 ```{r}
 
 plots <- map(names(calibrated_data_final), 
-    function(site_param) {
-plot_data <- calibrated_data_final[[site_param]]
-
- vline_df <- plot_data %>% 
-    group_by(sensor_date) %>% 
-    slice_min(DT_round, n = 1) %>%
-    arrange(DT_round)%>%
-  ungroup()%>%
-  select(DT_round, file_date)%>%
-  mutate(file_date_mst = with_tz(file_date, tzone = "MST"), 
-         file_date_mst_utc = force_tz(file_date_mst, tzone = "UTC"))
-
-param <- unique(plot_data$parameter)
-site <- unique(plot_data$site)
-
-ggplotly(ggplot(plot_data, aes(DT_round))+
-  geom_line(aes(y = mean, color = "raw"))+
-  geom_line(aes(y = mean_cal, color = "final"))+
-  geom_vline(xintercept = vline_df$file_date_mst_utc, linetype = "dashed")+
-  scale_color_manual(name = "Data Type", values = c("raw" = "blue", "final" = "green4"))+
-  labs(title = paste0(site, " - ", param),
-       x = "Date",
-       y = param))
-})%>%
+             function(site_param) {
+               plot_data <- calibrated_data_final[[site_param]]
+               
+               vline_df <- plot_data %>% 
+                 group_by(sensor_date) %>% 
+                 slice_min(DT_round, n = 1) %>%
+                 arrange(DT_round)%>%
+                 ungroup()%>%
+                 select(DT_round, file_date)%>%
+                 mutate(file_date_mst = with_tz(file_date, tzone = "MST"), 
+                        file_date_mst_utc = force_tz(file_date_mst, tzone = "UTC"))
+               
+               param <- unique(plot_data$parameter)
+               site <- unique(plot_data$site)
+               
+               ggplotly(ggplot(plot_data, aes(DT_round))+
+                          geom_line(aes(y = mean, color = "raw"))+
+                          geom_line(aes(y = mean_cal, color = "final"))+
+                          geom_vline(xintercept = vline_df$file_date_mst_utc, linetype = "dashed")+
+                          scale_color_manual(name = "Data Type", values = c("raw" = "blue", "final" = "green4"))+
+                          labs(title = paste0(site, " - ", param),
+                               x = "Date",
+                               y = param))
+             })%>%
   set_names(names(calibrated_data_final))
-  
+
 #plot plots with "pH" in the name
 plots[grepl("pH", names(plots))]
 
@@ -403,7 +403,7 @@ cal_corrected_data <- calibrated_data_final%>%
     
     if("updated_slope_from" %in% names(df)){
       df <- df%>%
-      mutate(back_cal_performed = if_else(slope == updated_slope_to & slope == updated_slope_from, F, T))
+        mutate(back_cal_performed = if_else(slope == updated_slope_to & slope == updated_slope_from, F, T))
     } else {
       df <- df%>%
         mutate(back_cal_performed = F)
@@ -411,13 +411,13 @@ cal_corrected_data <- calibrated_data_final%>%
     
     df%>%
       select(
-                DT_round,
-                site,
-                parameter,
-                mean_pre_cal = mean,
-                mean = mean_cal,
-                back_cal_performed
-    )%>%
+        DT_round,
+        site,
+        parameter,
+        mean_pre_cal = mean,
+        mean = mean_cal,
+        back_cal_performed
+      )%>%
       mutate(DT_join = as.character(DT_round))%>%
       left_join(add_data, by = c("DT_join"))
   })
@@ -480,11 +480,11 @@ summarized_data_chunks <- split(1:length(summarized_data),
 single_sensor_flags <- list()
 for (chunk_idx in seq_along(summarized_data_chunks)) {
   message("\n=== Processing chunk ", chunk_idx, " of ", length(summarized_data_chunks), " ===")
-
+  
   # Get the indices for this chunk
   indices <- summarized_data_chunks[[chunk_idx]]
   chunk_data <- summarized_data[indices]
-
+  
   # Process the chunk in parallel
   chunk_results <- chunk_data %>%
     future_map(
@@ -503,32 +503,32 @@ for (chunk_idx in seq_along(summarized_data_chunks)) {
           add_depth_shift_flag(df = ., level_shift_table =  all_field_notes, post2024 = TRUE) %>%
           # find instances of sensor drift (FDOM, Chl-a, Turbidity only)
           add_drift_flag(df = .)
-
+        
         if (unique(data$parameter) %in% names(sensor_thresholds)) {
           # flag instances outside the spec range
           flagged_data <- flagged_data %>%
             data.table(.) %>%
             add_spec_flag(df = ., spec_table = sensor_thresholds)
         }
-
+        
         if (unique(data$parameter) %in% unique(season_thresholds$parameter)) {
           # flag instances outside the spec range
           flagged_data <- flagged_data %>%
             data.table(.) %>%
             add_seasonal_flag(df = ., threshold_table = season_thresholds)
         }
-
+        
         flagged_data <- flagged_data %>%
           data.table(.)
-
+        
         return(flagged_data)
       },
       .progress = TRUE, .options = set_furr_options
     )
-
+  
   # Add chunk to list
   single_sensor_flags <- c(single_sensor_flags, chunk_results)
-
+  
   if (chunk_idx < length(summarized_data_chunks)) {
     message("Taking a short break before next chunk...")
     gc()
@@ -556,7 +556,7 @@ intrasensor_data_chunks <- split(1:length(intrasensor_flags),
 intrasensor_flags_list <- list()
 for (chunk_idx in seq_along(intrasensor_data_chunks)) {
   message("\n=== Processing chunk ", chunk_idx, " of ", length(intrasensor_data_chunks), " ===")
-
+  
   # Get the indices for this chunk
   indices <- intrasensor_data_chunks[[chunk_idx]]
   chunk_data <- intrasensor_flags[indices]
@@ -576,7 +576,7 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
           add_burial_flag(.) %>%
           # flag times when sonde was unsubmerged
           add_unsubmerged_flag(.)
-
+        
         return(flagged_data)
       }, .progress = TRUE, .options = set_furr_options
     ) %>%
@@ -589,10 +589,10 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
     purrr::discard(~ nrow(.) == 0) %>%
     # Add in KNOWN instances of sensor malfunction
     map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes))
-
+  
   # Add chunk to list
   intrasensor_flags_list <- c(intrasensor_flags_list, chunk_results)
-
+  
   if (chunk_idx < length(intrasensor_data_chunks)) {
     message("Taking a short break before next chunk...")
     gc()
@@ -652,13 +652,13 @@ all_flagged_data <- v_final_flags%>%
 
 
 map(all_flagged_data, function(df) {
-       ggplot(df, aes(x = DT_round, y = mean, color = auto_flag)) +
-         geom_point() +
-         facet_wrap(~parameter, scales = "free_y")+
-         labs(title = unique(df$site),
-              x = "Date",
-              y = "Mean Value")
-     }
+  ggplot(df, aes(x = DT_round, y = mean, color = auto_flag)) +
+    geom_point() +
+    facet_wrap(~parameter, scales = "free_y")+
+    labs(title = unique(df$site),
+         x = "Date",
+         y = "Mean Value")
+}
 ) %>%
   walk(plot)
 ```
@@ -673,7 +673,7 @@ iwalk(v_final_flags, ~write_parquet(.x, here(flagged_directory,  paste0(.y, ".pa
 
 #saving our data into the "raw_data" folder of the manual verification folder for use in the shiny app
 write_parquet(v_final_flags%>%bind_rows(),
-          here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","in_progress","raw_data", "raw_data_2025.parquet"))
+              here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","in_progress","raw_data", "raw_data_2025.parquet"))
 ```
 
 
