@@ -1,11 +1,17 @@
 ---
-title: "2025 Hydro Vu API Pull"
+title: "Processing 2025 Data Pull from HydroVu with Auto Back-Calibration and QA/QC Flagging"
 author: "Sam Struthers - CSU ROSSyndicate"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
-# Set up
+# Script Purpose & Scope
+
+This script is designed to pull in sensor data from HydroVu for the 2025 monitoring season, apply auto back-calibrations, export data for manual checks of back calibration issues, and run through the automated QA/QC flagging process. The final flagged dataset will be saved for manual review and verification.
+
+
+
+## Setup Libraries 
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -49,7 +55,7 @@ plan(multisession, workers = num_workers)
 set_furr_options <- furrr_options(
   globals = TRUE,
   packages = c("arrow", "data.table", "httr2", "tidyverse","dplyr", "lubridate", "zoo",
-               "padr", "stats", "RcppRoll", "yaml", "here", "fcw.qaqc")
+               "padr", "stats", "RcppRoll", "yaml", "here", "ross.wq.tools")
 )
 
 # suppress scientific notation to ensure consistent formatting
@@ -58,6 +64,10 @@ options(scipen = 999)
 ```
 
 ## Setting up the site/time range/parameters for the data pull
+
+We deploy our sensors in March and pull them by the end of November. 
+Always triple check the sites listed below to remove sites no longer deployed and add sites deployed this year. 
+Double check the parameters of interest for spelling and inclusion of all needed parameters.
 
 ```{r}
 #Adjust dates for specific pull
@@ -79,14 +89,22 @@ parameters <- c("Specific Conductivity", "Temperature", "DO", "pH", "ORP", "Dept
 
 ## Establishing directory paths.
 
+These are the folders where raw, and flagged data will be saved. Update base_folder to the current year and log directory as needed
+
 ```{r}
+base_folder <- here("data","raw", "sensor","manual_data_verification","2025_cycle")
+# Make sure base folder exists and create if not
+if (!dir.exists(base_folder)) {
+  dir.create(base_folder)
+}
+
 #folder with downloaded logs
 log_directory <- here("data","raw", "sensor",  "log_download", "2025")  #Change as needed
 
-#Change as needed
-staging_directory <- here("data","raw", "sensor","manual_data_verification","2025_cycle","hydro_vu_pull" ,"raw_data")
-flagged_temp_dir <- here("data","raw", "sensor","manual_data_verification","2025_cycle","hydro_vu_pull" ,"flagged_data_temp")
-flagged_directory <- here("data","raw", "sensor","manual_data_verification","2025_cycle","hydro_vu_pull" ,"flagged_data")
+#Sub folders for raw and flagged data
+staging_directory <- here(base_folder,"hydro_vu_pull" ,"raw_data")
+flagged_temp_dir <- here(base_folder,"hydro_vu_pull" ,"flagged_data_temp")
+flagged_directory <- here(base_folder,"hydro_vu_pull" ,"flagged_data")
 
 #check to make sure these all exist and create if needed
 if (!dir.exists(staging_directory)) {
@@ -102,6 +120,9 @@ if (!dir.exists(flagged_directory)) {
 ```
 
 ## Read in thresholds and credentials
+
+Sensor thresholds are from In-SitU Inc spec sheets and seasonal_thresholds are created using `ross.wq.tools::make_threshold_table()` using cleaned data from previous years. 
+mWater and HydroVu creds are created from their respective websites, contact Sam Struthers, Juan De La Torre or Katie Willi for help obtaining these.
 
 ```{r}
 # Read in the threshold data first
@@ -120,18 +141,20 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
 
 # Data Pulls
 
+Once these sections have been run and data have been checked using plots below, these sections should be commented out as they will take a long time to re-run. 
+
 ## Pulling in field notes from mWater
 ```{r}
-
+# Pull in all notes
 mWater_data <- load_mWater(creds = mWater_creds)
-
+# Only extract sensor visits
 all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
-  mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
+  mutate(DT_round = with_tz(DT_round, tzone = "UTC"), # grab_mWater_sensor_notes converts this to MST, converting back to UTC for DS use
          last_site_visit = with_tz(last_site_visit, tzone = "UTC"),
          DT_join = as.character(DT_round))
-
+# Only extract sensor malfunctions
 sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data)%>%
-  mutate(start_DT = with_tz(start_DT, tzone = "UTC"),
+  mutate(start_DT = with_tz(start_DT, tzone = "UTC"),# grab_mWater_malfunction_notes converts this to MST, converting back to UTC for DS use
          end_DT = with_tz(end_DT, tzone = "UTC"))
 ```
 
@@ -139,7 +162,7 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 
 ## HydroVu Pull
 
-Commenting out since data has already been pulled
+This section will take quite a while to load (~ 2-4 min per month of data per site). Once data has been pulled and checked, comment this section out to avoid re-running it.
 
 ```{r}
 # # Get all the site info from HydroVu
@@ -150,7 +173,7 @@ Commenting out since data has already been pulled
 #   filter(!grepl("vulink", name, ignore.case = TRUE))%>%
 #   #Remove Virridy sites/sondes
 #   filter(!grepl("virridy", name, ignore.case = TRUE))#%>%
-#    #remove any older sites (containing 2023 or 2024 in the name)
+#    #remove any older sites (containing 2023 in the name)
 #   filter(!grepl("2023", name, ignore.case = TRUE))
 # 
 # 
@@ -174,9 +197,7 @@ Commenting out since data has already been pulled
 
 ## Pulling in any downloaded log data
 
-Some logs (Vulink Log if sonde is AT600/800) cannot be backed up to HydroVu. If you have any of these files, you can read them in here.
-
-Commenting out since logs have already been processed
+Some logs (Vulink Log if sonde is AT600/800) cannot be backed up to HydroVu. If you have any of these files, we will read them in here so that we are not missing any potential data. Once this has been run and data checked, comment this section out to avoid re-running it.
 
 ```{r}
 # log_files <- list.files(log_directory, pattern = "\\vulink.html$", full.names = TRUE)%>%
@@ -227,8 +248,12 @@ Commenting out since logs have already been processed
 
 
 # Raw Data Processing
+
+This is where we will read in all the pulled data from HydroVu and our parsed logs to then be tidied and checked.
+
 ## Load in and tidy the raw files
 
+Here we use `munge_api_data()` and `tidy_api_data()` functions from `ross.wq.tools` to read in and tidy the raw data files. Our output will include lists seperated by site-parameter combinations for easier processing downstream. Each list has DT_round (in UTC), site, parameter, units, mean, n_obs, spread, DT_join and flag columns and is summarized to a 15 minute interval
 ```{r}
 #Since we no longer have any virridy sites in the network, we can just use a normal munge!
 hv_data <- munge_api_data(api_dir = staging_directory,synapse_env = F)%>%
@@ -237,7 +262,7 @@ hv_data <- munge_api_data(api_dir = staging_directory,synapse_env = F)%>%
   keep(~nrow(.) > 0)
 
 tidy_data <- hv_data %>%
-  future_map(~tidy_api_data(api_data = .), .progress = TRUE, .options = set_furr_options) %>%  # the summarize interval default is 15 minutes
+  future_map(~tidy_api_data(api_data = .),.progress = TRUE, .options = set_furr_options) %>%  # the summarize interval default is 15 minutes
   keep(~!is.null(.))%>%
   # Only keep parameters we are interested in
   keep(~unique(.$parameter) %in% parameters)
@@ -245,12 +270,13 @@ tidy_data <- hv_data %>%
 ```
 ## Double check that pulls were successful
 
-We are giving it a quick look over to make sure there aren't any large data gaps (>1 day) in the data pulled, that all site names are being applied correctly and that we don't have duplicate data. 
+We are giving it a quick look over to make sure there aren't any large data gaps (>1 day) in the data pulled, that all site names are being applied correctly and that we don't have duplicate data. We are also adding in our field notes to the plots to make sure the data we have lines up with the periods we expect the sondes to be deployed and recording data. 
 
 ```{r}
 
 data_check_plots <- tidy_data%>%
   bind_rows()%>%
+  #Summarizing to an hour to speed up plotting
   mutate(DT_hourly = floor_date(DT_round, unit = "1 hour"))%>%
   group_by(site, parameter, DT_hourly)%>%
   summarize(hourly_med = median(mean,na.rm = T ))%>%
@@ -271,16 +297,18 @@ data_check_plots <- tidy_data%>%
            x = "Date",
            y = "Hourly Median Value", 
            color = "Sonde Status")
-  }
-  )
+  })
+#Plot
 walk(.x = data_check_plots, .f = print)
 
 ```
 
+If there are discrepancies in the data, double check the raw files downloaded from HydroVu and the log files to make sure everything looks correct. Ocassionally there are issues with the HydroVu download missing data and that can be rerun for an individual site. If there continue to be large gaps in data (>3 days) during deployment periods, check field notes or contact Sam Struthers for troubleshooting.
 
 # Apply Back-calibration as needed
 
 This uses the Shiny App (https://github.com/juandlt-csu/manual_calibration_verification) developed by Juan. We are essentially deciding when a sensor needs to be back-calibrated based on field notes and applying the back-calibration to the raw data before flagging. The majority of calibrations are fine as is but we want to "skip" over the bad ones. 
+
 
 ## Read in calibration data
 
@@ -294,7 +322,9 @@ This uses the Shiny App (https://github.com/juandlt-csu/manual_calibration_verif
 
 ```
 
-## Organize sensor data to match formatting
+## Organize sensor data to match formatting for `cal_join_sensor_calibration_data()`
+
+Data should be in a nested list structure: `sensor_data$years$site-parameter`
 
 ```{r}
 # sensor_data <- tidy_data %>%
@@ -308,6 +338,10 @@ This uses the Shiny App (https://github.com/juandlt-csu/manual_calibration_verif
 
 ## Join to calibration data and apply back-calibration
 
+This workflow follows the workflow outlined in the `ross.wq.tools` vignette on back calibration. 
+First, we join the calibration and sensor data so that each time instance has the slope and intercept info needed for back-calibration.
+Next, we prepare the calibration windows to split the data into calibration windows. 
+Lastly we loop through each calibration window to apply the back-calibration using `cal_back_calibrate()`.
 ```{r}
 
 sensor_calibration_data <- cal_join_sensor_calibration_data(
@@ -317,7 +351,7 @@ sensor_calibration_data <- cal_join_sensor_calibration_data(
 
 prepped_snsr_cal_data <- cal_prepare_calibration_windows(
   sensor_calibration_data_list = sensor_calibration_data
-)
+) 
 
 calibrated_data <- prepped_snsr_cal_data%>%
   map(function(year){
@@ -329,11 +363,14 @@ calibrated_data <- prepped_snsr_cal_data%>%
           })
       })
   })
+
 beepr::beep(1)
+
 ```
 
-
 ## Save to back calibrated folder
+
+This will become the "original" file in the shiny app for manual verification
 
 ```{r}
 
@@ -346,11 +383,13 @@ Take ^ file and run through the shiny app to verify back-calibration and make an
 ## Read in user corrected back-calibrated data
 
 ```{r}
-calibrated_data_final <- read_rds(here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","hydro_vu_pull","back_calibration", "calibrated_sensor_field_data_finalized_2025.rds"))[["2025"]]
+calibrated_data_final <- read_rds(here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","hydro_vu_pull","back_calibration", "calibrated_sensor_field_data_finalized_2025.rds"))[["2025"]] # Only extract the 2025 data
 
 ```
 
 ## Quick look at the back-calibrated data
+
+All of this should already have been double checked by the user but we just want to make sure everything looks good before proceeding to flagging. This plot will show the raw vs back-calibrated data ("final") with vertical lines indicating when the calibration events occurred.
 
 ```{r}
 
@@ -381,12 +420,14 @@ plots <- map(names(calibrated_data_final),
              })%>%
   set_names(names(calibrated_data_final))
 
-#plot plots with "pH" in the name
+#Typically easiest to go parameter-wise through the plots 
 plots[grepl("pH", names(plots))]
 
 ```
 
 ## Remove columns as needed
+
+Here we are removing columns that are not needed downstream to reduce memory usage. We are also merging back in the units, n_obs, spread and flag columns from the original tidy data. Temperature and Depth are not passed into the back-calibration process so we will grab those from the original tidy data as well. We will also add the column "back_cal_performed" to indicate whether a back-calibration was actually applied to the data or not.
 
 ```{r}
 
@@ -449,11 +490,11 @@ tidy_cal_data <- c(cal_corrected_data, non_cal_corrected_data)
 
 ```
 
-
 # Data Flagging
 
-```{r}
 ## Combine with field notes
+Here we read in our field notes and then join them to the calibrated data using `add_field_notes()`. We then generate summary statistics (slope, lag, etc) using `generate_summary_statistics()`.
+```{r}
 
 # Add the field note data to all of the data
 all_field_notes <- all_field_notes %>%
@@ -468,8 +509,9 @@ summarized_data <- combined_data %>%
 
 ```
 
-
 ## Single Sensor Flags
+
+This is the first round of flagging that is done on a per-site-parameter basis. Here we are applying functions to flag field visits, missing data, DO noise, repeating values, depth shifts, optical sensor drift, spec range violations and seasonal range violations. This can take ~5-15 min depending on data volume.
 
 ```{r}
 # Chunk the data for furrr
@@ -543,6 +585,8 @@ beepr::beep(1)
 
 ## Intrasensor flags
 
+Now we will apply flags that require multiple parameters from the same sensor to be present. This includes frozen water flagging (temp < 0C), unsubmerged flagging (depth < 0 or SC < 10) and sonde burial flagging (long-term DO noise). We also do an intersensor check to remove slope violation flags that occur concurrently with temp or depth violations to reduce overflagging. This can take ~5-15 min depending on data volume.
+
 ```{r}
 
 intrasensor_flags <- single_sensor_flags %>%
@@ -605,37 +649,40 @@ beepr::beep(1)
 
 ```
 
-### Let's temporarily save this data so i can remove everything else from memory
+### Let's temporarily save this data so we can remove everything else from memory
 
 ```{r}
 iwalk(intrasensor_flags_list, ~write_parquet(.x, here(flagged_temp_dir, paste0(.y, ".parquet"))))
 
 #remove everything other than intrasensor flags from memory
-rm(list=setdiff(ls(), c("intrasensor_flags_list", "flagged_directory")))
+rm(list=setdiff(ls(), c("base_folder", "intrasensor_flags_list", "flagged_directory")))
 #clean up memory
 gc()
 
 ```
 
 ## Applying network check
+
+The network check function `ross.wq.tools::network_check()` compares data across sites to identify when data is being overflagged and remove flags as needed. This step requires knowledge of the site order, which is read in from a YAML file and should be updated as sites change.
+
 ```{r}
 #Read in site order for year/pull
 site_order_2025 <- load_site_order( here("data","derived","auto_qaqc_files", "site_order", "site_order_2025.yml"))
 
 #Applying Network check (non parrallel so only map used)
 final_flags <- intrasensor_flags_list %>%
-  purrr::map(~network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list, site_order_arg = site_order_2025)) %>%
+  map(~network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list, site_order_arg = site_order_2025)) %>%
   rbindlist(fill = TRUE) %>%
   tidy_flag_column() %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
-  purrr::map(~add_suspect_flag(.)) %>%
+  map(~add_suspect_flag(.)) %>%
   rbindlist(fill = TRUE)
 
 v_final_flags <- final_flags%>%
-  dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA,
-                                   ifelse(auto_flag == "suspect data" & is.na(lag(auto_flag, 1)) & is.na(lead(auto_flag, 1)), NA, auto_flag))) %>%
-  dplyr::select(c("DT_round", "DT_join", "site", "parameter","mean_pre_cal", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit", "depth_change")) %>%
-  dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
+  mutate(auto_flag = ifelse(is.na(auto_flag), NA,
+                            ifelse(auto_flag == "suspect data" & is.na(lag(auto_flag, 1)) & is.na(lead(auto_flag, 1)), NA, auto_flag))) %>%
+  select(c("DT_round", "DT_join", "site", "parameter","mean_pre_cal", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit", "depth_change", "back_cal_performed")) %>%
+  mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
 
@@ -645,26 +692,30 @@ beepr::beep(1)
 ```
 
 ## Check final output
+
+Here we are making sure that all sites data were flagged and giving a quick look at the flagged data to make sure everything looks correct. With newer sites/parameters, we expect there to be over-flagging as the seasonal ranges/slopes are going to be very small. 
+
 ```{r}
-all_flagged_data <- v_final_flags%>%
+v_final_flags%>%
   bind_rows()%>%
-  split(f = list(.$site))
-
-
-map(all_flagged_data, function(df) {
-  ggplot(df, aes(x = DT_round, y = mean, color = auto_flag)) +
-    geom_point() +
-    facet_wrap(~parameter, scales = "free_y")+
-    labs(title = unique(df$site),
-         x = "Date",
-         y = "Mean Value")
-}
-) %>%
+  split(f = list(.$site))%>%
+  map(., function(df) {
+    ggplot(df, aes(x = DT_round, y = mean, color = auto_flag)) +
+      geom_point() +
+      facet_wrap(~parameter, scales = "free_y")+
+      labs(title = unique(df$site),
+           x = "Date",
+           y = "Mean Value")
+  }) %>%
   walk(plot)
 ```
 
 
 # Save Final Flagged Dataset
+
+We will save it into two places: 
+- Individually flagged site-parameter parquet files for posterity and comparison with manual verification to determine effectiveness of auto-flagging
+- A combined raw data parquet file for use in the manual verification shiny app. Once starting manual verification for the year, this will be used the as "uploaded" data to generate all the necessary files for the app. 
 
 ```{r}
 
@@ -672,8 +723,7 @@ map(all_flagged_data, function(df) {
 iwalk(v_final_flags, ~write_parquet(.x, here(flagged_directory,  paste0(.y, ".parquet"))))
 
 #saving our data into the "raw_data" folder of the manual verification folder for use in the shiny app
-write_parquet(v_final_flags%>%bind_rows(),
-              here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","in_progress","raw_data", "raw_data_2025.parquet"))
+write_parquet(v_final_flags%>%bind_rows(), here(base_folder,"in_progress","raw_data", "raw_data_2025.parquet"))s
 ```
 
 
