@@ -411,7 +411,7 @@ cal_corrected_data <- calibrated_data_final%>%
     }
     
     df%>%
-      select(,
+      select(
                 DT_round,
                 site,
                 parameter,
