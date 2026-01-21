@@ -876,14 +876,18 @@ server <- function(input, output, session) {
       # Add main site as grey points
       main_site_data <- all_sub_plot_data %>%
         filter(site == input$site,
-               parameter == param)%>%
-        mutate(mean_plotting = case_when(
-          final_status == "OMIT" ~ NA_real_,
-          TRUE ~ mean
-        ),
-        final_status = if_else(is.na(final_status), "PASS", final_status))
+               parameter == param)
 
       if (nrow(main_site_data) > 0) {
+        main_site_data <- main_site_data %>%
+          mutate(mean_plotting = case_when(
+            final_status == "OMIT" ~ NA_real_,
+            TRUE ~ mean
+          ),
+          final_status = case_when(
+            is.na(final_status) ~ "PASS",
+            TRUE ~ final_status))
+
           p <- p %>%
             add_markers(
               data = main_site_data,
