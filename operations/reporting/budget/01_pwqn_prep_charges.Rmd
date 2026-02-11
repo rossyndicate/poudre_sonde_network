@@ -15,7 +15,7 @@ Once these are done, you can go to the section "Run Above..." to tidy data for u
 
 ```{r}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
-month_select <- 7
+month_select <- 11
 year_select <- 2025
 ```
 
@@ -31,14 +31,10 @@ package_loader <- function(x) {
     library(x, character.only = TRUE)
   }
 }
-lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "yaml"), package_loader)
+lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "yaml", "here", "fcw.qaqc"), package_loader)
 rm(package_loader)
 # get wd
 dir <- getwd()
-
-#load functions
-source(paste0(dir,"/src/grab_mWater_sensor_notes.R"))
-source(paste0(dir,"/src/load_mWater_notes.R"))
 
 # Read in credentials
 mWater_creds <- read_yaml(here("creds", "mWaterCreds.yml"))
@@ -58,7 +54,7 @@ Update with new staff/salaries at the start of each year
 
 ###### ----- HOURLY RATES ------ #######
 #      UPDATE AS NEEDED               #
-hourly_rates <- read_csv(file = paste0(dir,"/data/sharing/budget/employee_hourly_rates.csv"), show_col_types = F)%>%
+hourly_rates <- read_csv(file = paste0(dir,"/docs/pwqn/docs/monthly_budget/employee_hourly_rates.csv"), show_col_types = F)%>%
   mutate(fringe = case_when(type == "Salary" ~ .286, 
                             type == "Hourly" ~ .012), 
     hourly_n_fringe = case_when(type == "Salary" ~ (rate) / 1230 , 
@@ -67,7 +63,7 @@ hourly_rates <- read_csv(file = paste0(dir,"/data/sharing/budget/employee_hourly
                                    type == "Hourly" ~  rate + (rate* fringe)))
 
 # Pull in personnel budget
-senior_staff <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_reporting.xlsx"), sheet = "staff_timeclock")%>%
+senior_staff <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "staff_timeclock")%>%
   mutate(month = month(date), 
          year = year(date))%>%
   # filter for months and year selected above and pwqn project
@@ -96,7 +92,7 @@ mutate(hourly_billed = round(hourly_billed, 2),
 
 # Pull in equipment budget
 
-equipment <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_reporting.xlsx"), sheet = "equipment_charges")%>%
+equipment <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "equipment_charges")%>%
   mutate(month = month(date), 
          year = year(date))%>%
   # filter for months and year selected above and pwqn project
@@ -113,7 +109,7 @@ equipment <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_repo
 
 # Pull in travel budget
 
-travel <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_reporting.xlsx"), sheet = "travel")%>%
+travel <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "travel")%>%
   mutate(month = month(date), 
          year = year(date))%>%
   # filter for months and year selected above and pwqn project
@@ -136,7 +132,7 @@ travel <- read_excel(path = paste0(dir,"/data/sharing/budget/pwqn_budget_reporti
 grab_monthly_notes <- function(full = F){
   
 # Pulling in the data from mWater
-mWater_data <- load_mWater_notes(creds = mWater_creds)
+mWater_data <- load_mWater(creds = mWater_creds)
 
 field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
   #fix dates
@@ -147,11 +143,11 @@ field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
   #filter for PWQN sites and the month and date desired
   filter(site %in% c("bellvue", "salyer", "udall","riverbend","cottonwood", "elc", "archery", "riverbluffs") & month == month_select & year == year_select)%>%
   #filter(site %in% c("tamasag", "legacy", "lincoln","timberline","prospect",  "boxelder", "archery", "riverbluffs") & month == month_select & year == year_select)%>% 
-  select(-rdo_cap_condition, -rdo_cap_replaced, -photos_downloaded, -sonde_employed, -wiper_working, -ph_junction_replaced, 
-         -last_site_visit, -sensor_pulled, -sensor_deployed, -month, -year, -field_season, -end_dt, -DT_join, -start_DT, -sensor_swapped_notes, -start_time_mst, -cal_report_collected)
+  select(date,crew, site, cals_performed, DT_round,visit_type, visit_comments)
 
 #find number of site visits
   monthly_visits <- field_notes%>%
+    filter(visit_type != "Water Sampling")%>%
     group_by(site)%>%
     summarise(visits = n())
     
@@ -199,11 +195,10 @@ all_field_notes <- grab_monthly_notes(full = T)%>%
   arrange(site, DT_round)
 
 # write field notes summary to csv for 02 script
-write_csv(field_summary, paste0(dir, "/data/sharing/budget/field_summary/field_summary_",month_select, "_", year_select,".csv"))
+write_csv(field_summary, paste0(dir, "/docs/pwqn/docs/monthly_budget/field_summary/field_summary_",month_select, "_", year_select,".csv"))
 
 
 rm(grab_monthly_notes)
-rm(grab_mWater_sensor_notes)
 print("Field Summary Complete and Job Code Data tidied")
 ```
 
@@ -231,13 +226,16 @@ all_data <- senior_staff %>%
          Description = description, `Hours x Rate (if applicable)` = hours_rate, Cost = cost)
 #view all data
 print(all_data)
+sum(all_data$Cost)
+print(field_summary)
+
 ```
 
 # Write to CSV for 02 script
 ```{r}
 
 # write to csv for 02 script
-write_csv(all_data, paste0(dir,"/data/sharing/budget/charges_final/charges_final_", month_select, "_", year_select,  ".csv"))
+write_csv(all_data, paste0(dir,"/docs/pwqn/docs/monthly_budget/charges_final/charges_final_", month_select, "_", year_select,  ".csv"))
 
 #clear all environment
 rm(list = ls())

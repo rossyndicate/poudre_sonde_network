@@ -1,7 +1,7 @@
 
 
 #### Server ####
-#testing PR - KH
+
 server <- function(input, output, session) {
   #### Not used in internal version ####
   #
@@ -85,25 +85,35 @@ server <- function(input, output, session) {
       tagList(
         textInput("timezone", "Enter your timezone:", value = "MST"),
         fileInput("data_upload", "Upload your data files:", multiple = FALSE,
-                  accept = c(".csv", ".xlsx", ".zip", ".feather", ".rds"))
+                  accept = c(".csv", ".xlsx", ".zip", ".feather", ".rds", ".parquet"))
       )
     } else {
       #Show regular UI if files are present
       tagList(
         DT::dataTableOutput("data_files_table"),
         # Directory selection
-        selectInput("directory", "Choose Directory:",
-                    choices = c("pre_verification", "intermediary"),
-                    selected = "pre_verification"),
-        selectInput("user", "Select User:",
-                    choices = c("SJS",  "KH","JDT", "KW", "BS"), selected = "SJS"),
-        # Site selection
-        selectInput("site", "Select Site:",
-                    choices = NULL),
-
-        # Main parameter selection (single selection)
-        selectInput("parameter", "Select Parameter:",
-                    choices = NULL),
+        fluidRow(
+          column(3,
+                 selectInput("directory", "Choose Directory:",
+                             choices = c("pre_verification", "intermediary"),
+                             selected = "pre_verification")
+          ),
+          # User Selection
+          column(3,
+                 selectInput("user", "Select User:",
+                             choices = c("SJS", "JDT", "KW", "BS"),
+                             selected = "SJS")
+          ),
+          # Site Selection
+          column(3,
+                 selectInput("site", "Select Site:", choices = NULL)
+          ),
+          # Parameter Selection
+          column(3,
+                 selectInput("parameter", "Select Parameter:", choices = NULL)
+          )
+        ),
+        br(),
 
         actionButton("load_data", "Load Data", class = "btn-primary"),
 
@@ -373,6 +383,7 @@ server <- function(input, output, session) {
     intermediary_data <- all_datasets()[["intermediary_data"]]
     verified_data <- all_datasets()[["verified_data"]]
 
+
     # user selected site parameter combo
     week_data <- selected_data() %>%
       filter(week == current_week())
@@ -384,10 +395,9 @@ server <- function(input, output, session) {
       filter(DT_round >= week_min_day - days(2) & DT_round <= week_max_day + days(2))
     #remove data from the week
 
-
-    # min(week_data$DT_round) is in week_min_day object, should use that instead - JD
-    year_week <- paste0(as.character(year(min(week_data$DT_round, na.rm = T))) ," - ", as.character(min(week(week_data$DT_round))))
-    flag_day <- min(week_data$DT_round)
+    #Setup year week (eg "2024 - 13")
+    year_week <- paste0(as.character(year(week_min_day)) ," - ", current_week())
+    flag_day <- week_min_day
 
 
     #This isn't being sourced correctly in the shiny app
@@ -485,7 +495,7 @@ server <- function(input, output, session) {
           filter(final_decision != "OMIT")
 
         week_plus_data <- week_plus_data %>%
-          filter(final_status != "OMIT"| is.na(final_status))
+          filter(!brush_omit)
       }
       #Remove flagged data if user desired
       if(input$remove_flag){
@@ -493,18 +503,17 @@ server <- function(input, output, session) {
           filter(final_decision != "FLAGGED")
 
         week_plus_data <- week_plus_data %>%
-          filter(final_status != "FLAGGED"| is.na(final_status))
+          filter(final_status != "FLAGGED" | is.na(final_status))
       }
+
       week_min_check <- week_plus_data %>%
         filter(week < current_week())
 
       week_max_check <- week_plus_data %>%
         filter(week > current_week())
 
-
-
       # Create plot for preview of weekly decision
-      # actually building plot, tweaks will happen here too - JD
+      # actually building plot
       p <- ggplot(week_choice_data, aes(x = DT_round))
 
       if (nrow(week_min_check) > 0) {
@@ -520,6 +529,7 @@ server <- function(input, output, session) {
 
         p <- p + annotate(geom = "rect", xmin = week_plus_max$xmin, xmax = week_plus_max$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
       }
+
       p <- p +
         # Add relevant sites
         map(relevant_sondes, function(sonde_data) {
@@ -528,28 +538,40 @@ server <- function(input, output, session) {
 
           y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
 
-          # Add isolated point identification, huh? -JD
-          add_data_with_isolated <- add_data %>%
+          # Add interpolation for a hour to try to improve isolated point issues
+          # If we have missing data for a single point, the line breaks and if there is no point on the other side
+          # of it is just disappears
+          # Adding in a na interpolation of 3 points (45 min) so that we can still "see" the trends of other sites that might have alot
+          # of flags
+          add_data_with_interpolation <- add_data %>%
             arrange(site, DT_round) %>%
-            group_by(site) %>%
             mutate(
-              is_isolated = is.na(lag(.data[[y_column]])) & is.na(lead(.data[[y_column]])) & !is.na(.data[[y_column]])
-            )
+              !!sym(y_column) := zoo::na.approx(
+                x = as.numeric(DT_round),
+                object = !!sym(y_column),
+                maxgap = 3, # interpolate over 45 min
+                na.rm = FALSE
+              )
+            ) %>%
+            ungroup()
 
-          # Return a list of both geom_line and geom_linerange
+          # Return a list of both geom_line
           list(
-            geom_line(data = add_data_with_isolated,
+            geom_line(data = add_data_with_interpolation,
                       aes(x = DT_round, y = .data[[y_column]], color = site),
-                      linewidth = 1, na.rm = TRUE),
-            geom_linerange(data = filter(add_data_with_isolated, is_isolated),
-                           aes(x = DT_round, ymin = .data[[y_column]] - 0.1, ymax = .data[[y_column]] + 0.1, color = site),
-                           size = 0.5)
+                      linewidth = 1, na.rm = TRUE)
           )
         }) + #plot other sites
-        geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2)+ #plot main site with colors matching final decision
-        # this is where plotting is getting weird maybe -JD
-        geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean, fill = final_status), shape = 21, stroke = 0, size = 1.5, alpha = 0.5)+ #add two extra days on the side
-        #add a grey box from the end of week_data to the end of week plus data on both sides of week data
+        geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2) #plot main site with colors matching final decision
+
+      #if incl_ex_days = T, then add in the extra data as points
+      if(input$incl_ex_days){
+        p <- p +
+          geom_point(data = week_plus_data%>%filter(week != current_week()),
+                     aes(y = mean, fill = final_status), shape = 21, stroke = 0, size = 1.5, alpha = 0.5)
+      }
+      # Do final styling
+      p <- p +
         scale_fill_manual(values = final_status_colors, na.value = "grey")+ #set fill colors to weekly status colors
         scale_color_manual(values = setNames(site_color_combo$color, site_color_combo$site))+ #set other colors for add sites
         labs(
@@ -559,7 +581,6 @@ server <- function(input, output, session) {
           fill = "Preview of Final Decision",
           color = "Sites" )+
         theme_bw(base_size = 14)
-
 
       if(input$incl_thresholds){
         p <- add_threshold_lines(plot = p,
@@ -598,40 +619,38 @@ server <- function(input, output, session) {
 
       if(input$remove_omit){
         week_data <- week_data %>%
-          filter(!brush_omit)
+          filter(!brush_omit) # remove omitted data
 
         week_plus_data <- week_plus_data %>%
-          filter(final_status != "OMIT"| is.na(final_status))
+          filter(!brush_omit)
       }
       if(input$remove_flag){
         week_data <- week_data %>%
-          filter(is.na(user_flag) | brush_omit) # remove flagged data unless it is omitted - why keep omitted data?
+          filter(is.na(user_flag) & !brush_omit) # remove flagged data unless it is omitted - why keep omitted data?
 
         week_plus_data <- week_plus_data %>%
-          filter(final_status != "FLAGGED"| is.na(final_status))
+          filter( is.na(user_flag) & !brush_omit)
       }
-
-
 
       p <-ggplot(week_data, aes(x = DT_round))
 
-
+      #Adding in extra days (+- 2 days on each side)
       if(input$incl_ex_days){
-
+        # check to make sure there is data from last week
         week_min_check <- week_plus_data %>%
           filter(week < current_week())
-
+        #check to see if there is data from next week
         week_max_check <- week_plus_data %>%
           filter(week > current_week())
 
-        if (nrow(week_min_check) > 0) {
+        if (nrow(week_min_check) > 0) { #if there is data from last week, add in the grey box for the last X days
 
           week_plus_min <- week_min_check %>%
             summarise(xmin = min(DT_round), xmax = max(DT_round))
 
           p <- p + annotate(geom = "rect", xmin = week_plus_min$xmin, xmax = week_plus_min$xmax, ymin = -Inf, ymax = Inf, color = "transparent", fill = "grey", alpha = 0.2)
         }
-        if (nrow(week_max_check) > 0) {
+        if (nrow(week_max_check) > 0) { #if there is data for next week, add in the grey box for the next X days
           week_plus_max <- week_max_check %>%
             summarise(xmin = min(DT_round), xmax = max(DT_round))
 
@@ -650,31 +669,38 @@ server <- function(input, output, session) {
           add_data <- sonde_data[[1]]
           data_source <- sonde_data[[2]]
 
+          # Deciding which column to use based on the verification status
+          # Unverified data should use "mean" and verified data should use "mean_verified"
           y_column <- ifelse(data_source %in% c("all_data", "pre_verification_data"), "mean", "mean_verified")
 
-          # Add isolated point identification
-          add_data_with_isolated <- add_data %>%
+          # Add interpolation for a hour to try to improve isolated point issues
+          # If we have missing data for a single point, the line breaks and if there is no point on the other side
+          # of it is just disappears
+          # Adding in a na interpolation of 3 points (45 min) so that we can still "see" the trends of other sites that might have alot
+          # of flags
+          add_data_with_interpolation <- add_data %>%
             arrange(site, DT_round) %>%
-            group_by(site) %>%
             mutate(
-              is_isolated = is.na(lag(.data[[y_column]])) & is.na(lead(.data[[y_column]])) & !is.na(.data[[y_column]])
-            )
+              !!sym(y_column) := zoo::na.approx(
+                x = as.numeric(DT_round),
+                object = !!sym(y_column),
+                maxgap = 3, # interpolate over 45 min
+                na.rm = FALSE
+              )
+            ) %>%
+            ungroup()
+
           #filter to just single week if incl_ex_days is false
           if(!input$incl_ex_days){
-            add_data_with_isolated <- add_data_with_isolated %>%
+            add_data_with_interpolation <- add_data_with_interpolation %>%
               filter(week == current_week())
           }
 
           # Return a list of both geom_line and geom_linerange
           list(
-            geom_line(data = add_data_with_isolated,
+            geom_line(data = add_data_with_interpolation,
                       aes(x = DT_round, y = .data[[y_column]], color = site),
-                      linewidth = 1, na.rm = TRUE),
-            geom_crossbar(data = filter(add_data_with_isolated, is_isolated),
-                          aes(x = DT_round, y = .data[[y_column]],
-                              ymin = .data[[y_column]] - adjustment_value , ymax = .data[[y_column]] + adjustment_value,
-                              color = site),
-                          width = 0.5, size = 0.5)
+                      linewidth = 1, na.rm = TRUE)
           )
         })
 
@@ -768,7 +794,7 @@ server <- function(input, output, session) {
     week_max_day = max(week_data$DT_round, na.rm = T)
 
 
-    year_week <- paste0(as.character(year(min(week_data$DT_round))) ," - ", as.character(min(week(week_data$DT_round))))
+    year_week <- paste0(as.character(year(week_min_day)), " - ", current_week())
     all_sub_sites <- c(input$site, input$sub_sites)
     #picking the correct name of the data frame
     retrieve_relevant_data_name <- function(df_name_arg, year_week_arg = NULL) {
@@ -782,10 +808,7 @@ server <- function(input, output, session) {
       if (df_name_arg %in% names(pre_verification_data) & any(year_week_arg %in% pre_verification_data[[df_name_arg]]$y_w)) {
         return("pre_verification_data")
       }
-
-
     }
-
 
     # Create individual plots for each sub parameter
     all_sub_plot_data <- map_dfr(input$sub_parameters, function(param) {
@@ -845,8 +868,6 @@ server <- function(input, output, session) {
 
     plots <- map(input$sub_parameters, function(param){
 
-
-
       #if(param == max_param){
 
       # Create plotly plot
@@ -858,19 +879,30 @@ server <- function(input, output, session) {
                parameter == param)
 
       if (nrow(main_site_data) > 0) {
-        p <- p %>%
-          add_markers(
-            data = main_site_data,
-            x = ~DT_round,
-            y = ~mean_verified,
-            marker = list(color = "grey", size = 8),
-            name = input$site,
-            legendgroup = input$site,
-            showlegend = param == max_param
+        main_site_data <- main_site_data %>%
+          mutate(mean_plotting = case_when(
+            final_status == "OMIT" ~ NA_real_,
+            TRUE ~ mean
+          ),
+          final_status = case_when(
+            is.na(final_status) ~ "PASS",
+            TRUE ~ final_status))
+
+          p <- p %>%
+            add_markers(
+              data = main_site_data,
+              x = ~DT_round,
+              y = ~mean_plotting,
+              # Mapping color to the final_status column
+              color = ~final_status,
+              # Defining the specific hex or name colors for those levels
+              colors = c( "PASS" = "gray", "FLAGGED" = "orange"),
+              marker = list(size = 8),
+              name = input$site,
+              legendgroup = input$site,
+              showlegend = (param == max_param)
             # to not have extra legends using plotly, one plot needs to have a legend, pick the one with the most sites (max_param)
             #otherwise it is the exact same as the other param plots
-
-            #showlegend = TRUE
           )
       }
 
@@ -883,7 +915,19 @@ server <- function(input, output, session) {
         # Get site colors using joins
         sub_site_data_with_colors <- sub_site_data %>%
           left_join(site_color_combo, by = "site") %>%
-          replace_na(list(color = "red"))  # fallback color
+          replace_na(list(color = "red"))%>%  # fallback color
+          #Adding in interpolation where mean_verified is NA so that we can have more continous lines in the plotsq
+            arrange(site, DT_round) %>%
+            group_by(site)%>%
+            mutate(
+              mean_verified = zoo::na.approx(
+                x = as.numeric(DT_round),
+                object = mean_verified,
+                maxgap = 3, # interpolate over 45 min
+                na.rm = FALSE
+              )
+            ) %>%
+            ungroup()
 
         # Add lines for each sub site using walk
         sub_site_data_with_colors %>%
@@ -1179,10 +1223,10 @@ server <- function(input, output, session) {
 
   # UI for weekly decision radio buttons
   output$weekly_decision_radio <- renderUI({
-
+    #filtering data to selected week
     week_data <-  selected_data()%>%
       filter(week == current_week())
-
+    #create a button to show weeekly decision options
     radioButtons(
       "weekly_decision",
       label = "Make Weekly Decision:",
@@ -1240,6 +1284,17 @@ server <- function(input, output, session) {
           input$weekly_decision == "oa"  ~ "OMIT",
           # Omit any user selected omit data (assuming AA was not the choice)
           input$weekly_decision != "aa" & brush_omit ~ "OMIT"),
+        # update brush omit to T if needed (OA, OF) and to F as needed
+        brush_omit = case_when(
+          # AA: Pass All (remove any omits)
+          input$weekly_decision  == "aa"  ~ FALSE,
+          #OA: Omit All
+          input$weekly_decision == "oa"  ~ TRUE,
+          #OF: Omit Flagged
+          input$weekly_decision == "of" & !is.na(user_flag) & !brush_omit ~ TRUE,
+          #Otherwise keep the original brushed decision
+          TRUE ~ brush_omit
+        ),
         user_flag = case_when(
           #removing all flags if user selects accept all
           input$weekly_decision == "aa" ~ NA,

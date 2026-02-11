@@ -1,0 +1,480 @@
+---
+title: "STREAM_data_pub"
+output: html_document
+---
+
+# Setup
+
+```{r}
+
+library(here)
+library(tidyverse)
+library(ggplot2)
+library(plotly)
+library(ross.wq.tools)
+library(sf)
+library(arrow)
+library(cdssr)
+library(yaml)
+library(dataRetrieval)
+`%nin%`  = Negate(`%in%`)
+```
+
+This script will be used to generate datasets for the STREAM project (see emails from Admin Husic). All the files will be saved in the folder:`docs/pwqn/sharing/STREAM`. Templates sent by the Husic Lab are available at `docs/pwqn/STREAM/template_drive`. 
+At each file type (metadata, sensor data, grab data), we will read in the template to understand formatting, collate our own data, check the out outputs to make sure additional data does not need to be removed or transformed, and then save to the appropriate CSV files.
+
+```{r}
+list.files(path = here("docs", "pwqn","STREAM", "template_drive"), full.names = T)
+```
+
+
+# Generate metadata files
+
+### Read in template
+
+```{r}
+meta_template <- read_csv(here("docs", "pwqn","STREAM", "template_drive", "metadata_template.csv"))
+head(meta_template)
+
+
+contact = "Sam Struthers"
+contact_email = "sstrut00@colostate.edu"
+MST_UTC = "UTC-7"
+State = "Colorado"
+sensors = "In-Situ Inc AquaTroll"
+cont_inst = "Colorado State University - ROSSyndicate"
+ross_metadata_raw <- read_csv(file = here("data", "raw", "spatial", "metadata", "water_sampling_sites.csv"))
+
+
+sites <- c( # Upper Sites
+  "joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbr","pman",  "pbd", 
+  #Lower Sites
+  "bellvue", "salyer", "udall", "riverbend",  "cottonwood", "elc", "archery", "riverbluffs", 
+  # Lower Tribs
+  "springcreek", "boxcreek")
+ross_metadata <- ross_metadata_raw%>%
+  filter(site_code != "ELC")%>%
+  select(Station_ID = site_code, 
+         Station_Name = Site_Name,
+         Latitude = Lat,
+         Longitude = Long)%>%
+  mutate(Station_ID = tolower(Station_ID))%>%
+  fix_site_names(., site_col = "Station_ID")%>%
+  filter(Station_ID %in% sites)%>%
+  mutate(Contact_Name = contact,
+         Contact_Email = contact_email,
+         MST_UTC = MST_UTC,
+         Contributing_Institution = cont_inst,
+         State = State,
+         Sensors_Used = sensors)%>%
+  mutate(Station_Name = case_when(Station_Name == "Timberline" ~ "Poudre below Timberline Rd",
+                                  Station_Name == "Poudre at Prospect" ~ "Poudre at Prospect Rd Bridge",
+                                  Station_Name == "ELC" ~ "Poudre below Environmental Learning Center",
+                                  Station_Name == "Chambers Outflow" ~ "Joe Wright Creek at Chambers Lake Outflow", 
+                                  Station_Name == "Joe Wright Outflow/Chambers Inflow" ~ "Joe Wright Creek at HWY 14 Bridge",
+                                  Station_Name == "Joe Wright Inflow" ~ "Joe Wright Creek Above Joe Wright Reservoir",
+                                  Station_Name == "Pennock Creek" ~ "Pennock Creek at Signal Mountain Trail",
+                                  Station_Name == "Poudre below Bellvue Diversion" ~ "Poudre at Canyon Mouth Gage",
+                                  Station_Name == "South Fork of the Poudre" ~ "South Fork of the Poudre at Pingree Park Rd Bridge",
+                                  Station_Name == "Poudre at Rustic" ~ "Poudre below Rustic", 
+                                  TRUE ~ Station_Name), 
+         Q_source = case_when(Station_ID == "chd" ~ "Colorado DWR Gage: JWCCHACO", 
+                              Station_ID == "pbd" ~ "Colorado DWR Gage: CLAFTCCO", 
+                              Station_ID == "riverbluffs" ~ "Colorado DWR Gage: CLARIVCO", 
+                              Station_ID == "udall" ~ "USGS Gage: 06752260",
+                              Station_ID == "elc" ~ "USGS Gage: 06752280",
+                              TRUE ~ NA_character_))
+                              
+spatial_meta <- ross_metadata %>%
+  st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326)
+mapview::mapview(spatial_meta, zcol = "Station_ID")
+
+```
+
+### Calculating upstream catchment area
+
+Using StreamStats Batch delineator( https://streamstats.usgs.gov/ss/) since it is going to be much faster/easier than writing our own script
+
+```{r}
+# save to shp file
+st_write(spatial_meta, here("docs", "pwqn","STREAM", "stream_stats", "STREAM_sites.shp") , delete_layer = TRUE)
+
+zip(zipfile = here("docs", "pwqn","STREAM", "stream_stats", "streamstats_upload.zip"), 
+    files = list.files(here("docs", "pwqn","STREAM", "stream_stats"), pattern = "STREAM_sites", full.names = TRUE),
+    extras = "-j")
+
+# Upload to StreamStats Batch Delineator and download results
+stream_stats_dwn <- list.files(here("docs", "pwqn","STREAM","stream_stats", "stream_stats_dwn"), pattern = ".gdb$", full.names = TRUE)
+#See Layers in the geodatabase
+st_layers(dsn = stream_stats_dwn)
+
+#read in the Catchment Shapefile (GlobalWatershed) and the Point shapefile (GlobalWatershedPoint)
+
+all_sites <- st_read(stream_stats_dwn, layer = "GlobalWatershed") %>%
+  select(Station_ID = Name, 
+         Upstream_Catchment_Area_sqmi = DRNAREA, 
+         geometry = SHAPE)
+
+
+if (st_is_longlat(all_sites)) {
+  message("Data is in Lat/Lon. Transforming to Albers Equal Area for accurate area calc")
+  all_sites_projected <- st_transform(all_sites, "ESRI:102008")
+} else {
+  all_sites_projected <- all_sites
+}
+
+all_sites <- all_sites %>%
+  mutate(
+    # Calculate area from the projected version to be safe
+    calc_area_km2 = as.numeric(st_area(all_sites_projected) %>% units::set_units("km^2")),
+    # Convert existing sqmi to km2
+    Upstream_Catchment_Area_sqkm = Upstream_Catchment_Area_sqmi * 2.58999,
+    # Fill Stream Stats NAs with calculated area
+    Upstream_Catchment_Area_sqkm = coalesce(Upstream_Catchment_Area_sqkm, calc_area_km2)
+  ) %>%
+  select(-calc_area_km2)
+
+all_sites_point <- st_read(stream_stats_dwn, layer = "GlobalWatershedPoint")%>% #global watershed layer is needed for upstream catchment area
+  select(Station_ID = Name, geometry = SHAPE)
+
+#check outputs
+all_sites %>% 
+  split(.$Station_ID) %>% 
+  map(function(site_polygon) {
+
+    current_id <- unique(site_polygon$Station_ID)
+    
+    site_point <- all_sites_point %>%
+      filter(Station_ID == current_id)
+    
+    mapview(site_polygon, layer.name = paste("Catchment:", current_id)) + 
+      mapview(site_point, layer.name = "Pour Point", col.regions = "red")
+  })
+
+
+
+```
+
+
+
+## Save Metadata CSVs
+```{r}
+
+#Calculate upstream catchment area in square kilometers
+ross_metadata_final <- all_sites %>%
+  st_drop_geometry()%>%
+  left_join(ross_metadata, ., by = "Station_ID")%>%
+  select(Contact_Name, Contact_Email, Station_ID, Station_Name, Latitude, Longitude, Upstream_Catchment_Area_sqkm,
+         MST_UTC, Contributing_Institution, State, Sensors_Used, Q_source)
+
+write_csv(ross_metadata_final, here("docs", "pwqn","STREAM","ross_upload", "ROSS_STREAM_metadata.csv"))
+```
+
+# Generate sensor data files
+
+### Read in Template
+
+```{r}
+sensor_template <- read_csv(here("docs", "pwqn","STREAM", "template_drive", "Station123_timeseries_template.csv"))
+
+names(sensor_template)
+#Parameters we will have:
+parameters_avail <- c("DateTime_Local", "WTemp_C", "SpC_uScm","DO_mgL", "pH", "Turb_NTU", "fDOM_RFU", "Chla_RFU", "Q_m3s")
+
+```
+
+
+## Read in all collected sensor data
+
+We should be able to use the data generated from the `generate_ross_sensor_data` function in the `upper_clp_dss` repo. 
+This will generate a file to `data/collated/sensor/compiled_all_sensor_data.parquet` that has all the data we need.
+```{r}
+input_all_sensor_data_path = list.files(here("data", "collated", "sensor"),
+                                            full.names = T, pattern = "compiled_all_sensor_data") %>%
+      utils::tail(1)
+
+all_sensor_data <- read_parquet(input_all_sensor_data_path)%>%
+  filter(site %nin% c("pman_fc", "pbr_fc", "mtncampus"))%>%
+  filter(parameter %nin% c("Depth", "ORP"))%>% #remove parameters we don't need generally
+  #remove archery virridy Chl-a, Temperature and SC since we have them on our sonde
+  filter(!(site == "archery_virridy" & parameter  %in% c("Chl-a Fluorescence", "Temperature", "Specific Conductivity")))%>%
+  #remove riverbend virridy SC, Turb and  Temperature  since we have them on our sonde
+  filter(!(site == "riverbend_virridy" & parameter  %in% c("Turbidity", "Temperature", "Specific Conductivity")))%>%
+  #remove cottonwood virridy Turbidity, Specific Conductivity  and  Temperature  since we have them on our sonde
+  filter(!(site == "cottonwood_virridy" & parameter  %in% c("Turbidity", "Temperature", "Specific Conductivity")))%>%
+  #Now that we removed the virridy duplicates, remove "virridy" from the name
+  mutate(site = gsub("_virridy", "", site))
+         
+#check what site & parameter combos we have remaining
+all_sensor_data %>%
+  distinct(site, parameter)%>%
+  arrange(site, parameter)%>%
+  print(n = Inf)
+         
+         
+# We are not allowed to use "No estimated or interpreted values to be included." in the STREAM data, so we will just use the mean, clean_flag and mean_cleaned to determine what to keep
+
+  
+all_sensor_data_clean <- all_sensor_data %>%
+  mutate(final_value = mean_cleaned, 
+         final_flag = clean_flag, 
+         final_status = case_when(status == "auto_flagged" & !is.na(mean_cleaned) ~ "P",
+                                  status == "auto_flagged" & is.na(mean_cleaned) ~ "R",
+                                  is.na(mean_cleaned) ~ "R",
+                                  status == "in_progress_verified" & !is.na(mean_cleaned) ~ "A"))%>%
+  select(site, DateTime_Local = DT_round, parameter, final_value, final_flag, final_status)
+
+```
+
+
+
+## Check over data with plots
+
+```{r}
+all_sensor_data_clean %>%
+  filter( site == "riverbend")%>%
+  ggplot(aes(x = DateTime_Local, y = final_value, color = final_status))+
+  geom_point()+
+  geom_line()+
+  facet_wrap(~parameter, scales = "free_y")
+
+```
+
+
+## Pull in relevant flow data, add site names and bind to all sensor data
+
+We will pull in data from CDWR using the `CDSSR` package for the three mainstem sites with CDWR gages (chd, pbd, riverbluffs) and from USGS for the two mainstem sites with USGS gages (udall, elc). We will want to keep it at the 15 min timestep like our sensor data. 
+
+```{r}
+
+cdwr_sites <- tibble(abbrev = c(  "JWCCHACO", "CLAFTCCO",  "CLARIVCO"),
+                site = c( "chd", "pbd","riverbluffs"))
+#Read in API Key since we will be pulling in a good amount of data
+cdwr_creds <- read_yaml(here("creds", "CDWRCreds.yml"))$api_key
+
+cdwr_flow_data <- map2(cdwr_sites$abbrev, cdwr_sites$site, function(abbrev, current_site){
+  # getting the date range for the current site from the sensor data
+  site_sensor_data <- all_sensor_data_clean%>%
+    filter(site == current_site)
+  
+  min_date <- min(site_sensor_data$DateTime_Local, na.rm = T) - days(10)
+  max_date <- max(site_sensor_data$DateTime_Local, na.rm = T) + days(10)
+
+  #Pulling from CDWR using CDSSR
+  get_telemetry_ts(abbrev = abbrev, 
+                 parameter = "DISCHRG", 
+                 start_date = as.Date(min_date)- days(1),
+                 end_date = as.Date(max_date)+ days(1),
+                 timescale = "raw", api_key = cdwr_creds
+                )%>%
+    #Cleaning up DTs
+    mutate(DT = ymd_hms(meas_date_time, tz = "America/Denver"), 
+           DT_MST = with_tz(DT, tzone = "MST"), 
+           DT_round = floor_date(DT_MST, unit = "15 mins"))%>%
+    #ensuring we only have one value per 15 min period
+    group_by(DT_round)%>%
+    summarize(flow_cfs = mean(meas_value, na.rm = T),
+              flag = ifelse(is.na(flag_b), "A", "R"))%>%
+    ungroup()%>%
+    mutate(station_abbrev = abbrev)
+  
+}) %>%
+  bind_rows()%>%
+  filter(!is.na(DT_round))
+
+usgs_sites <- tibble(site_no = c(  "06752260", "06752280"),
+                site = c("udall","elc"))
+
+usgs_flow_data <- map2(usgs_sites$site_no,usgs_sites$site, function(site_no, current_site){
+    # getting the date range for the current site from the sensor data
+  site_sensor_data <- all_sensor_data_clean%>%
+    filter(site == current_site)
+  
+  min_date <- min(site_sensor_data$DateTime_Local, na.rm = T) - days(10)
+  max_date <- max(site_sensor_data$DateTime_Local, na.rm = T) + days(10)
+
+  #Pulling from DataRetrieval package
+   readNWISuv(siteNumbers = site_no, 
+             parameterCd = "00060", # Q param code
+             startDate = as.Date(min_date) - days(1), 
+             endDate = as.Date(max_date) + days(1)) %>%
+    renameNWISColumns() %>%
+    mutate(
+      # dateTime is returned in UTC by default
+      DT = dateTime,
+      DT_MST = with_tz(DT, tzone = "MST"), #converting to MST
+      DT_round = floor_date(DT_MST, unit = "15 mins")
+    ) %>%
+    group_by(DT_round) %>%
+    summarize(
+      flow_cfs = mean(Flow_Inst, na.rm = TRUE),
+      # USGS usually uses cd codes; mapping "A" (Approved) to "P" 
+      # and others to "R" to mimic your flag logic
+      flag = ifelse(grepl("A", Flow_Inst_cd), "A", "P")
+    ) %>%
+    ungroup() %>%
+    mutate(station_abbrev = site_no)
+  
+}) %>%
+  bind_rows()
+
+
+meta <- sites %>%
+  bind_rows(usgs_sites %>%  rename(abbrev = site_no) )
+
+flow_data_cleaned <- usgs_flow_data%>%
+  distinct(DT_round, flow_cfs, station_abbrev, .keep_all = T)%>%
+  bind_rows(cdwr_flow_data)%>%
+  left_join(meta, by = c("station_abbrev" = "abbrev"))%>%
+  select(site, DateTime_Local = DT_round, final_value = flow_cfs, final_status = flag)%>%
+  mutate(parameter = "Discharge", 
+         final_value = final_value * 0.0283168) #convert cfs to m3/s)
+  
+ggplot(flow_data_cleaned, aes(x = DateTime_Local, y = final_value, color = final_status))+
+  geom_point()+
+  facet_wrap(~site, scales = "free_y")
+
+sensor_final <- all_sensor_data_clean%>%
+  bind_rows(flow_data_cleaned)
+
+```
+
+## Transform to match STREAM formatting requirements
+
+```{r}
+head(sensor_template)
+
+sensor_data_stream_format <- sensor_final %>%
+  mutate(parameter = case_when(parameter == "Temperature" ~ "WTemp_C", 
+                               parameter == "Specific Conductivity" ~ "SpC_uScm" ,
+                               parameter == "DO" ~ "DO_mgL",
+                               parameter == "pH" ~ "pH",
+                               parameter == "Turbidity" ~ "Turb_NTU" ,
+                               parameter ==  "FDOM Fluorescence" ~  "fDOM_RFU" ,
+                               parameter == "Chl-a Fluorescence" ~ "Chla_RFU",
+                               parameter == "Discharge" ~ "Q_m3s",
+                               TRUE ~ parameter))%>%
+  filter(!parameter %nin% parameters_avail) %>% #filter to only parameters we have in the template
+  filter(final_status != "R")%>% #remove rejected data
+  pivot_wider(
+    names_from = parameter, 
+    values_from = c(final_value, final_status),
+    names_glue = "{ifelse(.value == 'final_status', 'Flag_', '')}{parameter}"
+  ) %>%
+  arrange(site, DateTime_Local)%>%
+  select(-final_flag)
+
+```
+
+## Save to CSVs
+
+```{r}
+
+#write out a csv for each site
+unique_sites <- unique(sensor_data_stream_format$site)
+
+walk(unique_sites, function(current_site) {
+  # Filter and prep data
+  site_data <- sensor_data_stream_format %>%
+    filter(site == current_site) %>%
+    select(-site)%>%
+    mutate(DateTime_Local = format(DateTime_Local, "%Y/%m/%d %H%M"))%>%
+    select(DateTime_Local,Q_m3s, Flag_Q_m3s, WTemp_C, Flag_WTemp_C, SpC_uScm, Flag_SpC_uScm, DO_mgL,
+           Flag_DO_mgL, pH, Flag_pH, Turb_NTU,  Flag_Turb_NTU, fDOM_RFU,Flag_fDOM_RFU, Chla_RFU,  Flag_Chla_RFU)
+
+  output_filename <- str_glue("{current_site}_timeseries.csv")
+  
+  write_csv(site_data, here("docs", "pwqn", "STREAM", "ross_upload", output_filename))
+})
+```
+
+
+# Generate Grab Sample data files
+
+### Read in Template
+
+```{r}
+grab_template <- read_csv(here("docs", "pwqn","STREAM", "template_drive", "Station123_grabsamples_template.csv"))
+head(grab_template)
+#parameters we will have:
+names(grab_template)
+parameters_avail_grab <- c("DateTime_Local", "TSS_mgL", "NO3_mgNL", "DOC_mgL", "PO4_mgL", "Cl_mgL", "Chla_ugL")
+
+```
+
+
+## Read in most recent Zenodo pub from raw folder
+
+```{r}
+chem_raw <- read_rds(here("data", "raw", "chem","ross_clp_chem","v2025.11.14","data", "cleaned/CLP_chemistry_up_to_20251114.rds"))
+```
+
+## Organize to match formatting
+
+
+```{r}
+chem_clean <- chem_raw %>%
+  mutate(Station_ID = tolower(site_code))%>%
+  fix_site_names(site_col = "Station_ID")%>%
+  mutate(SSC_mgL = NA, 
+         PC_ugL = NA, 
+         NO3_mgNL = NO3 / 4.427)%>% # converting from NO3 (mg/L) to NO3-N (mg/L)
+  select(Station_ID, DateTime_Local =  DT_mst, SSC_mgL, TSS_mgL = TSS, NO3_mgNL, DOC_mgL = DOC, PO4_mgL = PO4, Cl_mgL = Cl, Chla_ugL = ChlA, PC_ugL  )%>%
+  filter(!is.na(DateTime_Local))%>%
+  filter(Station_ID %in% unique(sensor_data_stream_format$site))
+```
+
+## Check out available data
+
+```{r}
+chem_clean %>%
+  group_by(Station_ID) %>%
+  summarize(n_samples = n(),
+            min_date = min(DateTime_Local, na.rm = T),
+            max_date = max(DateTime_Local, na.rm = T))%>%
+  arrange(Station_ID)%>%
+  print(n = Inf)
+
+parameters <- c( "TSS_mgL", "NO3_mgNL", "DOC_mgL", "PO4_mgL", "Cl_mgL", "Chla_ugL")
+
+map(parameters, function(current_param) {
+  chem_clean %>%
+    ggplot(aes(x = DateTime_Local, y = .data[[current_param]]))+
+    geom_point()+
+    facet_wrap(~Station_ID, scales = "free_y")
+})
+
+```
+
+## Save to CSVs
+
+```{r}
+unique_sites <- unique(chem_clean$Station_ID)
+
+walk(unique_sites, function(current_site) {
+  
+  sensor_record <- sensor_data_stream_format %>%
+    filter(site == current_site)
+  
+  min_date = min(sensor_record$DateTime_Local, na.rm = T) - days(10)
+  max_date = max(sensor_record$DateTime_Local, na.rm = T) + days(10)
+  
+  # Filter and prep data
+  site_data <- chem_clean %>%
+    filter(Station_ID == current_site) %>%
+    filter(between(DateTime_Local, min_date, max_date ))%>%
+    mutate(DateTime_Local = format(DateTime_Local, "%Y/%m/%d %H%M"))%>%
+    select( DateTime_Local, SSC_mgL, TSS_mgL, NO3_mgNL, DOC_mgL, PO4_mgL, Cl_mgL, Chla_ugL, PC_ugL  )
+
+  output_filename <- str_glue("{current_site}_grabsamples.csv")
+  
+  write_csv(site_data, here("docs", "pwqn", "STREAM", "ross_upload", output_filename))
+})
+
+```
+
+
+
+
+
+

@@ -5,23 +5,12 @@ output: word_document
 ```{r setup, include=FALSE, echo=FALSE}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
 dir <- getwd()
-month_select <-7
+month_select <- 11
 year_select <- 2025
-
-#### ------ Run lines above to set month and year ------ ####
-
-# this does not work with getwd() for whatever reason, may trouble shoot later
-# input_filename <- paste0(dir, "/poudre_sonde_network/02_pwqn_report_gen.Rmd")
-# output_filename <- paste0(dir, "/poudre_sonde_network/budget_summary_", month_select, '_', year_select, '.docx' )
-#rmarkdown::render(input = input_filename, output_file = output_filename)
-
-# RUN LINE BELOW IN CONSOLE TO  get the correct file name to change after knitting
-# paste0("budget_summary_", month_select, '_', year_select)
-
 
 ```
 
-# PWQN Summary of Work for `r paste(month_select, "/", year_select)`
+# UCLP DSS Summary of Work for `r paste(month_select, "/", year_select)`
 
 Prepared by: ROSSyndicate - Sam Struthers
 
@@ -50,7 +39,7 @@ lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "here"), packag
 
 
 # read in data created by 01_pwqn_data_prep.Rmd
-all_data <- read_csv(paste0(dir, "/data/sharing/budget/charges_final/charges_final_", month_select, "_", year_select,  ".csv"), show_col_types = FALSE)
+all_data <- read_csv(paste0(dir, "/docs/uclp_dss/docs/monthly_budget/charges_final/charges_final_", month_select, "_", year_select,  ".csv"), show_col_types = FALSE)
 
   # calculate totals
 final_summary <- tibble(`Hours x Rate (if applicable)` = c("Total CSU Contribution: ",
@@ -62,7 +51,7 @@ final_summary <- tibble(`Hours x Rate (if applicable)` = c("Total CSU Contributi
 final <- all_data%>%
   bind_rows(final_summary)
 
-field_summary <- read_csv(paste0(dir, "/data/sharing/budget/field_summary/field_summary_",month_select, "_", year_select,".csv"), show_col_types = FALSE)
+field_summary <- read_csv(paste0(dir, "/docs/uclp_dss/docs/monthly_budget/field_summary/field_summary_",month_select, "_", year_select,".csv"), show_col_types = FALSE)
 
 
 ```
@@ -89,7 +78,7 @@ flextable(final, col_keys = c("Category","Staff or Vendor","Description",
    merge_h( i = nrow(final)-1 )%>%
    merge_h( i = nrow(final))%>%
    # set caption and table width
-  set_caption(caption = paste0("Summary of ", month_select,"/",year_select, " PWQN costs. Italics denote contributions from CSU"))%>%
+  set_caption(caption = paste0("Summary of ", month_select,"/",year_select, " UCLP DSS costs to City of Fort Collins IGA. Italics denote contributions from CSU"))%>%
   set_table_properties( width = 1, layout = "autofit")
 
 ```
@@ -109,6 +98,4 @@ flextable(field_summary)%>%
 
 
 ```
-
-## Data Summary for `r paste(month_select, "/", year_select)`
 

@@ -1,3 +1,4 @@
+
 # loading packages
 package_loader <- function(x) {
   if (x %in% installed.packages()) {
@@ -30,9 +31,6 @@ invisible(
   package_loader)
 )
 
-#manually load in fcw_qaqc functions
-walk(list.files('fcw_QAQC_func/', pattern = "*.R", full.names = TRUE, recursive = TRUE), source)
-
 # Set up parallel processing
 num_workers <- min(availableCores() - 1, 4) # Use at most 4 workers
 plan(multisession, workers = num_workers)
@@ -45,33 +43,15 @@ furrr_options(
 # suppress scientific notation to ensure consistent formatting
 options(scipen = 999)
 
-# make a site fixing function to save space and increase readability
-fix_sites <- function(df) {
-  fixed_df <- df %>%
-    mutate(site = tolower(site)) %>%
-    # renaming all the sites, just in case
-    mutate(site = case_when(
-      grepl("tamasag", site, ignore.case = TRUE) ~ str_replace(site, "tamasag", "bellvue"),
-      grepl("legacy", site, ignore.case = TRUE) ~ str_replace(site, "legacy", "salyer"),
-      grepl("lincoln", site, ignore.case = TRUE) ~ str_replace(site, "lincoln", "udall"),
-      grepl("timberline", site, ignore.case = TRUE) ~ str_replace(site, "timberline", "riverbend"),
-      grepl("prospect", site, ignore.case = TRUE) ~ str_replace(site, "prospect", "cottonwood"),
-      grepl("boxelder", site, ignore.case = TRUE) ~ str_replace(site, "boxelder", "elc"),
-      grepl("archery", site, ignore.case = TRUE) ~ str_replace(site, "archery", "archery"),
-      grepl("river bluffs", site, ignore.case = TRUE) ~ str_replace(site, "river bluffs", "riverbluffs"),
-      TRUE ~ site)
-    )
-  return(fixed_df)
-}
-
 # Establishing directory paths.
-staging_directory <- here("data","sharing","quarterly_meetings","2025_Q2", "raw_data")
-flagged_directory <- here("data","sharing","quarterly_meetings","2025_Q2", "flagged_data")
+staging_directory <- here("data","raw", "sensor","manual_data_verification","2024_cycle","hydro_vu_pull" ,"raw_data")
+flagged_temp_dir <- here("data","raw", "sensor","manual_data_verification","2024_cycle","hydro_vu_pull" ,"flagged_data_temp")
+flagged_directory <- here("data","raw", "sensor","manual_data_verification","2024_cycle","hydro_vu_pull" ,"flagged_data")
 
 # Read in the threshold data first
-sensor_thresholds <- read_yaml(here("data","field_notes","qaqc",  "sensor_spec_thresholds.yml"))
-season_thresholds <- read_csv(here("data","field_notes","qaqc", "updated_seasonal_thresholds_2025.csv"), show_col_types = FALSE) %>%
-  fix_sites()
+sensor_thresholds <- read_yaml(here("data","derived","auto_qaqc_files", "thresholds",  "sensor_spec_thresholds.yml"))
+season_thresholds <- read_csv(here("data","derived","auto_qaqc_files", "thresholds", "seasonal_thresholds_2023.csv"), show_col_types = FALSE) %>%
+  fix_site_names()
 
 # Read in credentials
 mWater_creds <- read_yaml(here("creds", "mWaterCreds.yml"))
@@ -81,7 +61,7 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
                     client_secret = as.character(hv_creds["secret"]))
 
 # Pulling in the data from mWater
-mWater_data <- load_mWater(creds = mWater_creds)
+mWater_data <- fcw.qaqc::load_mWater(creds = mWater_creds)
 all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
   mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
          last_site_visit = with_tz(last_site_visit, tzone = "UTC"),
@@ -95,19 +75,14 @@ sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWat
 hv_sites <- hv_locations_all(hv_token) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE))
 
-#ADJUST DATETIMES
-mst_start <- ymd_hms("2025-07-30 00:00:00", tz = "America/Denver")
-mst_end <- ymd_hms("2025-09-04 23:59:59", tz = "America/Denver")
+mst_start <- ymd_hms("2024-03-01 00:00:00", tz = "America/Denver")
+mst_end <- ymd_hms("2024-12-01 23:59:59", tz = "America/Denver")
 
 # Upload the hv data
-sites <- c("bellvue",
-           "salyer",
-           "udall",
-           "riverbend",
-           "cottonwood",
-           "elc",
-           "archery",
-           "riverbluffs")
+sites <- c("archery","bellvue","boxcreek", "boxelder", "cbri", "chd", "cottonwood", "elc",
+           "joei", "lbea", "legacy", "lincoln", "mtncampus", "pbd", "pbr", "penn",
+           "pfal", "pman", "prospect", "river bluffs", "riverbluffs", "riverbend",
+           "salyer", "sfm", "springcreek", "tamasag", "timberline", "udall")
 
 
 walk(sites,
@@ -115,17 +90,38 @@ walk(sites,
        message("Requesting HV data for: ", site)
        api_puller(
          site = site,
-         network = "all",
+        network = "all",
          start_dt = with_tz(mst_start, tzone = "UTC"),
          end_dt = with_tz(mst_end, tzone = "UTC"),
          api_token = hv_token,
          #hv_sites_arg = hv_sites,
          dump_dir = staging_directory
-         #synapse_env = FALSE,
+        #synapse_env = FALSE,
          #fs = NULL
        )
      }
 )
+
+start_dt = with_tz(mst_start, tzone = "UTC")
+end_dt = with_tz(mst_end, tzone = "UTC")
+
+sfm_file <- list.files(staging_directory, pattern = "sfm", full.names = TRUE)
+#read in api data
+sfm_hydrovu <- read_parquet(sfm_file, as_data_frame = TRUE)
+
+# add non logged data from SFM to SFM data file
+sfm_livestream <- read_csv(here("data","raw", "sensor", "manual_data_verification", "2024_cycle", "hydro_vu_pull", "extra_data/SFM_2024-12-10_1430.csv"),
+                           show_col_types = F)%>%
+  filter(parameter != "% Saturation O₂", !is.na(value))%>%
+  mutate(units = ifelse(parameter == "Temperature", "C", units))%>%
+  #only keep dates where data is not in sfm
+  filter(timestamp >= start_dt & timestamp <= end_dt)
+
+sfm_final <- bind_rows( sfm_hydrovu, sfm_livestream)
+
+#write to final file
+write_parquet(sfm_final,
+            here(staging_directory, paste0("sfm_", stringr::str_replace(stringr::str_replace(substr(end_dt, 1, 16), "[:\\s]", "_"), ":", ""), ".parquet")))
 
 
 # Load in all the raw files
@@ -137,12 +133,12 @@ hv_data <- list.files(staging_directory, full.names = TRUE) %>%
     return(site_df)
   }, .progress = TRUE)
 
-data_2025 <- hv_data %>%
+data_2024 <- hv_data %>%
   data.table() %>%
   select(-id) %>%
   mutate(units = as.character(units)) %>%
   filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
-  filter(!grepl("virridy", site, ignore.case = TRUE)) %>%
+  #filter(!grepl("virridy", site, ignore.case = TRUE)) %>%
   mutate(
     DT = timestamp,
     DT_round = round_date(DT, "15 minutes"),
@@ -151,20 +147,20 @@ data_2025 <- hv_data %>%
     site = ifelse(grepl("virridy", name, ignore.case = TRUE), str_replace(site, " virridy", "_virridy"), site)
   ) %>%
   select(-name) %>%
-  fix_sites() %>%
+  fix_site_names() %>%
   distinct(.keep_all = TRUE) %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
 
 # Tidy all the raw files
-tidy_data <- data_2025 %>%
+tidy_data <- data_2024 %>%
   future_map(~tidy_api_data(api_data = .), .progress = TRUE) %>%  # the summarize interval default is 15 minutes
   keep(~!is.null(.))
 
 # Add the field note data to all of the data
 # Quick name fix for mountain campus
 all_field_notes <- all_field_notes %>%
-  fix_sites() %>%
+  fix_site_names() %>%
   mutate(site = ifelse(site == "mountaincampus", "mtncampus", site))
 
 combined_data <- tidy_data %>%
@@ -293,7 +289,7 @@ for (chunk_idx in seq_along(intrasensor_data_chunks)) {
   }
 }
 # Let's temporarily save this data so i can remove everything else
-iwalk(intrasensor_flags_list, ~write_csv(.x, here("data","sharing","quarterly_meetings", "2025_Q2", "flagged_data_temp", paste0(.y, ".csv"))))
+iwalk(intrasensor_flags_list, ~write_csv(.x, here("data", "raw", "sensor","manual_data_verification","2024_cycle", "hydro_vu_pull", "flagged_temp", paste0(.y, ".csv"))))
 
 # Because we are pulling in all of the data for all of the sites, and the
 # network check to do that is not applicable, here we make a custom net work check function
@@ -331,6 +327,7 @@ custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags_l
                      "boxcreek",
                      "archery_virridy")
   }
+
   # missing sites: mtncampus, pbr, pman
   if (site_name %in% c("mtncampus", "pbr", "pman")){
     return(df)
@@ -338,6 +335,7 @@ custom_network_check <- function(df, intrasensor_flags_arg = intrasensor_flags_l
 
   # exlcude virridy sites
   if (site_name %in% c("riverbend_virridy","cottonwood_virridy","timberline_virridy", "prospect_virridy", "elc", "archery_virridy")){
+
     return(df)
   }
 
@@ -450,11 +448,41 @@ v_final_flags <- final_flags%>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
 
-beepr::beep(1)
-
 # Save the data individually.
-iwalk(v_final_flags, ~write_csv(.x, here("data","sharing","quarterly_meetings", "2025_Q2","flagged_final", paste0(.y, ".csv"))))
+iwalk(v_final_flags, ~write_csv(.x, here("data", "raw", "sensor","manual_data_verification", "2024_cycle" , "hydro_vu_pull", "flagged_sam", paste0(.y, ".csv"))))
+
+### Reformatting for Verification Tool ###
+
+# select correct verification cycle to load
+current_cycle_folder = "2024_cycle"
+
+params_to_use <- c("Chl-a Fluorescence","Depth", "Specific Conductivity",
+                   "Temperature", "Turbidity", "ORP", "pH", "DO", "FDOM Fluorescence")
+params <- paste(params_to_use, collapse = "|")
+
+#get files in hydrovu_2024_data
+files <- tibble(filename = list.files(here("data", "raw", "sensor","manual_data_verification",current_cycle_folder, "hydro_vu_pull", "flagged_temp"), full.names = TRUE))%>%
+  filter(grepl(pattern = params, filename))%>%
+  #remove extras
+  filter(!grepl(pattern = "Level|MV", filename))
 
 
+# read in files
+all_data <- map_dfr(files, ~read_csv(.x, show_col_types = F)) %>%
+  #turn into individual dataframes by site and parameter
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  keep(~nrow(.) > 0)
 
+
+# clean up columns to match shiny app requirements
+
+all_data_tidy <- all_data%>%
+  bind_rows()%>%
+  #convert to MST!
+  mutate(DT_round = with_tz(DT_round, tz = "MST"),
+         DT_join = as.character(DT_round))
+
+
+# save to raw data file to be processed later on inside ver tool
+write_rds(all_data_tidy, here("data", "raw", "sensor", "manual_data_verification", current_cycle_folder, "in_progress","raw_data","raw_data.rds" ))
 

@@ -1,0 +1,674 @@
+---
+title: "Tidying Elkhorn Data"
+author: "Katie Willi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+This is the workflow for organizing Elkhorn Creek data from 2022. This data was collected before our current protocol was produced, and therefore requires a slightly different workflow for performing our auto-QAQC pipeline. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1) Packages & parallel configuration
+
+```{r}
+# load required packages
+package_loader <- function(x) {
+  if (x %in% installed.packages()) {
+    suppressMessages({
+      library(x, character.only = TRUE)
+    })
+  } else {
+    suppressMessages({
+      install.packages(x)
+      library(x, character.only = TRUE)
+    })
+  }
+}
+non_cran_packages <- c("rossyndicate/ross.wq.tools")
+invisible(
+  lapply(non_cran_packages, function(x) {
+    pack_name <- unlist(strsplit(x, "/"))[2] #get package name (no GH username)
+
+    if (pack_name %in% installed.packages()) {
+      suppressMessages({
+        library(pack_name, character.only = TRUE)
+      })
+    } else {
+      suppressMessages({
+        devtools::install_github(x)
+        library(pack_name, character.only = TRUE)
+      })
+    }
+  })
+)
+# load all required packages
+invisible(
+  lapply(c("arrow", "data.table", "httr2", "tidyverse", "lubridate", "zoo", "ggpubr",
+           "padr", "stats", "RcppRoll", "yaml", "here", "furrr", "ross.wq.tools"),
+         package_loader)
+)
+```
+
+Elkhorn specific functions:
+```{r}
+#' Creating a calibration table from each site visit's calibration reports
+cal_tabler <- function(){
+  
+  cal_files <- list.files(here("data","raw","sensor","calibration_reports"), pattern=".html") %>%
+    stringr::str_subset("elkhorn")
+  
+  cal_table <- vector("list", length = length(cal_files))
+  
+  for(i in 1:length(cal_table)){
+    
+    cal <- rvest::read_html(here("data", "raw", "sensor", "calibration_reports", cal_files[i]) ) %>%
+      rvest::html_nodes('div') %>%
+      rvest::html_text() %>%
+      as_tibble()
+    
+    rdo <- cal %>% filter(grepl("RDO", value)) %>% pull() %>% str_replace_all(., " ", "")
+    
+    ph_orp <- cal %>% filter(grepl("pH/ORP", value)) %>% pull() %>% str_replace_all(., " ", "")
+    
+    conductivity <- cal %>% filter(grepl("Conductivity",value)) %>% pull() %>% str_replace_all(., " ", "")
+    
+    turbidity <- cal %>% filter(grepl("Turbidity",value)) %>% pull() %>% str_replace_all(., " ", "")
+    
+    time_mst <- paste0(str_sub(cal_files[i], -13, -12),":", str_sub(cal_files[i], -11, -10))
+    
+    date <- paste0(str_sub(cal_files[i], -22, -19),"-", str_sub(cal_files[i], -18, -17),"-", str_sub(cal_files[i], -16, -15))
+    
+    cal_table[[i]] <- tibble(site = sub("\\_.*", "", cal_files[i]),
+                             
+                             DT = ymd_hm(paste0(date, " ", time_mst)),
+                             
+                             #Dissolved Oxygen
+                             rdo_slope = str_match(rdo, "Slope\\s*(.*?)\\s*Offset")[,2],
+                             rdo_offset = str_match(rdo, "Offset\\s*(.*?)\\s*mg/L")[,2],
+                             rdo_100 = str_match(rdo, "PreMeasurement\\s*(.*?)\\s*%SatPost")[,2],
+                             rdo_conc = str_match(rdo, "Concentration\\s*(.*?)\\s*mg/LPreMeasurement")[,2],
+                             rdo_temp = str_match(rdo, "Temperature\\s*(.*?)\\s*°C")[,2],
+                             rdo_pressure = str_match(rdo, "Pressure\\s*(.*?)\\s*mbar")[,2],
+                             
+                             #pH
+                             ph_slope_pre = str_match(ph_orp, "Offset1Slope\\s*(.*?)\\s*mV/pH")[,2],
+                             ph_offset_pre = str_match(ph_orp, "mV/pHOffset\\s*(.*?)\\s*mVSlopeandOffset2")[,2],
+                             ph_slope_post = str_match(ph_orp, "Offset2Slope\\s*(.*?)\\s*mV/pH")[,2],
+                             ph_offset_post = str_match(ph_orp, paste0(ph_slope_post,"mV/pHOffset\\s*(.*?)\\s*mVORPORP"))[,2],
+                             ph_7_nice = str_sub(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH7\\s*(.*?)\\s*mVCal")[,2])),
+                             ph_7_other = str_sub(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2], 10, nchar(str_match(ph_orp, "PostMeasurementpH6\\s*(.*?)\\s*mVCal")[,2])),
+                             ph_7 = ifelse(is.na(ph_7_nice), ph_7_other, ph_7_nice),
+                             
+                             #ORP
+                             orp_offset = ifelse(is.na(str_match(ph_orp, "Zobell'sOffset\\s*(.*?)\\s*mVTemperature")[,2]),
+                                                 str_match(ph_orp, "ZoBell'sOffset\\s*(.*?)\\s*mVTemperature")[,2],
+                                                 str_match(ph_orp, "Zobell'sOffset\\s*(.*?)\\s*mVTemperature")[,2]),
+                             
+                             #Conductivity
+                             tds_conversion_ppm = str_sub(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2], 6, nchar(str_match(conductivity, "TDSConversionFactor\\s*(.*?)\\s*CellConstant")[,2])),
+                             cond_cell_constant = str_match(conductivity, "CellConstant\\s*(.*?)\\s*ReferenceTemperature")[,2],
+                             cond_pre = str_match(conductivity,paste0(str_match(conductivity,
+                                                                                "PreMeasurementActual\\s*(.*?)\\s*SpecificConductivity")[,2],"SpecificConductivity\\s*(.*?)\\s*µS/cmPost"))[,2],
+                             cond_post = str_match(conductivity,paste0(str_match(conductivity,
+                                                                                 "PostMeasurementActual\\s*(.*?)\\s*SpecificConductivity")[,2],"SpecificConductivity\\s*(.*?)\\s*µS/cm"))[,2],
+                             
+                             #Turbidity
+                             ntu_slope = str_match(turbidity, "Slope\\s*(.*?)\\s*Offset")[,2],
+                             ntu_offset = str_match(turbidity, "Offset\\s*(.*?)\\s*NTU")[,2],
+                             ntu_10 = str_match(turbidity, "CalibrationPoint1PreMeasurement\\s*(.*?)\\s*NTUPost")[,2],
+                             ntu_100 = str_match(turbidity, "CalibrationPoint2PreMeasurement\\s*(.*?)\\s*NTUPost")[,2],
+                             
+                             #Factory Defaults
+                             factory_defaults = paste0(ifelse(is.na(ntu_slope), "Turbidity ", ""),
+                                                       ifelse(is.na(rdo_slope), "RDO ", ""),
+                                                       ifelse(is.na(ph_slope_post), "pH ", ""),
+                                                       ifelse(is.na(orp_offset), "ORP ", ""),
+                                                       ifelse(is.na(cond_post), "Conductivity ", ""))) %>%
+      select(-c(ph_7_nice, ph_7_other)) %>%
+      mutate_at(vars(3:ncol(.)), as.numeric) 
+  }
+  
+  cal_table <- bind_rows(cal_table) %>%
+    distinct(.keep_all = TRUE) %>%
+    group_by(site) %>%
+    mutate(DT = round_date(DT, "15 minutes"),
+           DT_join = as.character(DT))
+  
+  return(cal_table)
+  
+}
+```
+
+## 2) Thresholds, credentials, and field notes data
+
+```{r}
+# Read in the threshold data first
+sensor_thresholds <- read_yaml(here::here("data","derived","auto_qaqc_files", "thresholds", "sensor_spec_thresholds.yml"))
+season_thresholds <- read_csv(here::here("data","derived","auto_qaqc_files","thresholds","updated_seasonal_thresholds_2025_sjs.csv"),
+  show_col_types = FALSE) %>% 
+  # PBR as placeholder...?
+  dplyr::filter(site == "pbr") %>%
+  { 
+    dplyr::bind_rows(dplyr::mutate(., site = "elkhornupper"),
+      dplyr::mutate(., site = "elkhornlower"))
+  }
+
+
+# Configure your credentials files
+mwater_creds_file <- here::here("creds","mWaterCreds.yml")
+mWater_creds <- read_yaml(mwater_creds_file)
+
+# pull field data from mWater API
+mWater_data <- load_mWater(creds = mWater_creds)
+
+# grab field notes with proper timezone handling
+all_field_notes <- readxl::read_excel('data/raw/field_notes/sensor_field_notes.xlsx') %>%
+  mutate(DT = (paste0(date, " ", start_time_mst))) %>%
+  mutate(DT = ymd_hm(DT) + hours(7)) %>%
+  arrange(DT) %>%
+  mutate(DT_round = round_date(DT, "15 minutes")) %>%
+  mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
+         last_site_visit = with_tz(DT_round, tzone = "UTC"),
+         DT_join = as.character(DT_round),
+         sonde_moved = NA,
+         sonde_employed = case_when(is.na(sensor_deployed) & is.na(sensor_pulled) ~ NA,
+                                    sensor_deployed == "x" ~ 0, 
+                                    sensor_pulled == "x" ~ 1)) %>%
+  fix_site_names()
+
+# grab sensor malfunction records (there are none for Elkhorn since this was built after
+# 2022, but keeping in so downstream code doesn't break)
+sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data) %>%
+  mutate(start_DT = with_tz(start_DT, tzone = "UTC"),
+         end_DT = with_tz(end_DT, tzone = "UTC"))
+```
+
+Loading in field notes and calibration reports for Elkhorn sites specifically:
+```{r}
+field_notes_elk <- readxl::read_excel(here("data","raw","field_notes","sensor_field_notes.xlsx")) %>%
+  mutate(DT = (paste0(date, " ", start_time_mst))) %>%
+  mutate(DT = ymd_hm(DT)) %>%
+  arrange(DT) %>%
+  mutate(DT_round = round_date(DT, "15 minutes"),
+         DT_join = as.character(DT)) %>% 
+  filter(grepl("elkhorn", site)) %>%
+  select(-c(date, start_time_mst))
+
+cal_table <- cal_tabler()
+
+cal_cols <- setdiff(names(cal_table), c("site", "DT_join", "DT"))
+```
+
+## 3) Ingest & standardize raw data
+
+**Ingest data from each site:**
+
+### Upper Elkhorn
+```{r}
+# This time frame needed to be transformed due to massively off time stamps. It therefore
+# requires some extra TLC compared to other data sets in the data folder. It's also
+# a csv, when all others are html's.
+
+csv <- read_csv(here("data", "raw", "sensor", "log_download", "2022", "elkhornupper", "manual", "elkhornupper_20220708_20220713_vulink.csv"))
+
+names(csv) <- make.names(names(csv), unique = T)
+
+csv_nice <- csv %>%
+  select(DT_instrument = contains('DT_MST'),
+         Water_Temp_C = contains('Temperature'),
+         pH_1 = contains('pH'),
+         ORP_mV = contains('ORP'),
+         Specific_Conductivity_µS_cm = contains('Specific.Conductivity') & contains('µS.cm.'),
+         DO_ppm = contains('RDO') & contains('Concentration'),
+         Turbidity_NTU = contains('Turbidity')) %>%
+  rename(Water_Temp_C = Water_Temp_C2,
+         Air_Temp_C = Water_Temp_C1,
+         pH = pH_11,
+         pH_mV = pH_12) %>%
+   dplyr::mutate_at(vars(2:ncol(.)), as.numeric) %>%
+  tidyr::pivot_longer(-DT_instrument, names_to = "var", values_to = "value") %>%
+  dplyr::mutate(value = as.numeric(value),
+                parameter = dplyr::case_when(var == "Water_Temp_C" ~ "Temperature",
+                                             var == "pH" ~ "pH",
+                                             var == "ORP_mV" ~ "ORP",
+                                             var == "Specific_Conductivity_µS_cm" ~ "Specific Conductivity",
+                                             var == "DO_ppm" ~ "DO",
+                                             var == "Depth_ft" ~ "Depth",
+                                             var ==  "Turbidity_NTU" ~ "Turbidity"),
+                # Original units
+                original_unit = dplyr::case_when(var == "Water_Temp_C" ~ "C",
+                                                 var == "pH" ~ "pH",
+                                                 var == "ORP_mV" ~ "mV",
+                                                 var == "Depth_ft" ~ "ft",
+                                                 var == "Specific_Conductivity_µS_cm" ~ "µS/cm",
+                                                 var == "DO_ppm" ~ "ppm",
+                                                 var == "Turbidity_NTU" ~ "NTU"),
+                # Target units
+                unit = dplyr::case_when(var == "Water_Temp_C" ~ "C",
+                                         var == "pH" ~ "pH",
+                                         var == "ORP_mV" ~ "V",
+                                         var == "Depth_ft" ~ "m",
+                                         var == "Specific_Conductivity_µS_cm" ~ "µS/cm",
+                                         var == "DO_ppm" ~ "mg/L",
+                                         var == "Turbidity_NTU" ~ "NTU"),
+                # Convert values to new units
+                value = dplyr::case_when(var == "DO_ppm" ~ value, # ppm is equivalent to mg/L for dissolved oxygen 
+                                         var == "Depth_ft" ~ value * 0.3048, # feet to meters
+                                         var == "ORP_mV" ~ value / 1000, # millivolts to volts
+                                         TRUE ~ value),
+                site = "elkhornupper") %>%
+  filter(!is.na(parameter)) %>%
+  mutate(DT = ymd_hms(DT_instrument),
+          DT_round = round_date(DT, "15 minutes"),
+         DT_join = as.character(DT)) %>%
+  select(-c(var, original_unit, DT_instrument))
+
+# Pull in all datasets that were downloaded from the field
+rawless_elkhornupper_raw <- map_dfr(list.files(here("data", "raw", "sensor", "log_download", "2022", "elkhornupper", "raw"), 
+                                           pattern = "*htm", full.names = T), ~ xml2::read_html(.) %>% ross.wq.tools::parse_insitu_html_log()) %>%
+  # UTC to MST
+  dplyr::mutate(DT = lubridate::ymd_hms(DT) - lubridate::hours(7),
+                DT_round = lubridate::ymd_hms(DT_round) - lubridate::hours(7),
+                DT_join = as.character(DT_round)) %>%
+  bind_rows(csv_nice) %>%
+  # for removing duplicates that come from accidental downloads from the field:
+  distinct(.keep_all = TRUE) %>%
+  mutate(site = "elkhornupper") %>%
+  # time of deployment
+  filter(DT_round >= ymd_hms('2022-05-17 13:45:00') & DT_round <= ymd_hms('2022-10-21 09:20:00')) %>%
+  select(-c(DT, DT_round)) %>%
+  full_join(., filter(field_notes_elk, site == "elkhornupper"), by = c('DT_join','site')) %>%
+  full_join(., filter(cal_table, site == "elkhornupper"), by = c("site", "DT_join")) %>%
+  arrange(parameter, ymd_hms(DT_round)) %>%
+  mutate(across(all_of(cal_cols), ~ zoo::na.locf(.x, fromLast = TRUE, na.rm = FALSE))) %>%
+  ungroup() %>%
+  dplyr::mutate(site = "elkhornupper",
+                id = "elkhornupper",
+                name = "elkhornupper") %>%
+  dplyr::select(site, id, name, timestamp = DT_join, parameter, value, unit,
+                ntu_offset, ntu_slope, rdo_offset, rdo_slope) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::filter(!is.na(parameter)) %>%
+  dplyr::filter(!is.na(timestamp)) %>%
+  dplyr::arrange(timestamp) 
+
+rawless_elkhornupper_manual <- map_dfr(list.files(here("data", "raw", "sensor", "log_download", "2022", "elkhornupper", "manual"), 
+                                           pattern = "*htm", full.names = T), ~ xml2::read_html(.) %>% ross.wq.tools::parse_insitu_html_log()) %>%
+  # UTC to MST
+  dplyr::mutate(DT = lubridate::ymd_hms(DT) - lubridate::hours(7),
+                DT_round = lubridate::ymd_hms(DT_round) - lubridate::hours(7),
+                DT_join = as.character(DT_round)) %>%
+  bind_rows(csv_nice) %>%
+  # for removing duplicates that come from accidental downloads from the field:
+  distinct(.keep_all = TRUE) %>%
+  mutate(site = "elkhornupper") %>%
+  # time of deployment
+  filter(DT_round >= ymd_hms('2022-05-17 13:45:00') & DT_round <= ymd_hms('2022-10-21 09:20:00')) %>%
+  select(-c(DT, DT_round)) %>%
+  full_join(., filter(field_notes_elk, site == "elkhornupper"), by = c('DT_join','site')) %>%
+  full_join(., filter(cal_table, site == "elkhornupper"), by = c("site", "DT_join")) %>%
+  arrange(parameter, ymd_hms(DT_round)) %>%
+  mutate(across(all_of(cal_cols), ~ zoo::na.locf(.x, fromLast = TRUE, na.rm = FALSE))) %>%
+  ungroup() %>%
+  dplyr::mutate(site = "elkhornupper",
+                id = "elkhornupper",
+                name = "elkhornupper") %>%
+  dplyr::select(site, id, name, timestamp = DT_join, parameter, value, unit,
+                ntu_offset, ntu_slope, rdo_offset, rdo_slope) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::filter(!is.na(parameter)) %>%
+  dplyr::filter(!is.na(timestamp)) %>%
+  dplyr::arrange(timestamp)
+
+rawless_elkhornupper <- bind_rows(rawless_elkhornupper_manual, rawless_elkhornupper_raw) %>%
+  distinct(.keep_all = TRUE)
+
+ggplot(data = rawless_elkhornupper) + geom_point(aes(x = as_datetime(timestamp), y = value)) + facet_wrap(~parameter, scales = "free_y")
+```
+
+### Lower Elkhorn
+```{r}
+# Pull in all datasets that were downloaded from the field 
+rawless_elkhornlower_raw <- map_dfr(list.files(here("data", "raw", "sensor", "log_download", "2022", "elkhornlower", "raw"), 
+                                           pattern = "*htm", full.names = T), ~ xml2::read_html(.) %>% ross.wq.tools::parse_insitu_html_log()) %>%
+    # UTC to MST
+    dplyr::mutate(DT = lubridate::ymd_hms(DT) - lubridate::hours(7),
+                DT_round = lubridate::ymd_hms(DT_round) - lubridate::hours(7),
+                DT_join = as.character(DT_round)) %>%
+  bind_rows(csv_nice) %>%
+  # for removing duplicates that come from accidental downloads from the field:
+  distinct(.keep_all = TRUE) %>%
+  mutate(site = "elkhornlower") %>%
+  # time of deployment
+  filter(DT_round >= ymd_hms('2022-05-17 15:00:00') & DT_round <= ymd_hms('2022-10-21 09:40:00')) %>%
+  select(-c(DT, DT_round)) %>%
+  full_join(., filter(field_notes_elk, site == "elkhornlower"), by = c('DT_join','site')) %>%
+  full_join(., filter(cal_table, site == "elkhornlower"), by = c("site", "DT_join")) %>%
+  arrange(parameter, ymd_hms(DT_round)) %>%
+  mutate(across(all_of(cal_cols), ~ zoo::na.locf(.x, fromLast = TRUE, na.rm = FALSE))) %>%
+  ungroup() %>%
+    dplyr::mutate(site = "elkhornlower",
+                id = "elkhornlower",
+                name = "elkhornlower") %>%
+  dplyr::select(site, id, name, timestamp = DT_join, parameter, value, unit,
+                ntu_offset, ntu_slope, rdo_offset, rdo_slope) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::filter(!is.na(parameter)) %>%
+  dplyr::filter(!is.na(timestamp)) %>%
+  dplyr::arrange(timestamp)
+
+rawless_elkhornlower_manual <- map_dfr(list.files(here("data", "raw", "sensor", "log_download", "2022", "elkhornlower", "manual"), 
+                                           pattern = "*htm", full.names = T), ~ xml2::read_html(.) %>% ross.wq.tools::parse_insitu_html_log()) %>%
+    # UTC to MST
+    dplyr::mutate(DT = lubridate::ymd_hms(DT) - lubridate::hours(7),
+                DT_round = lubridate::ymd_hms(DT_round) - lubridate::hours(7),
+                DT_join = as.character(DT_round)) %>%
+  bind_rows(csv_nice) %>%
+  # for removing duplicates that come from accidental downloads from the field:
+  distinct(.keep_all = TRUE) %>%
+  mutate(site = "elkhornlower") %>%
+  # time of deployment
+  filter(DT_round >= ymd_hms('2022-05-17 15:00:00') & DT_round <= ymd_hms('2022-10-21 09:40:00')) %>%
+  select(-c(DT, DT_round)) %>%
+  full_join(., filter(field_notes_elk, site == "elkhornlower"), by = c('DT_join','site')) %>%
+  full_join(., filter(cal_table, site == "elkhornlower"), by = c("site", "DT_join")) %>%
+  arrange(parameter, ymd_hms(DT_round)) %>%
+  mutate(across(all_of(cal_cols), ~ zoo::na.locf(.x, fromLast = TRUE, na.rm = FALSE))) %>%
+  ungroup() %>%
+    dplyr::mutate(site = "elkhornlower",
+                id = "elkhornlower",
+                name = "elkhornlower") %>%
+  dplyr::select(site, id, name, timestamp = DT_join, parameter, value, unit,
+                ntu_offset, ntu_slope, rdo_offset, rdo_slope) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::filter(!is.na(parameter)) %>%
+  dplyr::filter(!is.na(timestamp)) %>%
+  dplyr::arrange(timestamp)
+
+rawless_elkhornlower <- bind_rows(rawless_elkhornlower_manual, rawless_elkhornlower_raw) %>%
+  distinct(.keep_all = TRUE)
+
+ggplot(data = rawless_elkhornlower) + geom_point(aes(x = as_datetime(timestamp), y = value)) + facet_wrap(~parameter, scales = "free_y")
+```
+
+### Bind together and standardize
+```{r}
+raw_data_complete <- bind_rows(rawless_elkhornlower, rawless_elkhornupper) #
+
+turb_fixed <- raw_data_complete %>%
+  filter(!is.na(site)) %>%
+  filter(parameter == "Turbidity") %>%
+  # Reverting ALL turbidity to factory defaults...
+  # 2022/07/13 - 2022/08/27 was ALREADY reverted to factory defaults, but no cal report was collected. See field notes. 
+  mutate(value = ifelse(timestamp >= ymd_hms("2022-07-13 08:00:00") & timestamp <= ymd_hms("2022-08-27 13:00:00") & site == "elkhornupper",
+                                value, 
+                ifelse(is.na(ntu_offset), 
+                       value,
+                       ((value - as.numeric(ntu_offset))/as.numeric(ntu_slope))))) #%>%
+  
+do_fixed <- raw_data_complete %>%
+    filter(!is.na(site)) %>%
+  filter(parameter == "DO") %>%
+# Reverting ALL RDO to factory defaults...
+  mutate(value = ifelse(is.na(rdo_offset), value, ((value - as.numeric(rdo_offset))/as.numeric(rdo_slope))))#
+
+raw_data_standardized <- raw_data_complete %>%
+  filter(!parameter %in% c("Turbidity", "DO")) %>%
+  bind_rows(turb_fixed, do_fixed) %>%
+  arrange(site, timestamp) %>%
+  select(site, id, name, timestamp, parameter, value, units = unit) %>%
+  # Convert to UTC
+  mutate(timestamp = ymd_hms(timestamp) + hours(7)) %>%
+  filter(!is.na(value)) %>%
+  split(f = list(.$site), sep = "-")
+
+ggplot(data = raw_data_standardized %>% rbindlist()) + geom_point(aes(x = timestamp, y = value, color = site)) + facet_wrap(~parameter, scales = "free_y")
+```
+
+## 4) Save site-year raw data (Parquet)
+
+```{r}
+# # Split by site and year
+raw_data_site_year <- bind_rows(raw_data_standardized) %>%
+  distinct(.keep_all = TRUE) %>%
+  mutate(year = year(timestamp)) %>%
+  split(f = list(.$site, .$year), sep = "_", drop = TRUE)
+
+# Save files
+iwalk(raw_data_site_year, ~ {
+  latest_ts <- format(max(.x$timestamp, na.rm = TRUE), "%Y-%m-%d_%H%M")
+  site_name <- str_split(.y, "_")[[1]][1]  # Extract just the site name (first part)
+  filename <- here("data", "raw", "sensor", "manual_data_verification",paste0( year(latest_ts), "_cycle"), "hydro_vu_pull", "raw", paste0(tolower(site_name), "_", latest_ts, ".parquet"))
+  .x %>% select(-year) %>% write_parquet(filename)
+  cat("Saved:", filename, "\n")
+})
+```
+
+## 5) Tidy, join field notes, summarize
+
+```{r}
+# tidy raw data (default 15-minute intervals)
+tidy_data <-  raw_data_standardized %>%
+  bind_rows() %>%
+  mutate(DT_round = round_date(timestamp, "15 minutes")) %>%
+  mutate(DT_join = as.character(paste(DT_round))) %>%
+  select(DT_round, DT_join, site, parameter, value, units) %>%
+  distinct(.keep_all = TRUE) %>%
+  modify_if(., is.numeric, ~ ifelse(is.nan(.x) | is.infinite(.x), NA, .x)) %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  keep(~nrow(.) > 0) %>%
+  future_map(~tidy_api_data(api_data = .), .progress = TRUE) %>%
+  keep(~!is.null(.))
+
+# add field notes to tidied data (there aren't any for these years)
+combined_data <- tidy_data %>%
+  future_map(~add_field_notes(df = ., notes = all_field_notes), .progress = TRUE)
+
+# generate summary statistics
+summarized_data <- combined_data %>%
+  map(~generate_summary_statistics(.)) %>%
+  # extra step to get rid of NaN and Inf values
+  map(~ {modify_if(.x, is.numeric, ~ ifelse(is.nan(.x) | is.infinite(.x), NA, .x))})
+
+```
+
+Visualize all the data:
+```{r}
+plotz <- map(names(summarized_data), ~ {
+  ggplot(data = summarized_data[[.x]]) +
+    geom_line(aes(x = DT_round, y = mean), na.rm = TRUE) +
+    labs(
+      title = .x,
+      x = "Date/Time",
+      y = "Mean Value"
+    ) +
+    theme_minimal()
+})
+
+walk(plotz, print)
+```
+
+## 6) Single-sensor flags
+
+```{r}
+# Chunk the data for furrr
+summarized_data_chunks <- split(1:length(summarized_data),
+                                ceiling(seq_along(1:length(summarized_data))/10))
+# Flag data...
+# Single parameter flags
+
+# Process the chunk in parallel
+single_sensor_flags <- summarized_data %>%
+  map(
+    function(data) {
+      flagged_data <- data %>%
+        data.table(.) %>%
+        # flag field visits
+        add_field_flag(df = .) %>%
+        # flag missing data
+        add_na_flag(df = .) %>%
+        # flag DO noise
+        find_do_noise(df = .) %>%
+        # flag repeating values
+        add_repeat_flag(df = .) %>%
+        # find times when sonde was moved up/down in housing
+        # add_depth_shift_flag(df = ., level_shift_table =  all_field_notes, post2024 = FALSE) %>%
+        # find instances of sensor drift (FDOM, Chl-a, Turbidity only)
+        add_drift_flag(df = .)
+      
+      if (unique(data$parameter) %in% names(sensor_thresholds)) {
+        # flag instances outside the spec range
+        flagged_data <- flagged_data %>%
+          data.table(.) %>%
+          add_spec_flag(df = ., spec_table = sensor_thresholds)
+      }
+      
+      if (unique(data$parameter) %in% unique(season_thresholds$parameter)) {
+        # flag instances outside the spec range
+        flagged_data <- flagged_data %>%
+          data.table(.) %>%
+          add_seasonal_flag(df = ., threshold_table = season_thresholds)
+      }
+      
+      flagged_data <- flagged_data %>%
+        data.table(.)
+      
+      return(flagged_data)
+    }
+  )
+```
+
+## 7) Intrasensor flags (by site)
+
+```{r}
+# Intrasensor flags
+intrasensor_flags <- single_sensor_flags %>%
+  rbindlist(fill = TRUE) %>%
+  split(by = "site")
+
+# Chunk the data for furrr
+intrasensor_data_chunks <- split(1:length(intrasensor_flags),
+                                 ceiling(seq_along(1:length(intrasensor_flags))/3))
+
+intrasensor_flags_list <- list()
+for (chunk_idx in seq_along(intrasensor_data_chunks)) {
+  message("\n=== Processing chunk ", chunk_idx, " of ", length(intrasensor_data_chunks), " ===")
+  
+  # Get the indices for this chunk
+  indices <- intrasensor_data_chunks[[chunk_idx]]
+  chunk_data <- intrasensor_flags[indices]
+  # Process the chunk in parallel
+  chunk_results <- chunk_data %>%
+    map(
+      function(data) {
+        # A chunk is a site df
+        flagged_data <- data %>%
+          data.table() %>%
+          # flag times when water was below freezing
+          add_frozen_flag(.) %>%
+          # overflagging correction. remove slope violation flag if it occurs concurrently
+          # with temp or depth
+          intersensor_check(.) %>%
+          # add sonde burial. If DO is noise is long-term, likely burial:
+          add_burial_flag(.) %>%
+          # flag times when sonde was unsubmerged
+          add_unsubmerged_flag(.)
+        
+        return(flagged_data)
+      }, .progress = TRUE
+    ) %>%
+    rbindlist(fill = TRUE) %>%
+    # lil' cleanup of flag column contents
+    dplyr::mutate(flag = ifelse(flag == "", NA, flag)) %>%
+    # transform back to site-parameter dfs
+    split(f = list(.$site, .$parameter), sep = "-") %>%
+    purrr::discard(~ nrow(.) == 0) %>%
+    # Add in KNOWN instances of sensor malfunction
+    map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes))
+    
+  
+  # Add chunk to list
+  intrasensor_flags_list <- c(intrasensor_flags_list, chunk_results)
+  
+  if (chunk_idx < length(intrasensor_data_chunks)) {
+    message("Taking a short break before next chunk...")
+    gc()
+    Sys.sleep(0.1)
+  }
+}
+```
+
+## 8) Simple network consistency check
+
+We apply a lightweight, order-aware comparison (upstream/downstream) to remove flags that are likely true environmental events observed across neighboring sites in a ±2-hour window. The site order defaults to CSU/FCW segments, with overrides for alternative networks.
+
+```{r}
+site_order_list <- list(
+  clp = c("elkhornupper", "elkhornlower")
+)
+
+final_flags <- intrasensor_flags_list %>%
+  purrr::map(~network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list, site_order_arg = site_order_list)) %>%
+  rbindlist(fill = TRUE) %>%
+        # KW WHY IS THIS NOT WORKING?
+        mutate(auto_flag = flag) %>%
+  tidy_flag_column() %>%
+  split(f = list(.$site, .$parameter), sep = "_") %>%
+  purrr::map(~add_suspect_flag(.)) %>%
+  data.table::rbindlist(fill = TRUE)
+```
+
+## 9) Final post-processing & save outputs
+
+We remove isolated one-off “suspect data” points and write per-site/parameter CSVs for the reporting cycle.
+
+```{r}
+v_final_flags <- final_flags%>%
+  dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA,
+                                   ifelse(auto_flag == "suspect data" & is.na(lag(auto_flag, 1)) & is.na(lead(auto_flag, 1)), NA, auto_flag))) %>%
+  dplyr::select(c("DT_round", "DT_join", "site", "parameter", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit")) %>%
+  dplyr::mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
+  mutate(year = year(DT_round)) %>%
+  split(f = list(.$site, .$parameter, .$year), sep = "_") %>%
+  keep(~nrow(.) > 0)
+
+# Save files
+iwalk(v_final_flags, ~ {
+  site_name <- str_split(.y, "_")[[1]][1]  # Extract just the site name (first part)
+  parm <- str_split(.y, "_")[[1]][2]
+  year <- str_split(.y, "_")[[1]][3]
+  filename <- here("data","raw", "sensor", "manual_data_verification", paste0(year, "_cycle"), "hydro_vu_pull", "flagged", paste0(tolower(site_name), "_", parm, ".parquet"))
+  .x %>% select(-year) %>% write_parquet(filename)
+  cat("Saved:", filename, "\n")
+})
+```
+
+## 10) Check Timestamps
+```{r}
+#checking precollation
+elkhornupper_plot <- raw_data_standardized[["elkhornupper"]] %>%
+  filter(parameter == "Temperature") %>%
+  filter(month(timestamp) %in% c(7,8,9))%>%
+  mutate(hour = hour(timestamp), water_temp = as.numeric(value), year = as.character(year(timestamp)))%>%
+  summarise(mean_temp = mean(water_temp, na.rm = T), .by = c("hour", "year"))%>%
+  ggplot(aes(hour, mean_temp, color = year))+
+  geom_line()+labs(title = "Upper (Mean Temp July-Aug)")
+
+elkhornlower_plot <- raw_data_standardized[["elkhornlower"]] %>%
+  filter(parameter == "Temperature") %>%
+  filter(month(timestamp) %in% c(7,8,9))%>%
+  mutate(hour = hour(timestamp), water_temp = as.numeric(value), year = as.character(year(timestamp)))%>%
+  summarise(mean_temp = mean(water_temp, na.rm = T), .by = c("hour", "year"))%>%
+  ggplot(aes(hour, mean_temp, color = year))+
+  geom_line()+labs(title = "Lower (Mean Temp July-Aug)")
+
+ggpubr::ggarrange(elkhornupper_plot, elkhornlower_plot, nrow = 2)
+```
+
