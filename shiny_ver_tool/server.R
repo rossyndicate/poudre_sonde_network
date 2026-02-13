@@ -146,6 +146,7 @@ server <- function(input, output, session) {
         values_from = directory,
         values_fill = NA
       ) %>%
+      filter(if_any(-site, ~ .x %in% c("pre_verification", "intermediary"))) %>%
       arrange(site)
 
     DT::datatable(files, options = list(pageLength = 25,
@@ -321,7 +322,22 @@ server <- function(input, output, session) {
       selected_data(site_param_df)
 
       # Set initial week to earliest week with missing final_status values (unverified) - stores data as final values and automatically sends you to the only data without final status
-      current_week(site_param_df$week[min(which(is.na(site_param_df$final_status)))])
+    first_non_ver_week <-   site_param_df$week[min(which(is.na(site_param_df$final_status)))]
+
+    #if all weeks are verified but data is not "finalized" ^ will be NA and we should move directly to the finalize page
+    if(is.na(first_non_ver_week)| is.null(first_non_ver_week)){
+      showNotification(
+        "All weeks verified! Moving to Finalize Data tab.",
+        type = "message"
+      )
+      #Move to finalize tab
+      updateTabsetPanel(session, inputId = "tabs", selected = "Finalize Data")
+    }else{
+      current_week(first_non_ver_week)
+      #Move to next tab
+      updateTabsetPanel(session, inputId = "tabs", selected = "Data Verification")
+    }
+
 
 
     }, error = function(e) {
@@ -331,8 +347,7 @@ server <- function(input, output, session) {
       )
     })
 
-    #Move to next tab
-    updateTabsetPanel(session, inputId = "tabs", selected = "Data Verification")
+
 
   })
 
@@ -734,6 +749,10 @@ server <- function(input, output, session) {
           color = "Sites",
           fill = "Flags")+
         theme_bw(base_size = 14)
+
+      if(input$add_line){
+        p <- p + geom_line(aes(y = mean), color = "grey", linewidth = 1)
+      }
 
 
       # Check if there are any brushed areas, THIS IS GOOD -JD
