@@ -147,8 +147,8 @@ all_sites %>%
     site_point <- all_sites_point %>%
       filter(Station_ID == current_id)
     
-    mapview(site_polygon, layer.name = paste("Catchment:", current_id)) + 
-      mapview(site_point, layer.name = "Pour Point", col.regions = "red")
+    mapview::mapview(site_polygon, layer.name = paste("Catchment:", current_id)) + 
+    mapview::mapview(site_point, layer.name = "Pour Point", col.regions = "red")
   })
 
 
@@ -165,7 +165,8 @@ ross_metadata_final <- all_sites %>%
   st_drop_geometry()%>%
   left_join(ross_metadata, ., by = "Station_ID")%>%
   select(Contact_Name, Contact_Email, Station_ID, Station_Name, Latitude, Longitude, Upstream_Catchment_Area_sqkm,
-         MST_UTC, Contributing_Institution, State, Sensors_Used, Q_source)
+         MST_UTC, Contributing_Institution, State, Sensors_Used, Q_source)%>%
+  filter(!Station_ID %in% c("springcreek", "boxcreek")) #removing these two sites since they are not in the STREAM data request
 
 write_csv(ross_metadata_final, here("docs", "pwqn","STREAM","ross_upload", "ROSS_STREAM_metadata.csv"))
 ```
@@ -194,7 +195,7 @@ input_all_sensor_data_path = list.files(here("data", "collated", "sensor"),
       utils::tail(1)
 
 all_sensor_data <- read_parquet(input_all_sensor_data_path)%>%
-  filter(site %nin% c("pman_fc", "pbr_fc", "mtncampus"))%>%
+  filter(site %nin% c("pman_fc", "pbr_fc", "mtncampus", "springcreek", "boxcreek"))%>%
   filter(parameter %nin% c("Depth", "ORP"))%>% #remove parameters we don't need generally
   #remove archery virridy Chl-a, Temperature and SC since we have them on our sonde
   filter(!(site == "archery_virridy" & parameter  %in% c("Chl-a Fluorescence", "Temperature", "Specific Conductivity")))%>%
@@ -218,10 +219,11 @@ all_sensor_data %>%
 all_sensor_data_clean <- all_sensor_data %>%
   mutate(final_value = mean_cleaned, 
          final_flag = clean_flag, 
-         final_status = case_when(status == "auto_flagged" & !is.na(mean_cleaned) ~ "P",
-                                  status == "auto_flagged" & is.na(mean_cleaned) ~ "R",
-                                  is.na(mean_cleaned) ~ "R",
-                                  status == "in_progress_verified" & !is.na(mean_cleaned) ~ "A"))%>%
+         final_status = case_when(status == "auto_flagged" & !is.na(final_value) ~ "P",
+                                  status == "auto_flagged" & is.na(final_value) ~ "R",
+                                  is.na(final_value) ~ "R",
+                                  status == "in_progress_verified" & !is.na(final_value) & is.na(clean_flag) ~ "A",
+                                  status == "in_progress_verified" & !is.na(final_value)& !is.na(clean_flag) ~ "P"))%>%
   select(site, DateTime_Local = DT_round, parameter, final_value, final_flag, final_status)
 
 ```
@@ -319,7 +321,7 @@ usgs_flow_data <- map2(usgs_sites$site_no,usgs_sites$site, function(site_no, cur
   bind_rows()
 
 
-meta <- sites %>%
+meta <- cdwr_sites %>%
   bind_rows(usgs_sites %>%  rename(abbrev = site_no) )
 
 flow_data_cleaned <- usgs_flow_data%>%
