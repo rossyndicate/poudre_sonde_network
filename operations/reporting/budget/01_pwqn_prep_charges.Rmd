@@ -15,7 +15,7 @@ Once these are done, you can go to the section "Run Above..." to tidy data for u
 
 ```{r}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
-month_select <- 11
+month_select <- 12
 year_select <- 2025
 ```
 
@@ -79,7 +79,7 @@ mutate(hourly_billed = round(hourly_billed, 2),
       hours_rate = paste0(hours, " x $", hourly_billed, "/hr"),
       cost = round(hours * hourly_billed, 2), 
       #define it as in kind or Yes if not in kind
-      include = case_when(category %in% c("Code", "QAQC") ~ "No",
+      include = case_when(category %in% c("Out of Scope") ~ "No",
                           #remove staff/intern time paid for by Extension
                           Extension == TRUE ~ "No",
                           TRUE ~ "Yes"))%>%
@@ -226,7 +226,7 @@ all_data <- senior_staff %>%
          Description = description, `Hours x Rate (if applicable)` = hours_rate, Cost = cost)
 #view all data
 print(all_data)
-sum(all_data$Cost)
+sum(all_data$Cost[all_data$Category != "Equipment"])
 print(field_summary)
 
 ```

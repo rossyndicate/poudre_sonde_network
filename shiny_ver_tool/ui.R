@@ -71,6 +71,13 @@ ui <- page_navbar(
                   value = FALSE,
                   width = "200px",
                   status = "success"
+                ),
+                materialSwitch(
+                  inputId = "add_line",
+                  label = "Plot Line",
+                  value = FALSE,
+                  width = "200px",
+                  status = "success"
                 )
               ),
               div(
