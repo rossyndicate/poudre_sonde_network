@@ -1,0 +1,420 @@
+---
+title: "updating_seasonal_thresholds_jpd_09-26-2025"
+output: html_document
+author: "ROSSyndicate/Juan De La Torre"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 90
+---
+
+```{r Setting options}
+options(arrow.unsafe_metadata = TRUE)
+```
+
+```{r Loading libraries}
+# Loading libraries
+library(tidyverse)
+library(data.table)
+library(lubridate)
+library(here)
+library(arrow)
+library(yaml)
+library(fcw.qaqc)
+library(furrr)
+
+plan(multisession, workers = 2)
+```
+
+# Thresholds
+
+What do we use the thresholds for?
+
+Why are we updating them?
+
+The definition for these thresholds (as defined by `make_threshold_table`) is:
+- `slope_down`: the 99th quantile of the negative `slope_behind` values, grouped by season 
+- `slope_up`: the 1st quantile of the positive `slope_behind` values, grouped by season 
+- `f01`: the 99th quantile of the mean, grouped by season
+- `f99`: the 1st quantile of the mean, grouped by season
+
+These definitions require clean data to accurately generate the thresholds.
+For this reason we will generate them using the manually verified 2023 data.
+When the 2024 data is manually verified, we will use that data to update 
+these thresholds
+
+<!-- TODO: explain what the good-ish method is -->
+We basically have to run through the whole pipeline for 2024 data to be summarized,
+except that during the flagging step we do the same flags that were done in 
+for_azure.Rmd to generate the 'good-ish' 2024 data.
+
+```{r Generating threshold combinations}
+site_levels <- c(
+  #Upper Sites
+  "joei", "cbri", "chd", "pfal", "pbr", "sfm", "pman", "pbd",
+  #lower sites
+  "bellvue", "salyer", "udall", "riverbend", "cottonwood", "elc", "archery", 
+  "riverbluffs")
+
+parameter_levels <- c("Chl-a Fluorescence", "Depth", "DO", "ORP", "pH",
+                      "Specific Conductivity", "Temperature", "Turbidity", 
+                      "FDOM Fluorescence") 
+
+season_levels <- c("winter_baseflow", "snowmelt", "monsoon", "fall_baseflow")
+
+all_combinations <- crossing(
+  site = site_levels,
+  parameter = parameter_levels,
+  season = season_levels
+)
+
+site_level_string <- paste(site_levels, collapse = "|")
+parameter_level_string <- paste(parameter_levels, collapse = "|")
+
+# Preemptively make a complete site list in case we need it
+complete_site_list <- c(
+  # Upper sites
+  "joei", "cbri", "chd", "pfal", "pbr","sfm", "pman","pbd",
+  # Lower sites
+  "bellvue", "salyer", "udall", "riverbend", 
+  "cottonwood", "elc", "archery", "riverbluffs", 
+  "tamasag", "legacy", "lincoln", "timberline", 
+  "prospect", "boxelder", "river bluffs", "boxcreek"
+)
+
+complete_site_str <- paste(complete_site_list, collapse = "|")
+```
+
+# Reading in data to make new thresholds
+
+## Establish the file/directory paths to all the data we will use to make the thresholds 
+```{r}
+# Threshold data ----
+## Manual/realistic threshold data ----
+realistic_threshold_path <- here("data", "field_notes", 
+                                 "qaqc", "clp_realistic_thresholds.csv")
+
+## Deprecated threshold data: 2023 ----
+seasonal_thresholds_path <- here("data", "field_notes", 
+                                 "qaqc", "seasonal_thresholds.csv")
+
+## Deprecated threshold data: 2025 ----
+# Not going to use the `sjs` version of this file so that we can compare outputs 
+# From the previous iteration to this iteration without SJS's tweaks
+updated_seasonal_thresholds_path <- here("data", "field_notes", 
+                                         "qaqc", "deprecated_updated_seasonal_thresholds_2025.csv")
+
+# Sensor data
+## 2023 data ----
+final_2023_path <- here("data", "manual_data_verification",
+                        "2023_cycle", "finalized_dataset", 
+                        "all_data_auto_flagged_post_verification.RDS")
+
+## 2024 data ----
+# 2024 data is still in the process of being verified, so we will have to 
+# establish a couple of paths for the directories. 
+
+raw_2024_paths <- list.files(here("data", "manual_data_verification",
+                                  "2024_cycle", "in_progress",
+                                  "pre_verification_directory"),
+                             full.names = TRUE) %>%
+  # Remove virridy files
+  discard(~ grepl("virridy", basename(.x))) %>%
+  # Keep only files that match our sites
+  keep(~ grepl(complete_site_str, basename(.x))) %>%
+  # Keep only files that match our parameters
+  keep(~ grepl(parameter_level_string, basename(.x)))
+
+int_2024_paths <- list.files(here("data", "manual_data_verification",
+                                  "2024_cycle", "in_progress",
+                                  "intermediary_directory"),
+                             full.names = TRUE) %>%
+  discard(~ grepl("virridy", basename(.x))) %>%
+  keep(~ grepl(complete_site_str, basename(.x))) %>%
+  keep(~ grepl(parameter_level_string, basename(.x)))
+
+final_2024_paths <- list.files(here("data", "manual_data_verification",
+                                    "2024_cycle","in_progress", 
+                                    "verified_directory"),
+                               full.names = TRUE) %>%
+  discard(~ grepl("virridy", basename(.x))) %>%
+  keep(~ grepl(complete_site_str, basename(.x))) %>%
+  keep(~ grepl(parameter_level_string, basename(.x)))
+
+## 2025 data ----
+# We will be using the 2025 raw data
+# This is a directory of parquet files
+raw_2025_path <- here("data", "manual_data_verification",
+                      "2025_cycle", "hydro_vu_pull",
+                      "raw_data") 
+```
+
+## Read the threshold data 
+```{r}
+# Manual/realistic threshold data ----
+realistic_threshold <- read_csv(realistic_threshold_path,
+                                show_col_types = FALSE)
+
+# Deprecated threshold data: 2023 ----
+seasonal_thresholds <- read_csv(seasonal_thresholds_path,
+                                show_col_types = FALSE)
+
+# Deprecated threshold data: 2025 ----
+updated_seasonal_thresholds_2025 <- read_csv(updated_seasonal_thresholds_path,
+                                             show_col_types = FALSE)
+```
+
+## Read 2023 data
+```{r}
+# Read in the finalized 2023 data
+final_2023 <- read_rds(final_2023_path) %>%
+  bind_rows() %>% 
+  data.table() %>% 
+  fcw.qaqc::fix_site_names() %>% 
+  filter(
+    !is.na(site),
+    site %in% site_levels,
+    parameter %in% parameter_levels,
+    # Filter based on DT. The 2023 data is in MST.
+    (DT_round >= as.POSIXct("2023-01-01 00:00:00", tz = "America/Denver") & 
+       DT_round <= as.POSIXct("2023-12-31 11:59:59", tz = "America/Denver"))
+  ) %>%
+  select(DT_round, DT_join, site, parameter, mean, flag) %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  discard(~ nrow(.x) == 0) %>% 
+  # Generate the summary statistics for the 2023 verified data
+  map(~fcw.qaqc::generate_summary_statistics(.)) 
+
+# Remove unnecessary objects
+rm(
+  # File path list
+  final_2023_path
+)
+
+gc()
+```
+
+## Read 2024 Data
+
+The manual verification of the 2024 data is underway, but not yet completed. 
+
+Instead of purely using the 'good-ish' data cleaning method for this data, 
+like we had previously done for the 2023 data, and how we had done for the
+deprecated 2025 thresholds, we will selectively apply that method to data 
+which has not yet been manually verified.
+
+This means that we will clean those data which have yet to be verified (`raw`, `int`),
+but will use the `final` data as is. For the `int` data, we will apply the
+cleaning method to the entire data set and not just the un-verified sections 
+because those verified sections still need to be finalized and the extra complexity
+to separate those data would not justify the result (there are currently 5 files
+in the intermediary folder).
+
+```{r}
+source(here("src", "prep_data_for_thresholds.R"))
+
+# Read in the raw 2024 data
+raw_2024 <- map(raw_2024_paths, ~read_rds(.x))
+
+# Read in the intermediary 2024 data
+int_2024 <- map(int_2024_paths, ~read_rds(.x))
+
+# Combine the raw and int data
+raw_int_2024 <- c(raw_2024, int_2024)
+
+# Prepare the 2024 data from the filtered file list using parallel processing
+prepped_2024 <- raw_int_2024 %>% 
+  future_map(~prep_data_for_thresholds(.x), .progress = T) %>%
+  set_names(map_chr(., ~ paste0(unique(.x$site), "-", unique(.x$parameter)))) %>%
+  purrr::keep(~ nrow(.) > 0) %>%
+  # Generate the summary statistics for the 2024 autoqaqc'd data
+  future_map(~generate_summary_statistics(.), .progress = T)
+
+# Read in the 2024 verified/final data
+final_2024 <- final_2024_paths %>%
+  future_map(~read_rds(.x)) %>%
+  bind_rows() %>% 
+  data.table() %>% 
+  fcw.qaqc::fix_site_names() %>% 
+  filter(
+    !is.na(site),
+    site %in% site_levels,
+    parameter %in% parameter_levels,
+    # Filter based on DT. The 2024 data is in MST.
+    (DT_round >= as.POSIXct("2024-01-01 00:00:00", tz = "America/Denver") & 
+       DT_round <= as.POSIXct("2024-12-31 11:59:59", tz = "America/Denver"))
+  ) %>%
+  select(DT_round, DT_join, site, parameter, mean, flag) %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  discard(~ nrow(.x) == 0) %>% 
+  # Generate the summary statistics for the 2023 verified data
+  future_map(~fcw.qaqc::generate_summary_statistics(.x), .progress = T) 
+
+# Combine the lists
+final_2024 <- c(prepped_2024, final_2024)
+
+# Remove unnecessary objects and gc()
+rm(
+  # Data objects
+  raw_2024, int_2024, raw_int_2024, prepped_2024,
+  # File paths
+  raw_2024_paths, int_2024_paths
+)
+
+gc()
+```
+
+## Read 2025 Data
+
+The manual verification of the 2025 data is not yet underway, we will use the 
+good-ish data cleaning method for all of the 2025 data.
+
+```{r}
+add_column_if_not_exists <- function(df, column_name, default_value = NA) {
+  if (!column_name %in% colnames(df)) {
+    df <- df %>% dplyr::mutate(!!sym(column_name) := default_value)
+  }
+  return(df)
+}
+
+# Read in and clean the 2025 data
+
+# Load in field notes
+mWater_data <- load_mWater()
+
+# grab field notes with proper timezone handling
+all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data) %>%
+  mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
+         last_site_visit = with_tz(last_site_visit, tzone = "UTC"),
+         DT_join = as.character(DT_round))
+
+sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data) %>%
+  mutate(start_DT = with_tz(start_DT, tzone = "UTC"),
+         end_DT = with_tz(end_DT, tzone = "UTC"))
+
+final_2025 <- raw_2025_paths %>% 
+  fcw.qaqc::munge_api_data(api_dir = .) %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  keep(~ nrow(.) > 0) %>% 
+  .[grepl(complete_site_str, names(.))] %>%
+  .[grepl(parameter_level_string, names(.))] %>% 
+  future_map(~fcw.qaqc::tidy_api_data(api_data = .x)) %>%
+  future_map(~add_field_notes(df = .x, notes = all_field_notes)) %>% 
+  future_map(~add_malfunction_flag(df = .x, malfunction_records = sensor_malfunction_notes)) %>% 
+  future_map(~{
+    .x %>% 
+      add_column_if_not_exists("auto_flag") %>% 
+      add_column_if_not_exists("mal_flag") %>% 
+      mutate(auto_flag = flag)
+  }) %>% 
+  future_map(~prep_data_for_thresholds(.x)) %>%
+  set_names(map_chr(., ~ paste0(unique(.x$site), "-", unique(.x$parameter)))) %>%
+  purrr::keep(~ nrow(.) > 0) %>%
+  # Generate the summary statistics for the 2024 autoqaqc'd data
+  future_map(~generate_summary_statistics(.), .progress = T)
+```
+
+
+# Generate the new thresholds from the available data (2023, 2024, and 2025)
+
+```{r}
+# Bind the 2023, 2024, and 2025 data, favoring the highest quality data
+site_param_combos <- crossing(complete_site_list, parameter_levels) %>% 
+  mutate(combo = paste0(complete_site_list, "-", parameter_levels)) %>% 
+  pull(combo)
+
+bound_data <- map(
+  site_param_combos,
+  function(idx) {
+    # Get the index from the list
+    y23 <- final_2023[[idx]]
+    y24 <- final_2024[[idx]]
+    y25 <- final_2025[[idx]]
+    
+    y23_df <- if(!is.null(y23) && nrow(y23) > 0) y23 else NULL
+    y24_df <- if(!is.null(y24) && nrow(y24) > 0) y24 else NULL
+    y25_df <- if(!is.null(y25) && nrow(y25) > 0) y25 else NULL
+    
+    bound_data <- bind_rows(y23_df, y24_df, y25_df)
+    
+    return(bound_data)
+  }
+) %>%
+  set_names(site_param_combos) %>%
+  compact() %>% 
+  map(~{
+    .x %>% 
+      mutate(mean = ifelse(parameter == "Turbidity" & mean > 1000, NA, mean)) %>% 
+      distinct(DT_round, .keep_all = TRUE) %>% 
+      arrange(DT_round)
+  })
+```
+
+```{r}
+# See which site, parameter, season combinations meet our guidelines
+# 8k rows minimum
+# 7.5k values minimum
+# 80% needs to be non-na
+# at least 2 years of data
+threshold_check <- map_dfr(
+  bound_data, 
+  ~{
+    .x %>% 
+      mutate(mean = ifelse(parameter == "Turbidity" & mean > 1000, NA, mean)) %>% 
+      group_by(site, parameter, season) %>% 
+      summarize(
+        row_min_check = n() >= 8000,
+        val_min_check = sum(!is.na(mean)) >= 7500,
+        pct_min_check = (sum(!is.na(mean)) / n()) >= 0.75,
+        year_min_check = n_distinct(year(DT_round)) >= 2,
+        passes_all = row_min_check & val_min_check & pct_min_check & year_min_check,
+        .groups = "drop"
+      )
+  }
+) %>% 
+  select(site, parameter, season, passes_all)
+```
+
+```{r Generate the new thresholds using the bound data}
+new_thresholds <- map_dfr(bound_data, fcw.qaqc::make_threshold_table)
+```
+
+```{r Generate the final new thresholds}
+# Upper sites
+upper_sites <- c("joei", "cbri", "chd", "pfal", "pbr", "sfm", "pman", "pbd")
+
+# Lower sites  
+lower_sites <- c("bellvue", "salyer", "udall", "riverbend", 
+                 "cottonwood", "elc", "archery", "riverbluffs", 
+                 "tamasag", "legacy", "lincoln", "timberline", 
+                 "prospect", "boxelder", "river bluffs", "boxcreek")
+
+# String patterns (if you still need them)
+upper_site_str <- paste(upper_sites, collapse = "|")
+lower_site_str <- paste(lower_sites, collapse = "|")
+
+# Replace those data that do not meet our standards with the realistic thresholds
+final_thresholds <- all_combinations %>% 
+  left_join(new_thresholds, by = c("site", "parameter", "season")) %>% 
+  left_join(threshold_check, by = c("site", "parameter", "season")) %>% 
+  mutate(watershed = ifelse(site %in% upper_sites, "upper", "lower")) %>% 
+  left_join(realistic_threshold, by = c("parameter", "watershed")) %>% 
+  mutate(
+    t_slope_behind_01 = ifelse(is.na(t_slope_behind_01), -100, t_slope_behind_01),
+    t_slope_behind_99 = ifelse(is.na(t_slope_behind_99), 100, t_slope_behind_99),
+    passes_all = ifelse(is.na(passes_all), FALSE, passes_all),
+    t_mean01 = ifelse(passes_all, t_mean01, min),
+    t_mean99 = ifelse(passes_all, t_mean99, max),
+    t_mean99 = ifelse(t_mean99 >= 4000, 2000, t_mean99)
+  ) %>% 
+  select(-c(passes_all, watershed, min, max))
+```
+
+```{r Save the new thresholds}
+current_utc <- format(Sys.time(), "%Y%m%d-T%H%M%SZ", tz = "UTC")
+
+write_csv(final_thresholds, here("data", "field_notes", "qaqc", paste("current_updated_seasonal_thresholds_2025", current_utc, ".csv")))
+
+arrow::write_parquet(final_thresholds, here("data", "field_notes", "qaqc", paste0("current_updated_seasonal_thresholds_2025", current_utc, ".parquet")))
+```
