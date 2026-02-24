@@ -17,12 +17,12 @@ incomplete, it needs to take care of more things than just the
 `user_flag` column. Right now I defaulted to correcting all exponential drift
 instances with a log solution, but I think that there are still cases where the 
 exponential solution could work better. There is definitely still some things 
-that I would like to explore. Overall, I think that these functions work
-as intended. They are not really deciding anything, and I think that a lot of the 
-weird results from this correction are due to mislabeling a linear correction as 
-an exponential and vice versa. For Turbidity the correction method was almost always
+that I would like to explore around that point. Overall, I think that these functions work
+as intended. They are not really deciding anything, so I think that a lot of the 
+"weird" results from this correction are due to mislabeling the drift type as linear instead of 
+exponential and vice versa. For Turbidity the correction method was almost always
 multiplicative, and I think that it worked out real nice for taming extreme variability.
-For FDOM the correction method was almost always additive. 
+For FDOM the drift type was always linear and the correction method was almost always additive. 
 
 Drift detection and labeling is difficult. Real time drift detection is more so. 
 I think we can think of some clever, novel solutions to those problems, but for 
@@ -31,7 +31,9 @@ had an excel sheet open to mark down the start and end time for drift, as well
 as what I thought would make sense for the drift instance's type and correction
 method. This was slow work, but not nearly as hard as I thought it might be. The 
 data that I was using had already been manually verified, so that helped a lot.
-There were still instances of drift that I needed to correct, add, or remove. 
+There were still instances of drift that I needed to correct, add, or remove. You 
+can view these decisions in the `decision_df` and the actual excel sheet is in 
+`here("data", "derived", "auto_qaqc_files", "drift_corrections", "2025_drift_corrections.xlsx")`.
 
 This workflow uses some functions from `ross.wq.tools` and the uCLP work that I 
 needed to tweak in order to make them work for this context.
@@ -53,8 +55,35 @@ but you can see what each function is trying to do before then.
 Overall, I am feeling pretty good about this workflow so far. There is still a 
 fair amount of work left to make this a true programmatic correction workflow, 
 but we can at least use this to correct the 2025 data. I will note that I checked
-all of the Turb data to make sure that it looked right, but I did not do the 
-same for FDOM. 
+all of the drift data that was corrected to make sure that it looked good, but a 
+double check on those would be a good idea. 
+
+Some notes on future work:
+- Automatic drift detection method needs more work
+- Automatic correction decision method needs to be made.
+  - Right now we manually decide what to do with the drift that we see. For 
+  FDOM this could be handled pretty easily by automatically setting those corrections
+  to linear and additive. For Turbidity there needs to be some rules to determine 
+  if a correction should be exponential or linear, but they should always default
+  to multiplicative. 
+- The decision dataframe has some decisions that could be updated after this work.
+- There is a need to explore a true exponential solution. 
+  - While working on the exponential solution a kept running into "humps" after
+  having corrected the data. Sometimes a linear solution would provide better 
+  results given a shorter duration and magnitude of the drift, but when the drift
+  was very exponential linear solutions still gave me humps. Then I realized that
+  to fix this I needed a log solution. I could fit an exponential curve to the 
+  data, but if the curve was tame enough we actually wanted stronger correction 
+  closer to the tail end of the correction for longer, so that means an inverse
+  of the exponential shape. This doesn't work when the curve is very, very strong.
+  Though the log solution will bring the data down it will, in my opinion, overcorrect.
+  I think that those are situations where a true exonential solution should work
+  best, those situations where the drop off in correction should be quick. That
+  means that there needs to be a "true" `exponential_correction_fxn` and there needs to
+  be an update to the current one. This also means that the decision df needs to 
+  be updated as well, so that we can differentiate between "exponential" and "log"
+  solutions.
+  
 
 # Environment set up
 
@@ -1101,9 +1130,11 @@ After all of this work, the final column to consider is: `mean_filled`
 
 # Plotting the final corrections
 
+Explore the final results here.
+
 ```{r}
 plot_final_corrections(
-  df                  = corrected_data$`udall-Turbidity`,
+  df                  = fdom_data$`udall-FDOM Fluorescence`,
   data_list           = prepped_data,
   site_order_template = site_order
 )
