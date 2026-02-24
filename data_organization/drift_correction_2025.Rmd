@@ -77,7 +77,7 @@ Some notes on future work:
   closer to the tail end of the correction for longer, so that means an inverse
   of the exponential shape. This doesn't work when the curve is very, very strong.
   Though the log solution will bring the data down it will, in my opinion, overcorrect.
-  I think that those are situations where a true exonential solution should work
+  I think that those are situations where a true exponential solution should work
   best, those situations where the drop off in correction should be quick. That
   means that there needs to be a "true" `exponential_correction_fxn` and there needs to
   be an update to the current one. This also means that the decision df needs to 
