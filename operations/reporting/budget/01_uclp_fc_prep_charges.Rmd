@@ -14,7 +14,7 @@ Once these are done, you can go to the section "Run Above..." to tidy data for u
 
 ```{r}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
-month_select <- 11
+month_select <- 12
 year_select <- 2025
 ```
 
@@ -45,83 +45,6 @@ mWater_creds <- read_yaml(here("creds", "mWaterCreds.yml"))
 ```
 
 
-# Tidy up personnel budget
-
-Update with new staff/salaries at the start of each year
-
-```{r tidy_personnel, echo=FALSE, message=FALSE}
-
-###### ----- HOURLY RATES ------ #######
-#      UPDATE AS NEEDED               #
-hourly_rates <- read_csv(file = paste0(dir,"/docs/pwqn/docs/monthly_budget/employee_hourly_rates.csv"), show_col_types = F)%>%
-  mutate(fringe = case_when(type == "Salary" ~ .286, 
-                            type == "Hourly" ~ .012), 
-    hourly_n_fringe = case_when(type == "Salary" ~ (rate) / 1230 , 
-                                   type == "Hourly" ~  rate),
-    hourly_billed = case_when(type == "Salary" ~ (rate + (rate * fringe)) / 1230 , 
-                                   type == "Hourly" ~  rate + (rate* fringe)))
-
-# Pull in personnel budget
-senior_staff <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "staff_timeclock")%>%
-  mutate(month = month(date), 
-         year = year(date))%>%
-  # filter for months and year selected above and pwqn project
-  filter(month == month_select & year == year_select & project == "UCLP")%>%
-  group_by(category, staff, Extension) %>%
-  # combine unique descriptions and sum hours for each category
-  summarize(description = paste(unique(description), collapse = ", "), hours = sum(hours))%>%
-  ungroup()%>%
-  # add in the hourly rates for senior staff
-  left_join(select(hourly_rates, person, hourly_billed), by = c("staff" = "person"))%>%
-  # calculate hourly costs and hours rate
-mutate(hourly_billed = round(hourly_billed, 2),
-      hours_rate = paste0(hours, " x $", hourly_billed, "/hr"),
-      cost = round(hours * hourly_billed, 2), 
-      #define it as in kind or Yes if not in kind
-      include = case_when(#remove staff/intern time paid for by Extension
-                          Extension == TRUE ~ "No",
-                          TRUE ~ "Yes"))%>%
-  # remove hours and hourly billed (summarized in hours_rate)
-  select(-hours, -hourly_billed)
-```
-
-
-```{r tidy_equip_travel, echo=FALSE, message=FALSE}
-
-# Pull in equipment budget
-
-equipment <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "equipment_charges")%>%
-  mutate(month = month(date), 
-         year = year(date))%>%
-  # filter for months and year selected above and pwqn project
-  filter(month == month_select & year == year_select & project == "UCLP")%>%
-  mutate(category = "Equipment", 
-         include = ifelse(startup == T, "No", "Yes"))%>%
-  select(category, 
-         staff = vendor, 
-         description = item,
-         cost = amount, 
-         include)%>%
-  #set include to character
-  mutate(include = as.character(include))
-
-# Pull in travel budget
-
-travel <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "travel")%>%
-  mutate(month = month(date), 
-         year = year(date))%>%
-  # filter for months and year selected above and pwqn project
-  filter(month == month_select & year == year_select & project == "UCLP")%>%
-  mutate(category = "Travel", 
-         include = ifelse(startup == T, "No", "Yes"))%>%
-  select(category,
-         description,
-         cost = amount, 
-         include)%>%
-  #set include to character
-  mutate(include = as.character(include))
-  
-```
 # Summarize Field Notes
 
 ```{r summarize_field_notes, include=FALSE, echo=FALSE}
@@ -211,7 +134,79 @@ rm(grab_monthly_notes)
 rm(grab_mWater_sensor_notes)
 print("Field Summary Complete and Job Code Data tidied")
 ```
+# Tidy up personnel budget
 
+Update with new staff/salaries at the start of each year
+
+```{r tidy_personnel, echo=FALSE, message=FALSE}
+
+###### ----- HOURLY RATES ------ #######
+#      UPDATE AS NEEDED               #
+hourly_rates <- read_csv(file = paste0(dir,"/docs/pwqn/docs/monthly_budget/employee_hourly_rates.csv"), show_col_types = F)%>%
+  mutate(fringe = case_when(type == "Salary" ~ .286, 
+                            type == "Hourly" ~ .012), 
+    hourly_n_fringe = case_when(type == "Salary" ~ (rate) / 1230 , 
+                                   type == "Hourly" ~  rate),
+    hourly_billed = case_when(type == "Salary" ~ (rate + (rate * fringe)) / 1230 , 
+                                   type == "Hourly" ~  rate + (rate* fringe)))
+
+# Pull in personnel budget
+senior_staff <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "staff_timeclock")%>%
+  mutate(month = month(date), 
+         year = year(date))%>%
+  # filter for months and year selected above and pwqn project
+  filter(month == month_select & year == year_select & project == "UCLP")%>%
+  group_by(category, staff, Extension) %>%
+  # combine unique descriptions and sum hours for each category
+  summarize(description = paste(unique(description), collapse = ", "), hours = sum(hours))%>%
+  ungroup()%>%
+  # add in the hourly rates for senior staff
+  left_join(select(hourly_rates, person, hourly_billed), by = c("staff" = "person"))%>%
+  # calculate hourly costs and hours rate
+mutate(hourly_billed = round(hourly_billed, 2),
+      hours_rate = paste0(hours, " x $", hourly_billed, "/hr"),
+      cost = round(hours * hourly_billed, 2), 
+      #define it as in kind or Yes if not in kind
+      include = case_when(#remove staff/intern time paid for by Extension
+                          Extension == TRUE ~ "No",
+                          TRUE ~ "Yes"))%>%
+  # remove hours and hourly billed (summarized in hours_rate)
+  select(-hours, -hourly_billed)
+
+
+# Pull in equipment budget
+
+equipment <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "equipment_charges")%>%
+  mutate(month = month(date), 
+         year = year(date))%>%
+  # filter for months and year selected above and pwqn project
+  filter(month == month_select & year == year_select & project == "UCLP")%>%
+  mutate(category = "Equipment", 
+         include = ifelse(startup == T, "No", "Yes"))%>%
+  select(category, 
+         staff = vendor, 
+         description = item,
+         cost = amount, 
+         include)%>%
+  #set include to character
+  mutate(include = as.character(include))
+
+# Pull in travel budget
+
+travel <- read_excel(path = paste0(dir,"/docs/pwqn/docs/monthly_budget/pwqn_budget_reporting.xlsx"), sheet = "travel")%>%
+  mutate(month = month(date), 
+         year = year(date))%>%
+  # filter for months and year selected above and pwqn project
+  filter(month == month_select & year == year_select & project == "UCLP")%>%
+  mutate(category = "Travel", 
+         include = ifelse(startup == T, "No", "Yes"))%>%
+  select(category,
+         description,
+         cost = amount, 
+         include)%>%
+  #set include to character
+  mutate(include = as.character(include))
+```
 # Run Above to Tidy data for selected month
 
 ```{r}
@@ -236,7 +231,7 @@ all_data <- senior_staff %>%
          Description = description, `Hours x Rate (if applicable)` = hours_rate, Cost = cost)
 #view all data
 print(all_data)
-sum(all_data$Cost)
+sum(all_data$Cost[!all_data$Category %in% c("Equipment", "Travel")])
 ```
 
 # Write to CSV for 02 script
