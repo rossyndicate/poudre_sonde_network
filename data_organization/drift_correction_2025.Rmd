@@ -1106,8 +1106,8 @@ corrected_data <- prepped_data %>%
 
     # 5. Post-process: smooth (Turbidity only) then interpolate short gaps
     df_corrected %>%
-      low_pass_filter() %>%
-      apply_interpolation_missing_data()
+      apply_interpolation_missing_data(value_col = "mean_drift_trans", new_value_col = "mean_filled")%>%
+       low_pass_filter(correction_col = "mean_filled")
   })
 ```
 
