@@ -1124,7 +1124,7 @@ iwalk(corrected_data, function(df, key) {
 })
 ```
 
-After all of this work, the final column to consider is: `mean_filled`
+After all of this work, the final column to consider is: `mean_smoothed`
 
 # Plotting the final corrections
 
