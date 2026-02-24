@@ -592,7 +592,7 @@ plot_final_corrections <- function(df, data_list, site_order_template) {
 
   p <- p %>%
     add_trace(data = raw_df,
-              x = ~DT_round, y = ~mean_filled,
+              x = ~DT_round, y = ~smoothed_mean,
               type = "scatter", mode = "markers",
               marker = list(color = "black", size = 4),
               name = "no correction")
