@@ -1,0 +1,218 @@
+---
+title: "Updating Seasonal Thresholds 2026"
+author: "ROSSyndicate/Juan De La Torre"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options:
+  markdown:
+    wrap: 90
+---
+
+```{r Options & Libraries}
+options(arrow.unsafe_metadata = TRUE)
+
+library(tidyverse)
+library(data.table)
+library(lubridate)
+library(here)
+library(arrow)
+library(yaml)
+
+devtools::install_github("rossyndicate/fcw.qaqc")
+library(fcw.qaqc)
+```
+
+```{r Site / parameter / season definitions}
+site_levels <- c(
+  #Upper Sites
+  "joei", "cbri", "chd", "pfal", "pbr", "sfm", "pman", "pbd",
+  #lower sites
+  "bellvue", "salyer", "udall", "riverbend", "cottonwood", "elc", "archery",
+  "riverbluffs")
+
+parameter_levels <- c("Chl-a Fluorescence", "Depth", "DO", "ORP", "pH",
+                      "Specific Conductivity", "Temperature", "Turbidity",
+                      "FDOM Fluorescence")
+
+season_levels <- c("winter_baseflow", "snowmelt", "monsoon", "fall_baseflow")
+
+all_combinations <- crossing(
+  site = site_levels,
+  parameter = parameter_levels,
+  season = season_levels
+)
+
+```
+
+```{r File paths}
+# Threshold data ----
+## Manual/realistic threshold data ----
+realistic_threshold_path <- here("data", "derived", "auto_qaqc_files", "thresholds",
+                                 "clp_realistic_thresholds.csv") 
+
+# Sensor data ----
+## All compiled data
+all_compiled_path <- here("data", "collated", "sensor", 
+                          "compiled_all_sensor_data_2026-02-10.parquet")
+
+## 2025 data ----
+drift_corrected_2025_path <- list.files(here("data", "raw", "sensor", 
+                                             "manual_data_verification",
+                                             "2025_cycle", "post_verification"), 
+                                        full.names = TRUE)
+
+# Output ----
+output_threshold_path <- here("data", "derived", "auto_qaqc_files", "thresholds")
+```
+
+# Read reference threshold data
+
+```{r Read reference threshold data}
+realistic_threshold <- read_csv(realistic_threshold_path, show_col_types = FALSE)
+rm(realistic_threshold_path)
+```
+
+# Read and tidy all compiled data
+
+```{r Read and tidy all compiled data}
+all_sensor_data <- read_parquet(all_compiled_path) %>%
+  data.table() %>%
+  fcw.qaqc::standardize_site_names() %>%
+  filter(
+    !is.na(site),
+    site %in% site_levels,
+    parameter %in% parameter_levels,
+    # Filter based on DT. The data is in MST.
+    (DT_round >= as.POSIXct("2023-01-01 00:00:00", tz = "America/Denver") &
+       DT_round <= as.POSIXct("2025-12-31 11:59:59", tz = "America/Denver"))
+  ) %>%
+  select(DT_round, site, parameter, mean, contains("flag")) 
+
+drift_corrected_2025 <- map_dfr(drift_corrected_2025_path, read_parquet) %>%
+  data.table() %>%
+  fcw.qaqc::standardize_site_names() %>%
+  select(DT_round, site, parameter, mean = mean_drift_trans) %>%
+  mutate(DT_round = with_tz(DT_round, "America/Denver")) %>%
+  left_join(
+    all_sensor_data %>% select(DT_round, site, parameter, clean_flag),
+    by = c("DT_round", "site", "parameter")
+  ) %>%
+  mutate(
+    clean_flag = map_chr(clean_flag, \(flag_str) {
+      if (is.na(flag_str)) return(NA_character_)
+      tokens <- str_split(flag_str, ";")[[1]] %>%
+        str_replace_all("\\n", " ") %>%
+        str_trim()
+      cleaned <- tokens[!tokens %in% c("drift", "sensor biofouling", "")]
+      if (length(cleaned) == 0) return(NA_character_)
+      paste(cleaned, collapse = ";")
+    })
+  )
+
+all_sensor_data <- all_sensor_data %>%
+  rows_update(drift_corrected_2025, by = c("DT_round", "site", "parameter"),
+              unmatched = "ignore") %>%
+  mutate(
+    mean = case_when(
+      # Sonde deployment / movement flags (equiv. to sonde_employed, sonde_moved)
+      str_detect(clean_flag, "site visit|sv window|sonde unsubmerged") ~ NA_real_,
+      # Malfunction flags (equiv. to mal_flag)
+      str_detect(clean_flag, "sensor malfunction|sonde burial") ~ NA_real_,
+      # Other confirmed bad data
+      str_detect(clean_flag, paste(c(
+        "frozen", "suspect data", "repeated value", "missing data",
+        "DO interference", "baro issue", "baro noise", "do noise",
+        "wiper issue", "wiper interference", "Possible burial"
+      ), collapse = "|")) ~ NA_real_,
+      # Uncorrected drift/biofouling — if still present after rows_update,
+      # this row was not drift-corrected, so null it
+      str_detect(clean_flag, "drift|sensor biofouling") ~ NA_real_,
+      # Calibration error — keep in 2025, null otherwise
+      str_detect(clean_flag, "calibration error") & year(DT_round) != 2025 ~ NA_real_,
+      TRUE ~ mean
+    ),
+    mean = ifelse(parameter == "Turbidity" & mean > 1000, NA, mean)
+  ) %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  discard(~ nrow(.x) == 0) %>%
+  map(
+    \(x) x %>%
+      distinct(DT_round, .keep_all = TRUE) %>%
+      arrange(DT_round) %>%
+      fcw.qaqc::prep_summary_statistics()
+  ) %>%
+  compact()
+
+rm(all_compiled_path, drift_corrected_2025_path, drift_corrected_2025)
+gc()
+```
+
+# Threshold quality check
+
+```{r Threshold quality check}
+# See which site, parameter, season combinations meet our guidelines
+# 8k rows minimum
+# 7.5k values minimum
+# 80% needs to be non-na
+# at least 2 years of data
+threshold_check <- map_dfr(
+  all_sensor_data,
+  ~{
+    .x %>%
+      group_by(site, parameter, season) %>%
+      summarize(
+        row_min_check = n() >= 7000,
+        val_min_check = sum(!is.na(mean)) >= 5000,
+        pct_min_check = (sum(!is.na(mean)) / n()) >= 0.70,
+        #year_min_check = n_distinct(year(DT_round)) >= 2,
+        passes_all = row_min_check & pct_min_check & val_min_check,
+        .groups = "drop"
+      )
+  }
+) %>%
+  select(site, parameter, season, passes_all)
+```
+
+# Generate thresholds
+
+```{r Generate new thresholds}
+new_thresholds <- map_dfr(all_sensor_data, make_threshold_table)
+```
+
+```{r Finalize thresholds}
+# Upper sites
+upper_sites <- c("joei", "cbri", "chd", "pfal", "pbr", "sfm", "pman", "pbd")
+
+# Replace those data that do not meet our standards with the realistic thresholds
+final_thresholds <- all_combinations %>%
+  left_join(new_thresholds, by = c("site", "parameter", "season")) %>%
+  left_join(threshold_check, by = c("site", "parameter", "season")) %>%
+  mutate(watershed = ifelse(site %in% upper_sites, "upper", "lower")) %>%
+  left_join(realistic_threshold, by = c("parameter", "watershed")) %>%
+group_by(parameter, season) %>% 
+  mutate(
+    t_slope_behind_01 = ifelse(is.na(t_slope_behind_01), min(t_slope_behind_01, na.rm = TRUE), t_slope_behind_01),
+    t_slope_behind_99 = ifelse(is.na(t_slope_behind_99), max(t_slope_behind_99, na.rm = T), t_slope_behind_99)
+  )%>%
+  ungroup()%>%
+  mutate(
+    passes_all = ifelse(is.na(passes_all), FALSE, passes_all),
+    t_mean01 = ifelse(passes_all, t_mean01, min),
+    t_mean99 = ifelse(passes_all, t_mean99, max),
+    t_mean99 = ifelse(t_mean99 >= 4000, 2000, t_mean99)
+  ) %>%
+  select(-c(passes_all, watershed, min, max))
+```
+
+# Save output
+```{r Save output}
+current_utc <- format(Sys.time(), "%Y%m%d-T%H%M%SZ", tz = "UTC")
+
+write_csv(final_thresholds,
+          here(output_threshold_path,  
+               paste0("seasonal_thresholds", current_utc, ".csv")))
+
+arrow::write_parquet(final_thresholds,
+                     here(output_threshold_path,
+                          paste0("seasonal_thresholds", current_utc, ".parquet")))
+```
