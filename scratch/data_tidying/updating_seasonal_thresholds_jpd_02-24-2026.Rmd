@@ -161,11 +161,11 @@ threshold_check <- map_dfr(
     .x %>%
       group_by(site, parameter, season) %>%
       summarize(
-        row_min_check = n() >= 8000,
-        val_min_check = sum(!is.na(mean)) >= 7500,
-        pct_min_check = (sum(!is.na(mean)) / n()) >= 0.75,
-        year_min_check = n_distinct(year(DT_round)) >= 2,
-        passes_all = row_min_check & val_min_check & pct_min_check & year_min_check,
+        row_min_check = n() >= 7000,
+        val_min_check = sum(!is.na(mean)) >= 5000,
+        pct_min_check = (sum(!is.na(mean)) / n()) >= 0.70,
+        #year_min_check = n_distinct(year(DT_round)) >= 2,
+        passes_all = row_min_check & pct_min_check & val_min_check,
         .groups = "drop"
       )
   }
