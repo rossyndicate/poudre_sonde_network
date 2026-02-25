@@ -88,7 +88,7 @@ all_sensor_data <- read_parquet(all_compiled_path) %>%
   ) %>%
   select(DT_round, site, parameter, mean, contains("flag")) 
 
-drift_corrected_2025 <- map_dfr(drift_corrected_2025_path, arrow::read_parquet) %>%
+drift_corrected_2025 <- map_dfr(drift_corrected_2025_path, read_parquet) %>%
   data.table() %>%
   fcw.qaqc::standardize_site_names() %>%
   select(DT_round, site, parameter, mean = mean_drift_trans) %>%
