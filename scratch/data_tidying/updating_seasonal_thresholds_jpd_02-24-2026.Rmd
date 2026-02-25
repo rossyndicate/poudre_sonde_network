@@ -189,9 +189,13 @@ final_thresholds <- all_combinations %>%
   left_join(threshold_check, by = c("site", "parameter", "season")) %>%
   mutate(watershed = ifelse(site %in% upper_sites, "upper", "lower")) %>%
   left_join(realistic_threshold, by = c("parameter", "watershed")) %>%
+group_by(parameter, season) %>% 
   mutate(
-    t_slope_behind_01 = ifelse(is.na(t_slope_behind_01), -100, t_slope_behind_01),
-    t_slope_behind_99 = ifelse(is.na(t_slope_behind_99), 100, t_slope_behind_99),
+    t_slope_behind_01 = ifelse(is.na(t_slope_behind_01), min(t_slope_behind_01, na.rm = TRUE), t_slope_behind_01),
+    t_slope_behind_99 = ifelse(is.na(t_slope_behind_99), max(t_slope_behind_99, na.rm = T), t_slope_behind_99)
+  )%>%
+  ungroup()%>%
+  mutate(
     passes_all = ifelse(is.na(passes_all), FALSE, passes_all),
     t_mean01 = ifelse(passes_all, t_mean01, min),
     t_mean99 = ifelse(passes_all, t_mean99, max),
