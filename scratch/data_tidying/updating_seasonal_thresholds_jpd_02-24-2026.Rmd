@@ -75,7 +75,7 @@ rm(realistic_threshold_path)
 # Read and tidy all compiled data
 
 ```{r Read and tidy all compiled data}
-all_sensor_data <- arrow::read_parquet(all_compiled_path) %>%
+all_sensor_data <- read_parquet(all_compiled_path) %>%
   data.table() %>%
   fcw.qaqc::standardize_site_names() %>%
   filter(
