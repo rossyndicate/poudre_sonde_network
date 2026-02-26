@@ -602,7 +602,7 @@ plot_final_corrections <- function(df, data_list, site_order_template) {
 
   p %>%
     add_trace(data = corrected_df,
-              x = ~DT_round, y = ~smoothed_mean
+              x = ~DT_round, y = ~smoothed_mean,
               color = ~correction_type,
               colors = c(
                 "unflagged"   = "seagreen",
@@ -616,6 +616,7 @@ plot_final_corrections <- function(df, data_list, site_order_template) {
            yaxis = list(title = parameter_name))
 }
 ```
+
 
 ```{r}
 #' @title Plot before/after unflag comparison
@@ -664,16 +665,17 @@ plot_unflag_comparison <- function(original_df, unflagged_df) {
 #'   (post_val / clean) for use as correction boundaries.
 
 cal_range_values <- function(sensor_df_arg, end_dt) {
-  
-  from_val <- sensor_df_arg %>%
+
+  # --- Option A: mean_analysis based ---
+  from_val_a <- sensor_df_arg %>%
     filter(
       !is.na(mean_analysis),
       between(DT_round, end_dt - hours(1), end_dt)
     ) %>%
     pull(mean_analysis) %>%
     mean()
-  
-  to_val <- sensor_df_arg %>%
+
+  to_val_a <- sensor_df_arg %>%
     filter(
       !is.na(mean_analysis),
       DT_round > end_dt
@@ -681,8 +683,71 @@ cal_range_values <- function(sensor_df_arg, end_dt) {
     slice_head(n = 4) %>%
     pull(mean_analysis) %>%
     mean()
-  
-  return(c(from_val, to_val))
+
+  # --- Option B: field note pre/post columns ---
+  param    <- unique(sensor_df_arg$parameter)[[1]]
+  is_turb  <- stringr::str_detect(param, stringr::regex("turb", ignore_case = TRUE))
+  pre_col  <- if (is_turb) "turb_pre_clean"  else "fdom_pre_clean"
+  post_col <- if (is_turb) "turb_post_clean" else "fdom_post_clean"
+
+  from_val_b <- NA_real_
+  to_val_b   <- NA_real_
+
+  if (pre_col %in% colnames(sensor_df_arg)) {
+    from_val_b <- sensor_df_arg %>%
+      filter(DT_round <= end_dt, !is.na(.data[[pre_col]])) %>%
+      slice_tail(n = 1) %>%
+      pull(pre_col) %>%
+      { if (length(.) == 0) NA_real_ else .[[1]] }
+  }
+
+  if (post_col %in% colnames(sensor_df_arg)) {
+    to_val_b <- sensor_df_arg %>%
+      filter(DT_round <= end_dt, !is.na(.data[[post_col]])) %>%
+      slice_tail(n = 1) %>%
+      pull(post_col) %>%
+      { if (length(.) == 0) NA_real_ else .[[1]] }
+  }
+
+  # --- Select the option with greater correction potential ---
+  # is.finite() guards against NA, NaN, and Inf/-Inf in all cases.
+  # A pair is only usable when both endpoints are finite.
+  # If both pairs are usable, pick the one with the larger abs(from - to).
+  # If the differences are equal (including both zero), default to Option A.
+  # If no complete pair is available, mix the best finite individual endpoints
+  # (mirrors the old per-endpoint fallback behavior).
+  a_valid <- is.finite(from_val_a) && is.finite(to_val_a)
+  b_valid <- is.finite(from_val_b) && is.finite(to_val_b)
+
+  if (a_valid && b_valid) {
+    diff_a       <- abs(from_val_a - to_val_a)
+    diff_b       <- abs(from_val_b - to_val_b)
+    a_reasonable <- diff_a < 1000
+    b_reasonable <- diff_b < 1000
+    if (a_reasonable && b_reasonable) {
+      # Both reasonable: use the bigger correction potential
+      if (diff_b > diff_a) {
+        return(c(from_val_b, to_val_b))
+      } else {
+        return(c(from_val_a, to_val_a))
+      }
+    } else if (b_reasonable) {
+      # Only Option B is within range
+      return(c(from_val_b, to_val_b))
+    } else {
+      # Only Option A is within range, or neither is — default to Option A
+      return(c(from_val_a, to_val_a))
+    }
+  } else if (a_valid) {
+    return(c(from_val_a, to_val_a))
+  } else {
+    # Option A is incomplete: fall back per-endpoint (original behavior).
+    # This avoids the case where from_val_b ≈ to_val_b (small field-note drift)
+    # collapses exp_k's denominator and causes nls to diverge to infinity.
+    from_val <- if (is.finite(from_val_a)) from_val_a else from_val_b
+    to_val   <- if (is.finite(to_val_a))   to_val_a   else to_val_b
+    return(c(from_val, to_val))
+  }
 }
 ```
 
@@ -726,6 +791,7 @@ exp_k <- function(df, correction_col = "mean_analysis") {
   return(k)
 }
 ```
+
 
 ```{r}
 #' @title Unflagging function
@@ -901,6 +967,7 @@ exponential_correction_fxn <- function(decision_df_arg, sensor_df_arg, correctio
 }
 ```
 
+
 # Load and prepare data
 
 ```{r}
@@ -923,11 +990,14 @@ field_notes <- grab_mWater_sensor_notes(load_mWater())
 prepped_data <- raw_data %>%
   map(function(df) {
     df %>%
+      add_field_notes(field_notes) %>% 
       mutate(
-        drift          = ifelse(stringr::str_detect(user_flag, "drift"), TRUE, FALSE),
-        drift          = ifelse(is.na(drift), FALSE, drift),
-        mean_analysis  = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA)
-      )
+        drift = ifelse(stringr::str_detect(user_flag, "drift"), TRUE, FALSE),
+        drift = ifelse(is.na(drift), FALSE, drift),
+        mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA)
+      ) %>% 
+      fill(c("turb_pre_clean", "turb_post_clean", "fdom_pre_clean", "fdom_post_clean"),
+           .direction = "down")
   })
 
 rm(raw_data)
@@ -958,7 +1028,7 @@ plot_drift(prepped_data$`archery-Turbidity`, prepped_data, site_order)
 ```{r}
 test_linear_decision_df <- linear_df %>%
   filter(
-    site      == "cottonwood",
+    site == "cottonwood",
     parameter == "Turbidity"
   )
 
@@ -981,8 +1051,7 @@ plot_correct_drift(test_linear_low_pass, prepped_data, site_order)
 ```{r}
 test_exp_decision_df <- exponential_df %>%
   filter(
-    
-    site      == "cottonwood",
+    site == "cottonwood",
     parameter == "Turbidity"
   )
 
@@ -1029,9 +1098,12 @@ plot_unflag_comparison(test_unflag_sensor_df, test_unflag_result)
 corrected_data <- prepped_data %>%
   imap(function(df, key) {
 
+    # Convert sensor timestamps from MST to UTC so all data is stored in UTC
+    df <- df %>% mutate(DT_round = with_tz(DT_round, "UTC"))
+
     site_val      <- unique(df$site)
     parameter_val <- unique(df$parameter)
-    
+
     # Filter decisions for this site-parameter
     site_decisions <- decision_df %>%
       filter(site == site_val, parameter == parameter_val)
@@ -1132,8 +1204,9 @@ Explore the final results here.
 
 ```{r}
 plot_final_corrections(
-  df                  = fdom_data$`udall-FDOM Fluorescence`,
+  df                  = corrected_data$`archery-Turbidity`,
   data_list           = prepped_data,
   site_order_template = site_order
 )
 ```
+
