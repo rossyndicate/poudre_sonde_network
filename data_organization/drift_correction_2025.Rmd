@@ -720,22 +720,30 @@ cal_range_values <- function(sensor_df_arg, end_dt) {
   b_valid <- is.finite(from_val_b) && is.finite(to_val_b)
 
   if (a_valid && b_valid) {
-    diff_a       <- abs(from_val_a - to_val_a)
-    diff_b       <- abs(from_val_b - to_val_b)
-    a_reasonable <- diff_a < 1000
-    b_reasonable <- diff_b < 1000
-    if (a_reasonable && b_reasonable) {
-      # Both reasonable: use the bigger correction potential
+    diff_a <- abs(from_val_a - to_val_a)
+    diff_b <- abs(from_val_b - to_val_b)
+
+    # For FDOM: biofouling always causes downward drift, so the correction must
+    # go upward (to_val >= from_val). Reject any option that corrects in the
+    # wrong direction regardless of magnitude — this prevents a pre > post
+    # calibration visit (e.g. correcting a separate calibration error) from
+    # being selected just because |diff| is larger.
+    # Turbidity has no direction constraint here.
+    a_ok <- (diff_a < 1000) && (if (!is_turb) to_val_a >= from_val_a else TRUE)
+    b_ok <- (diff_b < 1000) && (if (!is_turb) to_val_b >= from_val_b else TRUE)
+
+    if (a_ok && b_ok) {
+      # Both directionally valid and reasonable: use bigger correction potential
       if (diff_b > diff_a) {
         return(c(from_val_b, to_val_b))
       } else {
         return(c(from_val_a, to_val_a))
       }
-    } else if (b_reasonable) {
-      # Only Option B is within range
+    } else if (b_ok) {
+      # Only Option B is directionally valid and reasonable
       return(c(from_val_b, to_val_b))
     } else {
-      # Only Option A is within range, or neither is — default to Option A
+      # Only Option A is valid (or neither) — default to Option A
       return(c(from_val_a, to_val_a))
     }
   } else if (a_valid) {
@@ -1204,7 +1212,7 @@ Explore the final results here.
 
 ```{r}
 plot_final_corrections(
-  df                  = corrected_data$`archery-Turbidity`,
+  df                  = corrected_data$`elc-Turbidity`,
   data_list           = prepped_data,
   site_order_template = site_order
 )
