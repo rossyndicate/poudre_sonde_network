@@ -200,6 +200,11 @@ group_by(parameter, season) %>%
     t_mean99 = ifelse(passes_all, t_mean99, max),
     t_mean99 = ifelse(t_mean99 >= 4000, 2000, t_mean99)
   ) %>%
+  #if t_mean_01 is less than the realistic threshold, replace with the realistic threshold. If t_mean_99 is greater than the realistic threshold, replace with the realistic threshold.
+  mutate(
+    t_mean01 = ifelse(t_mean01 < min, min, t_mean01),
+    t_mean99 = ifelse(t_mean99 > max, max, t_mean99)
+  ) %>%
   select(-c(passes_all, watershed, min, max))
 ```
 
