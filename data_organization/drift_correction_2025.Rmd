@@ -83,7 +83,6 @@ Some notes on future work:
   be an update to the current one. This also means that the decision df needs to 
   be updated as well, so that we can differentiate between "exponential" and "log"
   solutions.
-  
 
 # Environment set up
 
@@ -660,9 +659,52 @@ plot_unflag_comparison <- function(original_df, unflagged_df) {
 
 ```{r}
 #' @title Boundary averages
-#' @description Computes the mean sensor value in the hour before cleaning
-#'   (pre_val / drifted) and the mean of the first 4 readings after cleaning
-#'   (post_val / clean) for use as correction boundaries.
+#' @description Computes the pre-cleaning (drifted) and post-cleaning (clean)
+#'   boundary values that bracket each drift correction window. Two independent
+#'   sources are tried and the one with greater correction potential is returned.
+#'
+#'   **Option A — time-window average from mean_analysis:**
+#'   `from_val` is the mean of all non-NA `mean_analysis` readings in the hour
+#'   leading up to (and including) `end_dt`; it represents the drifted sensor
+#'   state just before the field crew cleaned the sensor.
+#'   `to_val` is the mean of the first four non-NA `mean_analysis` readings
+#'   strictly after `end_dt`; it represents the clean sensor state after the 
+#'   visit.
+#'
+#'   **Option B — field note pre/post measurements from mWater:**
+#'   `from_val` is the most recent `turb_pre_clean` (or `fdom_pre_clean`) value
+#'   at or before `end_dt` — the field crew's recorded reading of the fouled
+#'   sensor before cleaning.
+#'   `to_val` is the most recent `turb_post_clean` (or `fdom_post_clean`) value
+#'   at or before `end_dt` — the field crew's recorded reading after cleaning.
+#'   These columns are filled forward by the data prep step so the most recent
+#'   field note is always available on the visit row.
+#'
+#'   **Selection logic:**
+#'   A pair is considered valid only when both endpoints are finite (guards
+#'   against NA, NaN, and Inf). Valid pairs are then checked for two additional
+#'   criteria before being used:
+#'
+#'   1. *Direction constraint* — biofouling pushes sensors in a known direction,
+#'      so a pair must correct in the physically expected direction or it is
+#'      rejected outright, no matter how large its difference is:
+#'      - **FDOM**: biofouling coats the optical window and causes the sensor to
+#'        read *lower* than actual (downward drift). The correction must therefore
+#'        go *upward*, meaning `to_val >= from_val`.
+#'      - **Turbidity**: biofouling scatters additional light and causes the
+#'        sensor to read *higher* than actual (upward drift). The correction must
+#'        therefore go *downward*, meaning `from_val >= to_val`.
+#'   2. *Magnitude constraint* — a difference ≥ 1000 NTU/RFU almost certainly
+#'      reflects a data error; such pairs are rejected.
+#'
+#'   If both options pass all checks, the one with the larger `|from − to|` is
+#'   returned because it represents the strongest available evidence of drift.
+#'   If differences are equal (including both zero), Option A is preferred.
+#'   If only one option passes, that option is returned.
+#'   If Option A is incomplete (one or both endpoints are non-finite), the
+#'   function falls back to mixing the best finite endpoint from each option
+#'   individually — this preserves the original single-source behavior and
+#'   prevents a tiny field-note drift from collapsing `exp_k`'s denominator.
 
 cal_range_values <- function(sensor_df_arg, end_dt) {
 
@@ -723,14 +765,18 @@ cal_range_values <- function(sensor_df_arg, end_dt) {
     diff_a <- abs(from_val_a - to_val_a)
     diff_b <- abs(from_val_b - to_val_b)
 
-    # For FDOM: biofouling always causes downward drift, so the correction must
-    # go upward (to_val >= from_val). Reject any option that corrects in the
-    # wrong direction regardless of magnitude — this prevents a pre > post
-    # calibration visit (e.g. correcting a separate calibration error) from
-    # being selected just because |diff| is larger.
-    # Turbidity has no direction constraint here.
-    a_ok <- (diff_a < 1000) && (if (!is_turb) to_val_a >= from_val_a else TRUE)
-    b_ok <- (diff_b < 1000) && (if (!is_turb) to_val_b >= from_val_b else TRUE)
+    # Direction constraints:
+    #   FDOM — biofouling causes downward drift, so the correction must go
+    #     upward: to_val >= from_val. Reject any pair where post < pre, even if
+    #     the magnitude is large (e.g. a pre > post calibration visit would
+    #     otherwise be selected just because |diff| is bigger).
+    #   Turbidity — biofouling causes upward drift, so the correction must go
+    #     downward: from_val >= to_val. The drifted (pre-cleaning) reading
+    #     should always be higher than the clean (post-cleaning) reading; if it
+    #     is not, the pair likely reflects a calibration artifact or data error
+    #     and should be rejected in favour of the other option.
+    a_ok <- (diff_a < 1000) && (if (!is_turb) to_val_a >= from_val_a else from_val_a >= to_val_a)
+    b_ok <- (diff_b < 1000) && (if (!is_turb) to_val_b >= from_val_b else from_val_b >= to_val_b)
 
     if (a_ok && b_ok) {
       # Both directionally valid and reasonable: use bigger correction potential
