@@ -164,7 +164,6 @@ threshold_check <- map_dfr(
         row_min_check = n() >= 7000,
         val_min_check = sum(!is.na(mean)) >= 5000,
         pct_min_check = (sum(!is.na(mean)) / n()) >= 0.70,
-        #year_min_check = n_distinct(year(DT_round)) >= 2,
         passes_all = row_min_check & pct_min_check & val_min_check,
         .groups = "drop"
       )
@@ -189,7 +188,7 @@ final_thresholds <- all_combinations %>%
   left_join(threshold_check, by = c("site", "parameter", "season")) %>%
   mutate(watershed = ifelse(site %in% upper_sites, "upper", "lower")) %>%
   left_join(realistic_threshold, by = c("parameter", "watershed")) %>%
-group_by(parameter, season) %>% 
+  group_by(parameter, season) %>% 
   mutate(
     t_slope_behind_01 = ifelse(is.na(t_slope_behind_01), min(t_slope_behind_01, na.rm = TRUE), t_slope_behind_01),
     t_slope_behind_99 = ifelse(is.na(t_slope_behind_99), max(t_slope_behind_99, na.rm = T), t_slope_behind_99)
@@ -199,7 +198,12 @@ group_by(parameter, season) %>%
     passes_all = ifelse(is.na(passes_all), FALSE, passes_all),
     t_mean01 = ifelse(passes_all, t_mean01, min),
     t_mean99 = ifelse(passes_all, t_mean99, max),
-    t_mean99 = ifelse(t_mean99 >= 4000, 2000, t_mean99)
+    t_mean99 = ifelse(t_mean99 >= 4000, 2000, t_mean99),
+    # if t_mean_01 is less than the realistic threshold, replace with the 
+    # realistic threshold. If t_mean_99 is greater than the realistic threshold, 
+    # replace with the realistic threshold.
+    t_mean01 = ifelse(t_mean01 < min, min, t_mean01),
+    t_mean99 = ifelse(t_mean99 > max, max, t_mean99)
   ) %>%
   select(-c(passes_all, watershed, min, max))
 ```
