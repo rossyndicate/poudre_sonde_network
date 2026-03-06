@@ -1,0 +1,680 @@
+---
+title: "testing_drift_detection"
+output: html_document
+---
+
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(here)
+library(patchwork)
+library(ross.wq.tools)
+```
+
+# Read in verified data from 2025
+
+```{r}
+files <- list.files(path = here("data/raw/sensor/manual_data_verification/2025_cycle/post_verification"), pattern = "Turbidity|FDOM", full.names = T)
+
+data <- map(files, ~read_parquet(.x)) %>%
+  bind_rows()
+
+#load_field visits
+field_notes <- grab_mWater_sensor_notes(mWater_api_data = load_mWater())
+
+```
+
+## Current Drift Function
+Copied from `ross.wq.tools`
+
+```{r}
+# Progressive drift helper
+  progressive_drift <- function(x) {
+    #Don't calculate if there are less than 4 points or less than 90% of data is present
+    if(length(x) < 10) return(0)
+    if (sum(!is.na(x)) < ceiling(0.9 * length(x))) return(0)
+    #Compute linear model & extract slope
+    model <- lm(x ~ seq_along(x), na.action = na.omit)
+    slope <- coef(model)[2]
+
+    if (param != "FDOM Fluorescence" && slope <= 0) return(0)
+    if (param == "FDOM Fluorescence" && slope >  0) return(0)
+    #extract r^2
+    summary(model)$r.squared
+  }
+#updated to return slope too
+progressive_drift <- function(x, param_name) {
+  # 1. Don't calculate if there are less than 10 points or less than 90% data present
+  if(length(x) < 10 || sum(!is.na(x)) < ceiling(0.9 * length(x))) {
+    return(list(slope = 0, r2 = 0))
+  }
+  
+  # 2. Compute linear model
+  model <- lm(x ~ seq_along(x), na.action = na.omit)
+  s <- as.numeric(coef(model)[2])
+  r <- summary(model)$r.squared
+  
+  # 3. Apply your FDOM directional logic
+  is_fdom <- (param_name == "FDOM Fluorescence")
+  
+  # Logic: If it's NOT FDOM and slope is negative/zero, OR if it IS FDOM and slope is positive...
+  if ((!is_fdom && s <= 0) || (is_fdom && s > 0)) {
+    return(list(slope = 0, r2 = 0))
+  }
+  
+  return(list(slope = s, r2 = r))
+}
+
+
+exponential_drift <- function(x) {
+  # no expontential drift for FDOM as it typically decreases with biofouling, so return 0 for all FDOM windows
+  if (param == "FDOM Fluorescence") return(0)
+  if(sum(!is.na(x)) < 10) return(0)
+  # Avoid log(0) issues by shifting data slightly
+  x_shifted <- x - min(x, na.rm = TRUE) + 0.1
+  # Log-transform the turbidity to linearize the exponential
+  log_y <- log(x_shifted)
+  model <- lm(log_y ~ seq_along(x), na.action = na.omit)
+  
+  # Only return if the slope is positive (increasing fouling)
+  if(coef(model)[2] <= 0) return(0)
+  
+  summary(model)$r.squared
+}
+
+
+  too_steady <- function(x) mean(x, na.rm = TRUE) >= 0.5
+
+  # Regex to identify site visit flags
+  visit_regex <- "(site\\s*visit|\\bsv\\b)"
+
+
+  add_drift_flag <- function(df) {
+    
+    if (!unique(df$parameter) %in% c("FDOM Fluorescence", "Turbidity", "Chl-a Fluorescence")) {
+      return(df)
+    }
+    
+    param <- unique(df$parameter)[1]
+    site_oi <- unique(df$site)[1]
+    
+    
+    # Rolling window sizes
+    win_short <- 96L   # ~1 day
+    win_long  <- 288L  # ~3 days
+    
+    # Implementation
+    new <- df %>%
+      generate_summary_statistics(.)%>%
+      arrange(DT_round)%>%
+      #Split data by site visits to avoid crossing cleaning events
+      mutate(visit_group = cumsum(str_detect(replace_na(flag, ""), regex(visit_regex, ignore_case = TRUE)))) %>%
+      group_by(visit_group)%>%
+      # Calculate R-squared values for different window sizes and alignments
+      # 1 day = 1440 minutes
+      # 3 days = 4320 minutes
+      dplyr::mutate(
+        # 1-day windows with different alignments
+        res_s_center = slider::slide_index(mean, DT_round, .f = ~progressive_drift(.x, param), 
+                                           .before = minutes(720), .after = minutes(720)),
+        res_s_right  = slider::slide_index(mean, DT_round, .f = ~progressive_drift(.x, param), 
+                                           .before = minutes(1440)),
+        res_l_center = slider::slide_index(mean, DT_round, .f = ~progressive_drift(.x, param), 
+                                           .before = minutes(2160), .after = minutes(2160)),
+        res_l_right  = slider::slide_index(mean, DT_round, .f = ~progressive_drift(.x, param), 
+                                           .before = minutes(2160)))%>%
+      unnest_wider(res_s_center, names_sep = "_") %>%
+      unnest_wider(res_s_right,  names_sep = "_") %>%
+      unnest_wider(res_l_center, names_sep = "_") %>%
+      unnest_wider(res_l_right,  names_sep = "_")%>%
+      mutate(
+        #Exponential
+        r2_l_right_exp = slider::slide_index_dbl(.x = mean, .i = DT_round, .f = exponential_drift,
+                                                 .before = minutes(4320)),
+        r2_l_center_exp = slider::slide_index_dbl(.x = mean, .i = DT_round, .f = exponential_drift,
+                                                  .before = minutes(2160), .after = minutes(2160)),
+        #  # Take the maximum R-squared from any window configuration
+        tightest_r = pmax(!!!pick(contains("r2")), na.rm = TRUE),      # Check if any 1-day period has consistently high R-squared values
+        failed = slider::slide_index_dbl(.x = tightest_r, .i = DT_round, .before = minutes(1440), .f = too_steady)
+      )%>%
+      ungroup()%>%
+      # Unnest the results into separate columns
+      
+      add_flag(failed == 1, "drift")
+    
+    cat(paste0("Completed drift calculations for ", site_oi, " - ", param, "\n"))
+    
+    return(new)
+    
+  }
+```
+
+# Run on data
+
+```{r}
+
+final <- data%>%
+  #only keep turbidity
+  filter(parameter == "Turbidity")%>%
+  mutate(drift_flagged = if_else(correction_type %in% c("exponential", "linear"), "1", "0"))%>%
+  split(f = list(.$site), sep = "-") %>%
+  map(., ~add_drift_flag(.))%>%
+  bind_rows()
+
+```
+
+
+
+```{r}
+
+pred_df <- final%>%
+   mutate(drift_perf = case_when(
+    drift_flagged == "1" & flag == "drift" ~ "True Positive",
+    drift_flagged == "0" & flag == "drift" ~ "False Positive",
+    drift_flagged == "1" & (is.na(flag) | flag != "drift") ~ "False Negative",
+    drift_flagged == "0" & (is.na(flag) | flag != "drift") ~ "True Negative"
+  ))%>%
+  mutate(target_cat = factor(drift_flagged, levels = c("1", "0"), labels = c("Drift", "No Drift")),
+         pred_cat = factor(if_else(flag == "drift", "1", "0", missing = "0"), levels = c("1", "0"), labels = c("Drift", "No Drift")))
+  
+
+  conf_plot <- function(pred_df, plot_title,units) {
+    if (is.null(pred_df)) return(NULL)
+
+    df <- pred_df %>%
+      mutate(pred_cat = factor(pred_cat, levels = levels(target_cat)))
+    #compute performance metrics
+    conf_table <- conf_mat(df, truth = target_cat, estimate = pred_cat, dnn = c("predicted", "truth"))
+    performance <- summary(conf_table)
+
+    acc  <- performance %>% filter(.metric == "accuracy") %>% pull(.estimate)
+    kap  <- performance %>% filter(.metric == "kap") %>% pull(.estimate)
+    f1   <- performance %>% filter(.metric == "f_meas") %>% pull(.estimate)
+
+    conf_df <- conf_table$table %>%
+      as_tibble() %>%
+      mutate(
+        value_perc = replace_na(n / sum(n), 0),
+        True_lab = factor(truth, levels = levels(df$target_cat)),
+        Pred_lab = factor(predicted, levels = levels(df$pred_cat))
+      )
+
+    perc_corr <- conf_df %>%
+      group_by(True_lab) %>%
+      summarize(percent_corr = round(sum(n[True_lab == Pred_lab]) /
+                                       sum(n) * 100, 1)) %>%
+      ungroup()
+
+    ggplot(conf_df, aes(x = True_lab, y = Pred_lab, fill = value_perc)) +
+      geom_tile(color = grey(0.6), size = 0.2) +
+      geom_tile(data = filter(conf_df, True_lab == Pred_lab),
+                color = "black", fill = "transparent", size = 1) +
+      # scale_fill_gradient(low = "white", high = "blue",
+      #                     labels = value_perc, limits = c(0, 1)) +
+      geom_text(aes(label = n), size = 4) +
+      geom_text(
+        data = perc_corr,
+        aes(x = True_lab, y = length(unique(conf_df$Pred_lab)) + 0.25,
+            label = paste0("Acc: ", percent_corr, "%")),
+        inherit.aes = FALSE,
+        color = "red", size = 4, fontface = "bold"
+      ) +
+      labs(
+        x = paste0("True Class (", units, ")"),
+        y = paste0("Predicted Class (", units, ")"),
+        title = plot_title,
+        subtitle = paste0("Accuracy ", round(100 * acc, 1),
+                          "%  F1: ", round(f1, 2),
+                          "  Kappa: ", round(kap, 2)),
+        fill = "Percent Correct"
+      ) +
+      theme_bw() +
+      theme(
+        legend.position = "bottom",
+        panel.grid = element_blank(),
+        axis.text = element_text(size = 11, color = "black"),
+        axis.title = element_text(size = 12),
+        axis.ticks = element_blank()
+      )
+  }
+
+
+org_plot <- conf_plot(pred_df, plot_title = paste0("Overall Confusion Matrix, R2 Threshold = 0.5"), units = "Drift Label")
+
+```
+
+## Basic ML
+
+```{r}
+apply_training_scale <- function( new_data, full_dataset = NULL, scaling_params = NULL, features, scaling_param_out_path = NULL){
+  `%nin%` <- Negate(`%in%`)
+  #Check that new data  have all the features
+  missing_in_new_data <- features[features %nin% colnames(new_data)]
+  if(length(missing_in_new_data) > 0){
+    stop(paste("The following features are missing in new_data:", paste(missing_in_new_data, collapse = ", ")))
+  }
+  #Only one of full_dataset or scaling_params should be provided and they both can't be NULL
+  if(is.null(full_dataset) & is.null(scaling_params)){
+    stop("Either full_dataset or scaling_params must be provided.")
+  }
+
+  #if no scaling params provided, compute from full dataset
+  if(is_null(scaling_params)){
+    #Check that full dataset has all the features
+    missing_in_complete_data <- features[features %nin% colnames(full_dataset)]
+    if(length(missing_in_complete_data) > 0){
+      stop(paste("The following features are missing in full_dataset:", paste(missing_in_complete_data, collapse = ", ")))
+    }
+
+    scaling_params <- full_dataset %>%
+      select(all_of(features)) %>% #only scale features
+      #make sure all features are numeric
+      mutate(across(everything(), ~ as.numeric(.x))) %>%
+      #compute min and max for each feature
+      summarise(across(
+        everything(),
+        list(min = ~min(.x, na.rm = TRUE), max = ~max(.x, na.rm = TRUE)), #get min and max
+        .names = "{.col}_{.fn}"
+      ))
+  }else{
+    #check that scaling parameters has all required columns
+    required_cols <- unlist(lapply(features, function(x) c(paste0(x, "_min"), paste0(x, "_max"))))
+    missing_in_scaling_params <- required_cols[required_cols %nin% colnames(scaling_params)]
+    if(length(missing_in_scaling_params) > 0){
+      stop(paste("The following scaling parameter columns are missing in scaling_params:", paste(missing_in_scaling_params, collapse = ", ")))
+    }
+  }
+
+  #if scaling params output dir provided, save scaling params as parquet file
+  if(!is.null(scaling_param_out_path)){
+    # Get the directory
+    scaling_param_out_dir <- dirname(scaling_param_out_path)
+    #check to see if dir exists & create if not
+    if(!dir.exists(scaling_param_out_dir)){
+      dir.create(scaling_param_out_dir, recursive = TRUE)
+    }
+
+    scaling_params %>%
+      write_parquet(here(paste0(scaling_param_out_path, ".parquet")))
+  }
+
+  #apply new scaling to new data
+  scaled_data <- new_data %>%
+    #make sure all features are numeric
+    mutate(across(all_of(features), ~ as.numeric(.x))) %>%
+    #apply scaling
+    mutate(across(
+      all_of(features),
+      ~ {
+        col <- cur_column()
+        #get scaling from complete sensor data
+        min_val <- scaling_params[[paste0(col, "_min")]]
+        max_val <- scaling_params[[paste0(col, "_max")]]
+        #rescale the original data to 0-1 based on training data min/max
+        scales::rescale(.x, to = c(0, 1), from = c(min_val, max_val))
+      },
+      .names = "{.col}" # overwrite with scaled values (keep same names)
+    ))
+
+  return(scaled_data)
+
+}
+
+```
+Split data by site for validation and test
+
+
+
+```{r}
+all_data <- final%>%
+  mutate(hours_since_cleaning = difftime(DT_round, last_site_visit, units = "hours"))%>%
+  select(c(DT_round, site,mean,auto_flag, contains("_r2"), contains("_slope"), rollsd, rollmed,rollavg,tightest_r ,hours_since_cleaning, drift_flagged))%>%
+  #set drift flagged as factor for classification
+  mutate(drift_cat = as.numeric(as.factor(drift_flagged))-1)
+
+target_col = "drift_cat"
+  features <- setdiff(names(all_data), c(target_col, "site", "drift_flagged", "mean", "DT_round","auto_flag"))
+
+
+all_data_norm <- all_data%>%
+  apply_training_scale(
+    new_data = .,
+    full_dataset = .,
+    features = features
+  )%>%
+  select( -drift_flagged)
+  
+train_data <- all_data_norm %>%
+  filter(site %in% c( "archery" ,"bellvue","cbri","chd","cottonwood", "joei","pbd","pbr","pfal","pman","riverbluffs"))
+
+val_data <- all_data_norm %>%
+  filter(site %in% c("riverbend", "elc","salyer"))
+
+test <- all_data_norm %>%
+  filter(site %in% c("sfm","udall"))
+
+
+nrow(train_data)/nrow(all_data)
+nrow(val_data)/nrow(all_data)
+nrow(test)/nrow(all_data)
+```
+
+
+```{r}
+#train xgboost model on train data and validate on validation data, using the R2 values and hours since cleaning as predictors for drift_flagged
+library(xgboost)
+
+    booster_params <- list(
+      objective        = "multi:softprob",
+      eval_metric      = "mlogloss",
+      eta              = 0.01,
+      gamma            = 0.8,
+      alpha            = 1,
+      lambda           = 1,
+      max_depth        = 5,
+      subsample        = 0.8,
+      colsample_bytree = 0.5,
+      min_child_weight  = 6,
+      num_class        = 2
+    )
+
+    weights = function(df) {
+      ifelse(df$drift_cat == 1, 3,1) 
+    }
+    
+    w_train <- weights(train_data)
+    w_val   <- weights(val_data)
+    
+    
+    
+    # ---- Set up data matrix for xgb ----
+    dtrain <- xgb.DMatrix(
+      data = as.matrix(train_data[, features]),
+      label = train_data[[target_col]],
+      weight = w_train # add weights
+    )
+    
+    dval <- xgb.DMatrix(
+      data = as.matrix(val_data[, features]),
+      label = val_data[[target_col]],
+      weight = w_val # add weights
+    )
+
+    # Set train vs val for early stopping
+    watchlist <- list(train = dtrain, eval = dval)
+    set.seed(123)
+    
+    #train model with hyper parameters
+    model <- xgb.train(
+      params = booster_params,
+      data = dtrain,
+      nrounds = 2000,
+      watchlist = watchlist,
+      #change early stopping rounds based on eta (smaller eta, larger rounds)
+      early_stopping_rounds = 100,
+      print_every_n = 100,
+      verbose = 1,
+      nthread = 1
+    )
+
+```
+
+## Check out performance in TV space
+
+```{r}
+
+org_plot + plot_tvt_fold_acc(model,train_df = train_data, fold_num = 1, val_df = val_data, test_df = NULL,
+                              target_col = "drift_cat", units = "", title = "",
+                              class_levels = c("No Drift", "Drift"))%>%
+  wrap_plots(guides = "collect")
+
+```
+
+
+```{r}
+xgb.importance(model = model)
+```
+
+# Apply preds in TS space
+
+```{r}
+predict_classes <- function(df, pred_col, target_col) {
+    if(is.null(df)){
+      return(NULL)
+    }
+
+    preds <- predict(model, as.matrix(df[, model$feature_names]))
+
+    if(model$params$objective == "multi:softprob"){
+      preds_vector <- max.col(matrix(preds, ncol = length(class_levels), byrow = TRUE)) - 1
+    }else{
+      preds_vector <- preds
+    }
+    df <- df %>%
+      #if softprob, convert probs to class labels (max prob)
+      mutate(!!pred_col := preds_vector)
+    #convert to factors with levels
+    df %>%
+      mutate(
+        target_cat = factor(.data[[target_col]],
+                            levels = seq_along(class_levels) - 1,
+                            labels = class_levels),
+        pred_cat = factor(.data[[pred_col]],
+                          levels = seq_along(class_levels) - 1,
+                          labels = class_levels)
+      )
+  }
+
+train_data_with_preds <- predict_classes(train_data, pred_col = "drift_pred", target_col = target_col)
+val_data_with_preds <- predict_classes(val_data, pred_col = "drift_pred", target_col = target_col)
+```
+
+```{r}
+
+  visit_regex <- "(site\\s*visit|\\bsv\\b)"
+
+plot_data <- bind_rows(train_data_with_preds, val_data_with_preds) %>%
+  group_by(site) %>%
+  mutate(
+    # Create groups based on site visits
+    visit_group = cumsum(str_detect(replace_na(auto_flag, ""), regex(visit_regex, ignore_case = TRUE))),
+    dataset = if_else(site %in% train_data$site, "Train", "Validation"),
+    network = if_else(site %in% c("chd", "pbr", "pfal","pman", "pbd", "sfm", "cbri", "joei"), "Upper", "Lower")
+  ) %>%
+  group_by(site, visit_group) %>%
+  arrange(DT_round) %>% # Ensure chronological order for rolling windows
+  
+  # 2. PASS 1: Remove isolated drift predictions (blips)
+  # If a 2-hour window has < 25% drift hits, treat isolated 1s as noise (0)
+  mutate(
+    drift_density = zoo::rollapply(drift_pred, width = 8, FUN = function(x) sum(x, na.rm = TRUE) / length(x), 
+                                   fill = NA, align = "center"),
+    # Update drift_pred: If it was a 1 but density is very low, it's likely an isolated false hit
+    drift_pred_clean = if_else(drift_pred == 1 & drift_density < 0.25, 0, drift_pred)
+  ) %>%
+
+  # 3. PASS 2: Flag isolated data points within mostly missing/flagged regions
+  mutate(
+    # Binary for missing or already suspect data
+    auto_flag_binary = if_else(is.na(mean) | is.na(drift_pred_clean), 1, 0),
+    
+    # Check for 2-hour windows with >= 90% missing data
+    missing_density_center = zoo::rollapply(auto_flag_binary, width = 8, 
+                                            FUN = function(x) sum(x) / length(x), 
+                                            fill = NA, align = "center"),
+    
+    # If a point is valid but surrounded by missing data, mark it suspect
+    is_isolated = if_else(!is.na(mean) & missing_density_center >= (8/9), TRUE, FALSE)
+  ) %>%
+  
+  # 4. Final Classification Logic
+  mutate(
+    # Nullify predictions for isolated points
+    drift_pred_final = if_else(is_isolated, NA_real_, drift_pred_clean),
+    
+    # Recalculate performance metrics based on cleaned predictions
+    drift_perf = case_when(
+      drift_cat == 1 & drift_pred_final == 1 ~ "True Positive",
+      drift_cat == 0 & drift_pred_final == 1 ~ "False Positive",
+      drift_cat == 1 & (is.na(drift_pred_final) | drift_pred_final != 1) ~ "False Negative",
+      drift_cat == 0 & (is.na(drift_pred_final) | drift_pred_final != 1) ~ "True Negative"
+    )
+  ) %>%
+  ungroup()
+```
+
+
+```{r}
+plot_data <- bind_rows(train_data_with_preds, val_data_with_preds) %>%
+  mutate(dataset = if_else(site %in% train_data$site, "Train", "Validation"), 
+         drift_perf = case_when(
+           drift_cat == 1 & drift_pred == 1 ~ "True Positive",
+           drift_cat == 0 & drift_pred == 1 ~ "False Positive",
+           drift_cat == 1 & (is.na(drift_pred) | drift_pred != 1) ~ "False Negative",
+           drift_cat == 0 & (is.na(drift_pred) | drift_pred != 1) ~ "True Negative"
+         ), 
+         network = if_else(site %in% c("chd", "pbr", "pfal","pman", "pbd", "sfm", "cbri", "joei"), "Upper", "Lower"))
+
+ggplot(plot_data%>%filter(network == "Lower"), aes(x = DT_round, y = mean, color = drift_perf)) +
+  geom_point(size = 2) +
+  facet_wrap(~site, ncol = 1, scale = "free_y") +
+  ylim(0, 300)+
+  scale_color_manual(values = c("True Positive" = "green4", "False Positive" = "red3",
+                                "False Negative" = "orange2", "True Negative" = "skyblue"), name = "Drift Detection Performance")
+```
+
+
+## Network Check
+
+Historically, drift was not removed from network check but let's see how we do if it is included
+
+```{r}
+threshold_value <- 0.5
+
+intrasensor_flags_list <- final%>%
+  #remove previous flags
+  mutate(  network = if_else(site %in% c("chd", "pbr", "pfal","pman", "pbd", "sfm", "cbri", "joei"), "Upper", "Lower"), 
+           old_flag = flag,
+          flag = NA)%>%
+  add_flag(mean_steady_r >= threshold_value, "drift_detect")%>%
+  mutate(drift_perf = case_when(
+    drift_flagged == "1" & flag == "drift_detect" ~ "True Positive",
+    drift_flagged == "0" & flag == "drift_detect" ~ "False Positive",
+    drift_flagged == "1" & (is.na(flag) | flag != "drift_detect") ~ "False Negative",
+    drift_flagged == "0" & (is.na(flag) | flag != "drift_detect") ~ "True Negative"
+  ))%>%
+  select(site, parameter,network, DT_round,  mean, mean_analysis,old_flag, user_flag, flag, drift_flagged,drift_perf)%>%
+  split(f = list(.$site, .$parameter), sep = "-")
+
+
+#make a confusion matrix for each site of how the drift detection performed before network check
+
+conf_matrix_data <- bind_rows(intrasensor_flags_list) %>%
+  mutate(
+    # Clean up labels for the legend
+    Observed = factor(drift_flagged, levels = c("1", "0"), labels = c("Drift", "No Drift")),
+    Predicted = factor(if_else(flag == "drift_detect", "1", "0", missing = "0"), 
+                       levels = c("1", "0"), labels = c("Drift", "No Drift"))
+  )%>%
+  group_by(site, Observed, Predicted) %>%
+  tally() %>%
+  # Group by site and Observed so the denominator is the total of each manual label
+  group_by(site, Observed) %>% 
+  mutate(percentage = n / sum(n) * 100)
+
+# Create the Heatmap
+ggplot(conf_matrix_data, aes(x = Observed , y = Predicted, fill = percentage)) +
+  geom_tile() +
+  geom_text(aes(label = paste0(n, "\n(", round(percentage, 1), "%)")), color = "white") +
+  facet_wrap(~site) +
+  scale_fill_viridis_c(option = "mako", direction = -1) +
+  theme(legend.position = "bottom") +
+  labs(
+    title = paste0("Confusion Matrices: Observed vs. Predicted, R2 Threshold = ", threshold_value),
+    subtitle = "Empirical check of Type 1 (FP) and Type 2 (FN) errors per site",
+    x = "Observed (Manual)", 
+    y = "Predicted ", 
+    fill = "Present Correct for Category"
+  )
+
+
+pre_network_check_plot <- intrasensor_flags_list %>%
+  bind_rows() %>%
+  filter(network == "Lower")%>%
+  ggplot(., aes(x = DT_round, y = mean_analysis, color = drift_perf)) +
+  geom_point(size = 2) +
+  facet_wrap(~site, ncol = 1, scale = "free_y") +
+  labs(x = "Date", y = "Mean Turbidity", title = "Evaluation of Drift Detection without Network Check",
+       subtitle = "True Positives (red) are correctly identified drift events, while False Positives (orange) are incorrect drift flags. \nFalse Negatives (blue) are missed drift events, and True Negatives (green) are correctly identified non-drift periods.") +
+  scale_color_manual(values = c("True Positive" = "tomato", "False Positive" = "orange", "False Negative" = "steelblue", "True Negative" = "skyblue"), name = "Drift Detection Performance")
+
+```
+
+
+
+
+```{r}
+site_order_list <- load_site_order(file_path = "data/derived/auto_qaqc_files/site_order/site_order_2025.yml")
+
+network_flags <- intrasensor_flags_list %>%
+  # network check compares patterns across sites
+  purrr::map(~network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list,
+                            site_order_arg = site_order_list))%>%
+  bind_rows()
+
+post_network_check_plot <- network_flags%>%
+  mutate(drift_perf = case_when(
+    drift_flagged == "1" & auto_flag == "drift_detect" ~ "True Positive",
+    drift_flagged == "0" & auto_flag == "drift_detect" ~ "False Positive",
+    drift_flagged == "1" & (is.na(auto_flag) | auto_flag != "drift_detect") ~ "False Negative",
+    drift_flagged == "0" & (is.na(auto_flag) | auto_flag != "drift_detect") ~ "True Negative"
+  ))%>%
+  filter(network == "Lower")%>%
+  ggplot(., aes(x = DT_round, y = mean_analysis, color = drift_perf)) +
+  geom_point(size = 2) +
+  facet_wrap(~site, ncol = 1, scale = "free_y") +
+  labs(x = "Date", y = "Mean Turbidity", title = "Evaluation of Drift Detection with Network Check",
+       subtitle = "True Positives (red) are correctly identified drift events, while False Positives (orange) are incorrect drift flags. \nFalse Negatives (blue) are missed drift events, and True Negatives (green) are correctly identified non-drift periods.") +
+  scale_color_manual(values = c("True Positive" = "tomato", "False Positive" = "orange", "False Negative" = "steelblue", "True Negative" = "skyblue"), name = "Drift Detection Performance")
+
+pre_network_check_plot + post_network_check_plot %>%
+  wrap_plots(guides = "collect")
+
+
+network_flags %>%
+  mutate(
+    Observed = factor(drift_flagged, levels = c("1", "0"), labels = c("Drift", "No Drift")),
+    Predicted = factor(if_else(auto_flag == "drift_detect", "1", "0", missing = "0"), 
+                       levels = c("1", "0"), labels = c("Drift", "No Drift"))
+  )%>%
+  group_by(site, Observed, Predicted) %>%
+  tally() %>%
+  group_by(site, Observed) %>% 
+  mutate(percentage = n / sum(n) * 100)%>%
+ggplot(., aes(x = Observed , y = Predicted, fill = percentage)) +
+  geom_tile() +
+  geom_text(aes(label = paste0(n, "\n(", round(percentage, 1), "%)")), color = "white") +
+  facet_wrap(~site) +
+  scale_fill_viridis_c(option = "mako", direction = -1) +
+  theme(legend.position = "bottom") +
+  labs(
+    title = paste0("Confusion Matrices: Observed vs. Predicted, R2 Threshold = ", threshold_value),
+    subtitle = "Post Network Check",
+    x = "Observed (Manual)", 
+    y = "Predicted ", 
+    fill = "Present of Column for Category"
+  )
+
+
+pre_network_check_plot <- intrasensor_flags_list %>%
+  bind_rows() %>%
+  filter(network == "Lower")%>%
+  ggplot(., aes(x = DT_round, y = mean_analysis, color = drift_perf)) +
+  geom_point(size = 2) +
+  facet_wrap(~site, ncol = 1, scale = "free_y") +
+  labs(x = "Date", y = "Mean Turbidity", title = "Evaluation of Drift Detection without Network Check",
+       subtitle = "True Positives (red) are correctly identified drift events, while False Positives (orange) are incorrect drift flags. \nFalse Negatives (blue) are missed drift events, and True Negatives (green) are correctly identified non-drift periods.") +
+  scale_color_manual(values = c("True Positive" = "tomato", "False Positive" = "orange", "False Negative" = "steelblue", "True Negative" = "skyblue"), name = "Drift Detection Performance")
+```
+
