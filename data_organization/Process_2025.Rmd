@@ -726,5 +726,121 @@ iwalk(v_final_flags, ~write_parquet(.x, here(flagged_directory,  paste0(.y, ".pa
 write_parquet(v_final_flags%>%bind_rows(), here(base_folder,"in_progress","raw_data", "raw_data_2025.parquet"))s
 ```
 
+# Pass data through Shiny Tool
+
+This tool is located in the folder `shiny_ver_tool`. Here we are manually verifying the data, making any necessary corrections and then saving the output in the "verified_directory" folder for this year. The key columns added are:
+- final_status: "PASS" if the user has verified the data as good, "FLAGGED" if the user has flagged the data for suspect but still useable data, "OMIT if the user has concluded that the data should not be used in analysis due to sensor error. 
+- user_flag: more specific flag added by the user to indicate why they flagged/omitted the data (e.g. "suspect data", "sonde burial", "frozen water", "unsubmerged", "depth shift", "drift", "field visit", "other malfunction" etc). This is for posterity and to help inform auto-flagging performance. 
+- mean_analysis: this is the values where the "OMIT" final status was not applied. 
+
+
+# Pass data through Drift Correction Tool
+
+This tool is located in the script `data_organization/drift_correction_2025.Rmd`. Here we are applying the drift corrections identified in the manual verification tool to the data and then saving the output in the "post_verification" folder. 
+
+# Prep for HydroShare Upload
+
+We will be creating two datasets here: 
+- A "raw" dataset that includes all the original data with flags and all "versions" of the data: no manual corrections applied, calibration correction, post verification, and post drift correction. This is for posterity and to have a record of what the original data looked like before and after manual verification/corrections.
+- A "cleaned" dataset that includes only the final value (post drift correction if it exists, post verification if not) and a column indicating what modifications were made to the data (manual exclusion, calibration correction, drift correction, etc). This is the dataset that will be uploaded to HydroShare and used for analysis.
+
+## 
+
+```{r}
+
+drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2025_cycle/post_verification/', pattern = "*.parquet", full.names = TRUE)
+
+drift_corrected_data <- map_dfr(drift_corrected_files, read_parquet)%>%
+  select(DT_round, DT_join, site, parameter,units, value_raw = mean_pre_cal, value_post_cal_corr = mean, value_post_ver = mean_analysis, value_post_drift_corr = mean_drift_trans,   auto_qc_flag = auto_flag, mal_flag, user_qc_flag = user_flag, qc_status = final_status)%>%
+  split(f = list(.$site, .$parameter), sep = "-")%>%
+  keep(~ nrow(.x) > 0) #remove any empty datasets
+
+non_drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2025_cycle/in_progress/verified_directory/', pattern = "*.parquet", full.names = TRUE)
+
+non_drift_corrected_data <- map_dfr(non_drift_corrected_files, read_parquet)%>%
+  mutate( mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA))%>%
+  select(DT_round, DT_join, site, parameter,units,
+         value_raw = mean_pre_cal, 
+         value_post_cal_corr = mean, 
+         value_post_ver = mean_analysis,
+         auto_qc_flag = auto_flag, 
+         mal_flag, 
+         user_qc_flag = user_flag,
+         qc_status = final_status)%>%
+  split(f = list(.$site, .$parameter), sep = "-")
+
+#only keep non drift corrected site parameters if they are not in the drift corrected data (i.e. if they haven't been drift corrected yet)
+all_datasets <- c(non_drift_corrected_data[!names(non_drift_corrected_data) %in% names(drift_corrected_data)], drift_corrected_data)%>%
+  keep(~ nrow(.x) > 0) #remove any empty datasets
+
+
+raw_dataset <- all_datasets%>%
+  bind_rows()%>%
+  mutate(value_post_drift_corr = if_else(is.na(value_post_drift_corr), value_post_ver, value_post_drift_corr))%>%
+  mutate(modifications = case_when( is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
+                                    value_raw == value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "drift correction",
+                                    value_raw != value_post_cal_corr & value_post_ver == value_post_drift_corr ~ "calibration correction",
+                                    value_raw != value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "calibration correction;drift correction",
+                                    TRUE ~ NA), 
+         DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
+  select(DateTime_MST = DT_round,
+         DateTime_UTC,
+         SiteID = site, parameter, units, 
+         #Actual data
+         value_raw, 
+         value_post_cal_corr,
+         value_post_ver,
+         value_post_drift_corr, 
+         #QC Info
+         auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications)#%>%
+slice_head(n = 1, by = c(DateTime_UTC, SiteID, parameter))
+    
+    
+final_dataset <- raw_dataset %>%
+  select(DateTime_UTC, SiteID, parameter, units, value_raw, value_final = value_post_drift_corr, modifications)
+
+year <- "2025"
+
+
+#check if the folder exists, if not create it
+if (!dir.exists(here( "data/collated/sensor/hydroshare_pub", year))) {
+  dir.create(here( "data/collated/sensor/hydroshare_pub", year), recursive = TRUE)
+}
+
+
+cleaned_file_name <- here( "data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_", year,"_cleaned.csv"))
+
+raw_file_name <- here( "data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_", year,"_raw.csv"))
+
+write_csv(final_dataset, cleaned_file_name)
+
+write_csv(raw_dataset, raw_file_name)
+```
+
+
+## Location Metadata
+
+Here we will load and double check the location metadata file created by Sam Struthers and verified by Katie Willi
+
+```{r}
+location_meta <- read_csv("data/raw/spatial/metadata/sonde_location_metadata_hydroshare.csv",
+                           show_col_types = FALSE)%>%
+  mutate(data_start_date = as.POSIXct(data_start_date, tz = "UTC", format = "%m/%d/%y"),
+         data_end_date =  if_else( is.na(data_end_date), 
+                                   ymd("2025-11-17"),
+                                   as.POSIXct(data_end_date, tz = "UTC", format = "%m/%d/%y")))%>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)%>%
+  mutate(min_year = year(data_start_date),
+         max_year = year(data_end_date), 
+         year_range = paste0(min_year, "-", max_year))
+
+tmap_mode("view")
+tm_basemap("OpenStreetMap") +
+  tm_shape(location_meta) +
+  #color is SiteID and shape is year_range
+  tm_symbols(col = "SiteID", shape = "year_range", size = 0.5, border.col = "black")
+
+```
+
 
 
