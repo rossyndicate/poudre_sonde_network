@@ -32,6 +32,8 @@ package_loader <- function(x) {
 
 invisible(
   lapply(c("arrow",
+           "sf",
+           "tmap",
            "data.table",
            "httr2",
            "tidyverse",
@@ -744,7 +746,6 @@ We will be creating two datasets here:
 - A "raw" dataset that includes all the original data with flags and all "versions" of the data: no manual corrections applied, calibration correction, post verification, and post drift correction. This is for posterity and to have a record of what the original data looked like before and after manual verification/corrections.
 - A "cleaned" dataset that includes only the final value (post drift correction if it exists, post verification if not) and a column indicating what modifications were made to the data (manual exclusion, calibration correction, drift correction, etc). This is the dataset that will be uploaded to HydroShare and used for analysis.
 
-## 
 
 ```{r}
 
@@ -817,26 +818,43 @@ write_csv(final_dataset, cleaned_file_name)
 write_csv(raw_dataset, raw_file_name)
 ```
 
+## Field Notes
+
+```{r}
+sensor_field_notes <- grab_mWater_sensor_notes(load_mWater())%>%
+  filter(year(DT_round) == year)%>%
+  rename(DateTime_UTC = DT_round, SiteID = site) %>%
+  select(-photos_downloaded,-DT_join, -cal_report_collected, -sensor_swapped_notes, -end_dt, -last_site_visit, -date,-sensor_deployed, -sensor_pulled)
+
+field_notes_file <- here("data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_sensor_field_notes_", year, ".csv"))
+
+write_csv(sensor_field_notes, field_notes_file)
+
+```
+
+
 
 ## Location Metadata
 
 Here we will load and double check the location metadata file created by Sam Struthers and verified by Katie Willi
 
 ```{r}
-location_meta <- read_csv("data/raw/spatial/metadata/sonde_location_metadata_hydroshare.csv",
+location_meta <- read_csv("data/collated/sensor/hydroshare_pub/CSU_ROSS_sonde_location_metadata.csv",
                            show_col_types = FALSE)%>%
   mutate(data_start_date = as.POSIXct(data_start_date, tz = "UTC", format = "%m/%d/%y"),
          data_end_date =  if_else( is.na(data_end_date), 
                                    ymd("2025-11-17"),
                                    as.POSIXct(data_end_date, tz = "UTC", format = "%m/%d/%y")))%>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)%>%
+
   mutate(min_year = year(data_start_date),
          max_year = year(data_end_date), 
          year_range = paste0(min_year, "-", max_year))
+#update as needed
+#write_csv(location_meta, here("data/collated/sensor/hydroshare_pub/CSU_ROSS_sonde_location_metadata.csv"))
 
 tmap_mode("view")
 tm_basemap("OpenStreetMap") +
-  tm_shape(location_meta) +
+  tm_shape(location_meta %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326)) +
   #color is SiteID and shape is year_range
   tm_symbols(col = "SiteID", shape = "year_range", size = 0.5, border.col = "black")
 
