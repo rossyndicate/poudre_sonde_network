@@ -774,6 +774,14 @@ all_datasets <- c(non_drift_corrected_data[!names(non_drift_corrected_data) %in%
   keep(~ nrow(.x) > 0) #remove any empty datasets
 
 
+#units lookup table
+
+units_table <- all_datasets%>%
+  bind_rows()%>%
+  select(parameter, units)%>%
+  distinct()%>%
+  filter(!is.na(parameter) & !is.na(units))
+
 raw_dataset <- all_datasets%>%
   bind_rows()%>%
   #exclude springcreek and boxcreek since they were not verified in 2025
@@ -793,6 +801,8 @@ raw_dataset <- all_datasets%>%
                                     TRUE ~ NA), 
          #convert to UTC
          DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
+  select(-units)%>%
+  left_join(units_table, by = "parameter")%>%
   select(DateTime_MST = DT_round,
          DateTime_UTC,
          site, parameter, units, 
@@ -805,7 +815,7 @@ raw_dataset <- all_datasets%>%
          auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications)
     
 final_dataset <- raw_dataset %>%
-  select(DateTime_UTC, site, parameter, units, value_raw, value_final = value_post_drift_corr,auto_qc_flag, modifications)
+  select(DateTime_UTC, site, parameter, units, value_raw, value_final = value_post_drift_corr,user_qc_flag, modifications)
 
 ```
 
