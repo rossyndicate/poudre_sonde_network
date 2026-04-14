@@ -20,7 +20,7 @@ Update file path as needed
 
 ```{r}
 #current file path for tracking sonde SNs, etc
-sonde_tracking_file_path <- here("data", "raw", "management", "equipment_tracking", "2025_sensor_tracking.xlsx")
+sonde_tracking_file_path <- here("data", "raw", "management", "equipment_tracking", "2026_sensor_tracking.xlsx")
 
 #source clean mwater script for all notes cleaned
 source("src/load_mWater_notes.R")
