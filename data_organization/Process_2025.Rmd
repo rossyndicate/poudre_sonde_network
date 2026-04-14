@@ -748,7 +748,6 @@ We will be creating two datasets here:
 
 
 ```{r}
-
 drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verification/2025_cycle/post_verification/', pattern = "*.parquet", full.names = TRUE)
 
 drift_corrected_data <- map_dfr(drift_corrected_files, read_parquet)%>%
@@ -777,37 +776,67 @@ all_datasets <- c(non_drift_corrected_data[!names(non_drift_corrected_data) %in%
 
 raw_dataset <- all_datasets%>%
   bind_rows()%>%
-  mutate(value_post_drift_corr = if_else(is.na(value_post_drift_corr), value_post_ver, value_post_drift_corr))%>%
-  mutate(modifications = case_when( is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
+  #exclude springcreek and boxcreek since they were not verified in 2025
+  filter(!(site %in% c("springcreek", "boxcreek")))%>%
+  # if value_post_drift corr is NA, then fill with value_post_ver (this means that the data was verified but not drift corrected, so the post verification value is the most "final" version of the data we have for those instances) This is for parameters other than FDOM and Turbidity
+  mutate(value_post_drift_corr = if_else(is.na(value_post_drift_corr), value_post_ver, value_post_drift_corr),
+         #round all values to 3 decimal places for consistency with HydroShare upload
+         value_raw = round(value_raw, 3),
+         value_post_cal_corr = round(value_post_cal_corr, 3),
+         value_post_ver = round(value_post_ver, 3),
+         value_post_drift_corr = round(value_post_drift_corr, 3),
+         #Create modifications column to indicate what modifications were made to the data for easier filtering and analysis downstream
+         modifications = case_when( is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
                                     value_raw == value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "drift correction",
                                     value_raw != value_post_cal_corr & value_post_ver == value_post_drift_corr ~ "calibration correction",
                                     value_raw != value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "calibration correction;drift correction",
                                     TRUE ~ NA), 
+         #convert to UTC
          DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
   select(DateTime_MST = DT_round,
          DateTime_UTC,
-         SiteID = site, parameter, units, 
+         site, parameter, units, 
          #Actual data
          value_raw, 
          value_post_cal_corr,
          value_post_ver,
          value_post_drift_corr, 
          #QC Info
-         auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications)#%>%
-slice_head(n = 1, by = c(DateTime_UTC, SiteID, parameter))
-    
+         auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications)
     
 final_dataset <- raw_dataset %>%
-  select(DateTime_UTC, SiteID, parameter, units, value_raw, value_final = value_post_drift_corr, modifications)
+  select(DateTime_UTC, site, parameter, units, value_raw, value_final = value_post_drift_corr,auto_qc_flag, modifications)
 
+```
+
+### Plot to Double Check 
+
+```{r}
+
+plots <- map(unique(final_dataset$site), function(site_name) {
+  ggplot(final_dataset %>% filter(site == site_name), aes(x = DateTime_UTC, y = value_final, color = modifications)) +
+    geom_point(aes(y = value_raw), color = "gray", alpha = 0.5) + # add raw data points for comparison
+    geom_point() +
+    facet_wrap(~parameter, scales = "free_y") +
+    labs(title = site_name,
+         x = "Date",
+         y = "Value",
+         color = "QC Status")
+})
+walk(plots, print)
+
+```
+
+
+### Save Data
+
+```{r}
 year <- "2025"
-
 
 #check if the folder exists, if not create it
 if (!dir.exists(here( "data/collated/sensor/hydroshare_pub", year))) {
   dir.create(here( "data/collated/sensor/hydroshare_pub", year), recursive = TRUE)
 }
-
 
 cleaned_file_name <- here( "data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_", year,"_cleaned.csv"))
 
@@ -822,9 +851,15 @@ write_csv(raw_dataset, raw_file_name)
 
 ```{r}
 sensor_field_notes <- grab_mWater_sensor_notes(load_mWater())%>%
-  filter(year(DT_round) == year)%>%
-  rename(DateTime_UTC = DT_round, SiteID = site) %>%
-  select(-photos_downloaded,-DT_join, -cal_report_collected, -sensor_swapped_notes, -end_dt, -last_site_visit, -date,-sensor_deployed, -sensor_pulled)
+  filter(year(DT_round) == year & !(site %in% c("springcreek", "boxcreek")))%>%
+  rename(DateTime_UTC = DT_round) %>%
+  select(-photos_downloaded,-DT_join, -cal_report_collected, -sensor_swapped_notes, -end_dt, -last_site_visit, -date,-sensor_deployed, -sensor_pulled)%>%
+  #Clean up crew to just initials and remove any extra text
+  mutate(crew = crew %>%
+    str_replace_all("Other \\(please specify\\)", "Other") %>%
+    str_replace_all("([A-Z])[a-z]+", "\\1") %>%
+    str_replace_all("(?<=[A-Z])\\s+(?=[A-Z])", "")
+  )
 
 field_notes_file <- here("data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_sensor_field_notes_", year, ".csv"))
 
