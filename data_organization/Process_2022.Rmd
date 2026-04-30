@@ -102,7 +102,29 @@ all_field_notes <- readxl::read_excel(here("data","raw","field_notes","sensor_fi
          sonde_employed = case_when(is.na(sensor_deployed) & is.na(sensor_pulled) ~ NA,
                                     sensor_deployed == "x" ~ 0, 
                                     sensor_pulled == "x" ~ 1)) %>%
-  fix_site_names()
+  fix_site_names()%>%
+  #add extra cols
+  mutate(rdo_pre_clean = NA, 
+         rdo_post_clean = NA,
+         rdo_post_cal = NA,
+         cond_pre_clean = NA,
+         cond_post_clean = NA,
+         cond_post_cal = NA,
+         ph_pre_clean = NA,
+         ph_post_clean = NA,
+         ph_post_cal = NA,
+         orp_pre_clean = NA,
+         orp_post_clean = NA,
+         orp_post_cal = NA,
+         turb_pre_clean = NA,
+         turb_post_clean = NA,
+         turb_post_cal = NA,
+         fdom_pre_clean = NA,
+         fdom_post_clean = NA,
+         fdom_post_cal = NA,
+         chla_pre_clean = NA,
+         chla_post_clean = NA,
+         chla_post_cal = NA)
 ```
 
 ## 3) Ingest & standardize raw data
@@ -335,7 +357,7 @@ elc_final <- elc_spring %>%
   dplyr::filter(!is.na(timestamp)) %>%
   dplyr::arrange(timestamp)
 
-ggplot(data = elc_final) + geom_point(aes(x = timestamp, y = value)) + facet_wrap(~parameter, scales = "free_y")
+
 ```
 
 ### Archery
@@ -410,7 +432,7 @@ legacy_depth_corrected <- all_sites %>%
   # Data stored in UTC... convert to MST to link with field note times...
   dplyr::mutate(timestamp = timestamp - lubridate::hours(7)) %>%
   # First correction: 2022-04-06 to 2022-04-12
-  mutate(value_p1 = ifelse(value_p1 = ifelse(timestamp >= ymd_hms('2022-04-06 06:00:00') & timestamp < ymd_hms('2022-04-12 9:20:00')), 
+  mutate(value_p1 = ifelse(timestamp >= ymd_hms('2022-04-06 06:00:00') & timestamp < ymd_hms('2022-04-12 9:20:00'), 
                            value + 
                              abs(
                                filter(., timestamp == ymd_hms('2022-04-12 09:15:00'))$value - 
@@ -420,7 +442,8 @@ legacy_depth_corrected <- all_sites %>%
 
 legacy_depth_corrected <- legacy_depth_corrected %>%
   # Second correction: 2022-07-22 to 2022-07-25
-  mutate(value_p2 = ifelse(timestamp > ymd_hms('2022-07-22 16:45:00') & timestamp < ymd_hms('2022-07-25 21:29:00'), 
+  #timestamp > ymd_hms('2022-07-22 16:45:00') & timestamp < ymd_hms('2022-07-25 21:29:00')
+  mutate(value_p2 = ifelse(timestamp > ymd_hms('2022-07-22 09:45:00') & timestamp < ymd_hms('2022-07-25 14:29:00'), 
                            value_p1 + 
                              abs(
                                filter(legacy_depth_corrected, timestamp == ymd_hms('2022-07-25 14:15:00'))$value_p1 -
@@ -440,7 +463,7 @@ timberline_depth_corrected <- all_sites %>%
   # Data stored in UTC... convert to MST to link with field note times...
   dplyr::mutate(timestamp = lubridate::ymd_hms(timestamp) - lubridate::hours(7)) %>%
   # First correction: 2022-04-06 to 2022-04-07
-  mutate(value_p1 = ifelse(timestamp >= ymd_hms('2022-04-06 08:00:00') & timestamp < ymd_hms('2022-04-07 17:14:00') & ymd_hms('2022-04-07 16:56:00'), 
+  mutate(value_p1 = ifelse(timestamp >= ymd_hms('2022-04-06 07:00:00') & timestamp < ymd_hms('2022-04-07 16:56:00'), 
                            value + 
                              abs(
                                filter(., timestamp == ymd_hms('2022-04-07 16:15:00'))$value - 

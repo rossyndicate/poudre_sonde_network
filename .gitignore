@@ -48,3 +48,4 @@ shiny_ver_tool/ver_tool_v1/data/
 operations/Planning_doc.Rmd
 # Ignore all .docx files
 *.docx
+.positai

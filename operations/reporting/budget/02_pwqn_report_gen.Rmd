@@ -5,8 +5,8 @@ output: word_document
 ```{r setup, include=FALSE, echo=FALSE}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
 dir <- getwd()
-month_select <- 11
-year_select <- 2025
+month_select <- 2
+year_select <- 2026
 
 #### ------ Run lines above to set month and year ------ ####
 
