@@ -15,8 +15,8 @@ Once these are done, you can go to the section "Run Above..." to tidy data for u
 
 ```{r}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
-month_select <- 12
-year_select <- 2025
+month_select <- 2
+year_select <- 2026
 ```
 
 # Setup
@@ -31,7 +31,7 @@ package_loader <- function(x) {
     library(x, character.only = TRUE)
   }
 }
-lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "yaml", "here", "fcw.qaqc"), package_loader)
+lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "yaml", "here", "ross.wq.tools"), package_loader)
 rm(package_loader)
 # get wd
 dir <- getwd()
@@ -227,7 +227,8 @@ all_data <- senior_staff %>%
 #view all data
 print(all_data)
 sum(all_data$Cost[all_data$Category != "Equipment"])
-print(field_summary)
+
+#print(field_summary)
 
 ```
 
