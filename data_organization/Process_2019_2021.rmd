@@ -57,7 +57,7 @@ invisible(
 ```{r}
 # Read in the threshold data first
 sensor_thresholds <- read_yaml(here("data","derived","auto_qaqc_files", "thresholds", "sensor_spec_thresholds.yml"))
-season_thresholds <- read_csv(here("data","derived","auto_qaqc_files", "thresholds","updated_seasonal_thresholds_2025_sjs.csv"), show_col_types = FALSE) %>%
+season_thresholds <- read_csv(here("data","derived","auto_qaqc_files", "thresholds","seasonal_thresholds20260304-T175010Z.csv"), show_col_types = FALSE) %>%
   fix_site_names()
 
 # Configure your credentials files
@@ -68,10 +68,51 @@ mWater_creds <- read_yaml(mwater_creds_file)
 mWater_data <- load_mWater(creds = mWater_creds)
 
 # grab field notes with proper timezone handling
-all_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data) %>%
+new_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data) %>%
   mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
          last_site_visit = with_tz(last_site_visit, tzone = "UTC"),
          DT_join = as.character(DT_round))
+
+
+old_field_notes <- readxl::read_excel(here("data","raw","field_notes","sensor_field_notes.xlsx")) %>%
+  mutate(DT = (paste0(date, " ", start_time_mst))) %>%
+  mutate(DT = ymd_hm(DT) + hours(7)) %>%
+  arrange(DT) %>%
+  mutate(DT_round = round_date(DT, "15 minutes")) %>%
+  mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
+         last_site_visit = with_tz(DT_round, tzone = "UTC"),
+         DT_join = as.character(DT_round),
+         sonde_moved = NA,
+         sonde_employed = case_when(is.na(sensor_deployed) & is.na(sensor_pulled) ~ NA,
+                                    sensor_deployed == "x" ~ 0, 
+                                    sensor_pulled == "x" ~ 1), 
+         site = ifelse(site == "rist", "bellvue", site)) %>%
+  ross.wq.tools::fix_site_names()%>%
+  #add extra cols
+  mutate(rdo_pre_clean = NA, 
+         rdo_post_clean = NA,
+         rdo_post_cal = NA,
+         cond_pre_clean = NA,
+         cond_post_clean = NA,
+         cond_post_cal = NA,
+         ph_pre_clean = NA,
+         ph_post_clean = NA,
+         ph_post_cal = NA,
+         orp_pre_clean = NA,
+         orp_post_clean = NA,
+         orp_post_cal = NA,
+         turb_pre_clean = NA,
+         turb_post_clean = NA,
+         turb_post_cal = NA,
+         fdom_pre_clean = NA,
+         fdom_post_clean = NA,
+         fdom_post_cal = NA,
+         chla_pre_clean = NA,
+         chla_post_clean = NA,
+         chla_post_cal = NA)%>%
+  select(-sensors_cleaned, -wiper_working, -cal_report_collected)
+
+all_field_notes <- bind_rows(new_field_notes, old_field_notes) 
 
 # grab sensor malfunction records
 sensor_malfunction_notes <- grab_mWater_malfunction_notes(mWater_api_data = mWater_data) %>%
@@ -526,11 +567,17 @@ raw_data_site_year <- bind_rows(raw_data_standardized) %>%
   mutate(year = year(timestamp)) %>%
   split(f = list(.$site, .$year), sep = "_", drop = TRUE)
 
+
+
 # Save files
 iwalk(raw_data_site_year, ~ {
   latest_ts <- format(max(.x$timestamp, na.rm = TRUE), "%Y-%m-%d_%H%M")
   site_name <- str_split(.y, "_")[[1]][1]  # Extract just the site name (first part)
-  filename <- here("data", "raw", "sensor", "manual_data_verification",paste0( year(latest_ts), "_cycle"), "hydro_vu_pull", "raw", paste0(tolower(site_name), "_", latest_ts, ".parquet"))
+  dir_path <- here("data", "raw", "sensor", "manual_data_verification", paste0(year(latest_ts), "_cycle"), "hydro_vu_pull", "raw")
+  if(!dir.exists(dir_path)) {
+    dir.create(dir_path, recursive = TRUE)
+  }
+  filename <- here(dir_path , paste0(tolower(site_name), "_", latest_ts, ".parquet"))
   .x %>% select(-year) %>% write_parquet(filename)
   cat("Saved:", filename, "\n")
 })
@@ -546,7 +593,7 @@ tidy_data <-  raw_data_standardized %>%
   bind_rows() %>%
   mutate(DT_round = round_date(timestamp, "15 minutes")) %>%
   mutate(DT_join = as.character(paste(DT_round))) %>%
-  fcw.qaqc::fix_site_names(., site_col = "site") %>%
+  ross.wq.tools::fix_site_names(., site_col = "site") %>%
   select(DT_round, DT_join, site, parameter, value, units) %>%
   distinct(.keep_all = TRUE) %>%
   modify_if(., is.numeric, ~ ifelse(is.nan(.x) | is.infinite(.x), NA, .x)) %>%
@@ -723,18 +770,366 @@ v_final_flags <- final_flags%>%
   mutate(year = year(DT_round)) %>%
   split(f = list(.$site, .$parameter, .$year), sep = "_") %>%
   keep(~nrow(.) > 0)
+```
 
+## 10) Visualize flagged data for sanity check
+
+```{r}
+
+ final_plot_data <- v_final_flags%>% 
+  bind_rows()%>%
+  split(f = list(.$site, .$year), sep = "_")%>%
+  keep(~nrow(.) > 0)
+  
+  plotz <- map(names(final_plot_data), ~ {
+  ggplot(data = final_plot_data[[.x]]) +
+    geom_point(aes(x = DT_round, y = mean, color = auto_flag), na.rm = TRUE) +
+    facet_wrap(~parameter, scales = "free_y") +
+    #remove legend for auto_flag
+    theme(legend.key = element_blank(),
+          legend.title = element_blank(),
+          legend.position = "none") +
+    labs(
+      title = .x,
+      x = "Date/Time",
+      y = "Mean Value"
+    )
+})
+  
+  walk(plotz, print)
+```
+
+
+## 11) Save processed data
+
+### Save to flagged folder
+
+```{r}
 # Save files
 iwalk(v_final_flags, ~ {
   site_name <- str_split(.y, "_")[[1]][1]  # Extract just the site name (first part)
   parm <- str_split(.y, "_")[[1]][2]
   year <- str_split(.y, "_")[[1]][3]
-  filename <- here("data","raw", "sensor", "manual_data_verification", paste0(year, "_cycle"), "hydro_vu_pull", "flagged", paste0(tolower(site_name), "_", parm, ".parquet"))
+  dir_path <- here("data", "raw", "sensor", "manual_data_verification", paste0(year, "_cycle"), "hydro_vu_pull", "flagged")
+  if(!dir.exists(dir_path)) {
+    dir.create(dir_path, recursive = TRUE)
+  }  
+  filename <- here(dir_path, paste0(tolower(site_name), "_", parm, ".parquet"))
   .x %>% select(-year) %>% write_parquet(filename)
   cat("Saved:", filename, "\n")
 })
 ```
 
+### Save data into Shiny Ver Tool formatting
+
+```{r}
+
+data_to_ver <- v_final_flags%>%
+  bind_rows()%>%
+  split(f = list(.$year), sep = "_")%>%
+  keep(~nrow(.) > 0)
+
+iwalk(data_to_ver, \(x, idx) {
+  message("Processing year: ", idx)
+  base_dir = here("data", "raw", "sensor", "manual_data_verification", paste0(idx, "_cycle"), "in_progress")
+  all_path = here(base_dir, "all_data_directory")
+  pre_verification_path = here(base_dir, "pre_verification_directory")
+  intermediary_path = here(base_dir, "intermediary_directory")
+  verified_path = here(base_dir, "verified_directory")
+  raw_data_path = here(base_dir, "raw_data")
+  meta_folder_path = here(base_dir, "meta")
+  
+  
+  #check/ create all necessary folders
+  if(!dir.exists(all_path)){
+    dir.create(all_path)
+  }
+  #check to see if data folder has pre_verification_directory
+  if(!dir.exists(pre_verification_path)){
+    dir.create(pre_verification_path)
+  }
+  #check to see if data folder has intermediary_directory
+  if(!dir.exists(intermediary_path)){
+    dir.create(intermediary_path)
+  }
+  
+  #check to see if data folder has verified_directory
+  if(!dir.exists(verified_path)){
+    dir.create(verified_path)
+  }
+  #create raw data folder
+  if(!dir.exists(raw_data_path)){
+    dir.create(raw_data_path)
+  }
+  if(!dir.exists(meta_folder_path)){
+    dir.create(meta_folder_path)
+    #save the site order file and seasonal threshold file to the meta folder for use in the app
+    file.copy(from = here("data", "derived", "auto_qaqc_files", "site_order", "site_order_pre2023.yml"), to = meta_folder_path)
+    file.copy(from = here("data","derived","auto_qaqc_files", "thresholds","seasonal_thresholds20260304-T175010Z.csv"), to = meta_folder_path)
+    file.rename(from = here(meta_folder_path, "seasonal_thresholds20260304-T175010Z.csv"), to = here(meta_folder_path, "seasonal_thresholds.csv"))
+    #copy over the available flags file to the meta folder for use in the app
+    file.copy(from = here("data","raw","sensor", "manual_data_verification","2025_cycle", "in_progress", "meta",   "available_flags.csv"), to = meta_folder_path)
+    #copy over the parameter auto selections
+    file.copy(from = here("data","raw","sensor", "manual_data_verification","2025_cycle", "in_progress", "meta",   "parameter_autoselections.csv"), to = meta_folder_path)
+  }
+  
+  all_data_parsed <- x%>%
+    #double check we are only saving one year
+    filter(year == idx)%>%
+    mutate(DT_round = with_tz(DT_round, tzone = "MST"))
+  
+  #Taking all_data_parsed and formatting to save into all and pre directories
+  site_params <- expand_grid(site = unique(all_data_parsed$site), parameter = unique(all_data_parsed$parameter))
+  #create a list were each is named after the site and parameter combination
+  flagged_list <- pmap(site_params, ~ all_data_parsed %>% filter(site == ..1, parameter == ..2))
+  rm(all_data_parsed) #save some memory here
+  names(flagged_list) <- paste(site_params$site, site_params$parameter, sep = "-")
+  #remove empty lists
+  flagged_list <- keep(flagged_list, ~nrow(.x) > 0)
+  #add additional columns needed
+  pre_processed_data <- map(.x = flagged_list, \(x)
+                            x %>%
+                              mutate(
+                                mean_verified = mean, # if verification status pass or flag, this is mean. set default to mean so that it can be used in the app
+                                is_verified = FALSE, # whether or not the data has been verified
+                                verification_status = NA, # can only be pass/fail/skip
+                                year = year(DT_round),
+                                week = week(DT_round),
+                                weekday = lubridate::wday(DT_round, week_start = 7),
+                                y_w = paste(year, "-", week),
+                                day = yday(DT_round),
+                                y_d = paste(year, "-", day),
+                                #based on Colorado Hydrology, should be removed for DS version
+                                season = case_when(
+                                  month(DT_round) %in% c(12, 1, 2, 3, 4) ~ "winter_baseflow",
+                                  month(DT_round) %in% c(5, 6) ~ "snowmelt",
+                                  month(DT_round) %in% c(7, 8, 9) ~ "monsoon",
+                                  month(DT_round) %in% c(10, 11) ~ "fall_baseflow"
+                                ),
+                                #auto_flag = flag,
+                                #merge auto_flag and mal_flag by ; into flag. don't include NAs
+                                flag = case_when(
+                                  #both are flagged then combine by ;
+                                  !is.na(auto_flag)&!is.na(mal_flag) ~ paste(auto_flag, mal_flag, sep = ";"),
+                                  #only auto_flag is flagged, only use auto_flag
+                                  !is.na(auto_flag)&is.na(mal_flag) ~ auto_flag,
+                                  #only mal_flag is flagged, only use mal_flag
+                                  !is.na(mal_flag)&is.na(auto_flag) ~ mal_flag
+                                ),
+                                user_flag = flag, # Keep Auto flags in flag column, user added flags/alterations live in user flag
+                                brush_omit = FALSE, # User Brush Omit instances, default to FALSE
+                                user = NA, #User initials
+                                final_status = NA, # Final status of the data point after weekly decision
+                                week_decision = NA,  #store weekly decision
+                                is_finalized = FALSE) #Only TRUE if user submits final decision button
+  )
+  
+  rm(flagged_list) #save some memory here
+  
+  iwalk(pre_processed_data, \(x, idx) {
+    timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    data_hash <- digest::digest(x)
+    new_filename <- glue::glue("{idx}_{timestamp}_{data_hash}.parquet")
+    write_parquet(x, here(all_path, new_filename))  # Ensure you use new_filename, not idx
+  })
+  
+  R.utils::copyDirectory(all_path, pre_verification_path)
+  message("Files saved to all and pre directory")
+})
+
+```
+
+
+# Future Work
+
+## Drift Correction post-ver
+
+```{r}
+#Create a post_verification_directory for each cycle
+years <- c(2019, 2020, 2021)
+
+walk(years, ~ {
+  dir_path <- here("data", "raw", "sensor", "manual_data_verification", paste0(.x, "_cycle"), "post_verification")
+  if(!dir.exists(dir_path)) {
+    dir.create(dir_path, recursive = TRUE)
+  }
+})
+
+```
+
+
+## Prep for HydroShare Upload
+
+Copied from `Process_2025.rmd` but should have the same format
+
+
+We will be creating two datasets here: 
+- A "raw" dataset that includes all the original data with flags and all "versions" of the data: no manual corrections applied, calibration correction, post verification, and post drift correction. This is for posterity and to have a record of what the original data looked like before and after manual verification/corrections.
+- A "cleaned" dataset that includes only the final value (post drift correction if it exists, post verification if not) and a column indicating what modifications were made to the data (manual exclusion, calibration correction, drift correction, etc). This is the dataset that will be uploaded to HydroShare and used for analysis.
+
+### Prep Data
+
+```{r}
+
+years <- c(2019, 2020, 2021)
+hydro_share_datasets <- map(years, ~function(year_cycle){
+  
+  
+drift_corrected_files <- list.files(path = here("data/raw/sensor/manual_data_verification/", paste0(year_cycle, "_cycle"),"/post_verification/"), pattern = "*.parquet", full.names = TRUE)
+
+drift_corrected_data <- map_dfr(drift_corrected_files, read_parquet)%>%
+  select(DT_round, DT_join, site, parameter,units, 
+         value_raw = mean,  
+         value_post_ver = mean_analysis, 
+         value_post_drift_corr = mean_drift_trans,   
+         auto_qc_flag = auto_flag, mal_flag, user_qc_flag = user_flag, qc_status = final_status)%>%
+  split(f = list(.$site, .$parameter), sep = "-")%>%
+  keep(~ nrow(.x) > 0) #remove any empty datasets
+
+non_drift_corrected_files <- list.files(path = here("data/raw/sensor/manual_data_verification/", paste0(year_cycle, "_cycle"), "/verified_directory/"), pattern = "*.parquet", full.names = TRUE)
+
+non_drift_corrected_data <- map_dfr(non_drift_corrected_files, read_parquet)%>%
+  mutate( mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA))%>%
+  select(DT_round, DT_join, site, parameter,units,
+         value_raw = mean, 
+         value_post_ver = mean_analysis,
+         auto_qc_flag = auto_flag, 
+         mal_flag, 
+         user_qc_flag = user_flag,
+         qc_status = final_status)%>%
+  split(f = list(.$site, .$parameter), sep = "-")
+
+#only keep non drift corrected site parameters if they are not in the drift corrected data (i.e. if they haven't been drift corrected yet)
+all_datasets <- c(non_drift_corrected_data[!names(non_drift_corrected_data) %in% names(drift_corrected_data)], drift_corrected_data)%>%
+  keep(~ nrow(.x) > 0) #remove any empty datasets
+
+
+#units lookup table
+
+units_table <- all_datasets%>%
+  bind_rows()%>%
+  select(parameter, units)%>%
+  distinct()%>%
+  filter(!is.na(parameter) & !is.na(units))
+
+raw_dataset <- all_datasets%>%
+  bind_rows()%>%
+  # if value_post_drift corr is NA, then fill with value_post_ver (this means that the data was verified but not drift corrected, so the post verification value is the most "final" version of the data we have for those instances) This is for parameters other than FDOM and Turbidity
+  mutate(value_post_drift_corr = if_else(is.na(value_post_drift_corr), value_post_ver, value_post_drift_corr),
+         #round all values to 3 decimal places for consistency with HydroShare upload
+         value_raw = round(value_raw, 3),
+         value_post_ver = round(value_post_ver, 3),
+         value_post_drift_corr = round(value_post_drift_corr, 3),
+         #Create modifications column to indicate what modifications were made to the data for easier filtering and analysis downstream
+         modifications = case_when( is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
+                                    value_raw == value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "drift correction",
+                                    TRUE ~ NA), 
+         #convert to UTC
+         DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
+  select(-units)%>%
+  left_join(units_table, by = "parameter")%>%
+  select(DateTime_MST = DT_round,
+         DateTime_UTC,
+         site, parameter, units, 
+         #Actual data
+         value_raw, 
+         value_post_ver,
+         value_post_drift_corr, 
+         #QC Info
+         auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications)
+    
+final_dataset <- raw_dataset %>%
+  select(DateTime_UTC, site, parameter, units, value_raw, value_final = value_post_drift_corr,user_qc_flag, modifications)
+
+return(list(raw_dataset = raw_dataset, final_dataset = final_dataset))
+})
+```
+
+#### Plot to Double Check 
+
+```{r}
+# 
+# plots <- map(unique(final_dataset$site), function(site_name) {
+#   ggplot(final_dataset %>% filter(site == site_name), aes(x = DateTime_UTC, y = value_final, color = modifications)) +
+#     geom_point(aes(y = value_raw), color = "gray", alpha = 0.5) + # add raw data points for comparison
+#     geom_point() +
+#     facet_wrap(~parameter, scales = "free_y") +
+#     labs(title = site_name,
+#          x = "Date",
+#          y = "Value",
+#          color = "QC Status")
+# })
+# walk(plots, print)
+
+```
+
+
+### Save Data
+
+```{r}
+# year <- "2019"
+# 
+# #check if the folder exists, if not create it
+# if (!dir.exists(here( "data/collated/sensor/hydroshare_pub", year))) {
+#   dir.create(here( "data/collated/sensor/hydroshare_pub", year), recursive = TRUE)
+# }
+# 
+# cleaned_file_name <- here( "data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_", year,"_cleaned.csv"))
+# 
+# raw_file_name <- here( "data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_", year,"_raw.csv"))
+# 
+# write_csv(final_dataset, cleaned_file_name)
+# 
+# write_csv(raw_dataset, raw_file_name)
+```
+
+## Field Notes
+
+```{r}
+# sensor_field_notes <- grab_mWater_sensor_notes(load_mWater())%>%
+#   filter(year(DT_round) == year & !(site %in% c("springcreek", "boxcreek")))%>%
+#   rename(DateTime_UTC = DT_round) %>%
+#   select(-photos_downloaded,-DT_join, -cal_report_collected, -sensor_swapped_notes, -end_dt, -last_site_visit, -date,-sensor_deployed, -sensor_pulled)%>%
+#   #Clean up crew to just initials and remove any extra text
+#   mutate(crew = crew %>%
+#     str_replace_all("Other \\(please specify\\)", "Other") %>%
+#     str_replace_all("([A-Z])[a-z]+", "\\1") %>%
+#     str_replace_all("(?<=[A-Z])\\s+(?=[A-Z])", "")
+#   )
+# 
+# field_notes_file <- here("data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_sensor_field_notes_", year, ".csv"))
+# 
+# write_csv(sensor_field_notes, field_notes_file)
+
+```
+
+
+
+## Location Metadata
+
+Here we will load and double check the location metadata file created by Sam Struthers and verified by Katie Willi
+
+```{r}
+# location_meta <- read_csv("data/collated/sensor/hydroshare_pub/CSU_ROSS_sonde_location_metadata.csv",
+#                            show_col_types = FALSE)%>%
+#   mutate(data_start_date = as.POSIXct(data_start_date, tz = "UTC", format = "%m/%d/%y"),
+#          data_end_date =  if_else( is.na(data_end_date), 
+#                                    ymd("2025-11-17"),
+#                                    as.POSIXct(data_end_date, tz = "UTC", format = "%m/%d/%y")))%>%
+# 
+#   mutate(min_year = year(data_start_date),
+#          max_year = year(data_end_date), 
+#          year_range = paste0(min_year, "-", max_year))
+# #update as needed
+# #write_csv(location_meta, here("data/collated/sensor/hydroshare_pub/CSU_ROSS_sonde_location_metadata.csv"))
+# 
+# tmap_mode("view")
+# tm_basemap("OpenStreetMap") +
+#   tm_shape(location_meta %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326)) +
+#   #color is SiteID and shape is year_range
+#   tm_symbols(col = "SiteID", shape = "year_range", size = 0.5, border.col = "black")
+
+```
 
 
 

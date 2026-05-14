@@ -101,7 +101,7 @@ server <- function(input, output, session) {
           # User Selection
           column(3,
                  selectInput("user", "Select User:",
-                             choices = c("SJS", "JDT", "KW", "BS"),
+                             choices = c("SJS", "MNR", "JDT", "KW", "BS"),
                              selected = "SJS")
           ),
           # Site Selection
@@ -1414,18 +1414,22 @@ server <- function(input, output, session) {
     }
 
 
-
-    #start & end of period (still not tested on multiyear datasets)
-    min_year <- min(selected_data()$year)
-    max_year <- max(selected_data()$year)
+    #get year from data, should only be one year but just in case we have multiple years we will take the minimum
+    year <- min(selected_data()$year)
     # Find the first day of the minimum week in the data
-    start_date <- parse_date_time(paste(min_year, min(selected_data()$week), 1, sep="/"), 'Y/U/u')
+    start_date <- as.POSIXct(min(selected_data()$DT_round, na.rm = T))
     # Find the last day of the maximum week in the data
-    end_date <- parse_date_time(paste(max_year, max(selected_data()$week), 7, sep="/"), 'Y/U/u')
+    end_date <- as.POSIXct(max(selected_data()$DT_round, na.rm = T))
     # Create vertical lines at the beginning of each week
-    vline_dates <- seq(start_date,
-                       end_date,
-                       by = "week")
+
+
+    vline_dates <- seq(as.POSIXct(paste0(year, "-01-01")),
+                       as.POSIXct(paste0(year, "-12-31")),
+                       by = "week")%>%
+      #filter to the start and end date of the data
+      keep(~ .x >= start_date & .x <= end_date)
+
+
     #add 3 days to each vertical line to center the week
     week_dates <- vline_dates + days(3)
 
