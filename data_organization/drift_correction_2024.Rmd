@@ -1083,6 +1083,16 @@ raw_data <- map(sensor_f, arrow::read_parquet) %>%
 rm(sensor_f)
 ```
 
+The Virridy sites were back-calibrated out of order via `prep_virridy_2024_for_cal_app.R`. The corrected values are recovered here from the finalized calibration RDS so that `mean_analysis` — and therefore all drift correction outputs — are computed from the back-calibrated base.
+
+```{r}
+virridy_cal_corrections <- read_rds(here("data", "raw", "sensor", "manual_data_verification",
+                                          "complete_dataset", "calibrated_sensor_field_data_finalized.rds"))[["2024"]] %>%
+  keep(~ grepl("virridy", unique(.$site))) %>%
+  map_dfr(~ select(., DT_round, site, parameter, mean_cleaned_cal)) %>%
+  rename(mean_virridy_post_cal = mean_cleaned_cal)
+```
+
 ```{r}
 field_notes <- grab_mWater_sensor_notes(load_mWater())
 
@@ -1090,11 +1100,14 @@ prepped_data <- raw_data %>%
   map(function(df) {
     df %>%
       add_field_notes(field_notes) %>%
+      left_join(virridy_cal_corrections, by = c("DT_round", "site", "parameter")) %>%
       mutate(
+        mean = if_else(!is.na(mean_virridy_post_cal), mean_virridy_post_cal, mean),
         drift = ifelse(stringr::str_detect(user_flag, "drift"), TRUE, FALSE),
         drift = ifelse(is.na(drift), FALSE, drift),
         mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA)
       ) %>%
+      select(-mean_virridy_post_cal) %>%
       fill(c("turb_pre_clean", "turb_post_clean", "fdom_pre_clean", "fdom_post_clean"),
            .direction = "down")
   })

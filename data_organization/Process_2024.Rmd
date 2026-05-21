@@ -748,6 +748,18 @@ raw_values <- read_parquet(here(base_folder, "in_progress", "raw_data", "raw_dat
   select(DT_round, site, parameter, mean_pre_cal = value)
 ```
 
+## Read in Virridy back-calibrated corrections
+
+The Virridy sites were back-calibrated out of order via `prep_virridy_2024_for_cal_app.R`. The back-calibrated values were saved to the finalized calibration RDS but never written back to `verified_directory/`. We recover them here to correct `value_post_cal_corr` for Virridy downstream. Depth and Temperature are not present (no calibration applied to those parameters).
+
+```{r}
+virridy_cal_corrections <- read_rds(here("data", "raw", "sensor", "manual_data_verification",
+                                          "complete_dataset", "calibrated_sensor_field_data_finalized.rds"))[["2024"]] %>%
+  keep(~ grepl("virridy", unique(.$site))) %>%
+  map_dfr(~ select(., DT_round, site, parameter, mean_cleaned_cal)) %>%
+  rename(mean_virridy_post_cal = mean_cleaned_cal)
+```
+
 # Prep for HydroShare Upload
 
 We will be creating two datasets here:
@@ -760,6 +772,8 @@ drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verifica
 
 drift_corrected_data <- map_dfr(drift_corrected_files, read_parquet) %>%
   left_join(raw_values, by = c("DT_round", "site", "parameter")) %>%
+  left_join(virridy_cal_corrections, by = c("DT_round", "site", "parameter")) %>%
+  mutate(mean = if_else(!is.na(mean_virridy_post_cal), mean_virridy_post_cal, mean)) %>%
   select(
     DT_round, DT_join, site, parameter, units, value_raw = mean_pre_cal,
     value_post_cal_corr = mean, value_post_ver = mean_analysis,
@@ -773,7 +787,9 @@ non_drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_veri
 
 non_drift_corrected_data <- map_dfr(non_drift_corrected_files, read_parquet) %>%
   left_join(raw_values, by = c("DT_round", "site", "parameter")) %>%
-  mutate(mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA)) %>%
+  left_join(virridy_cal_corrections, by = c("DT_round", "site", "parameter")) %>%
+  mutate(mean = if_else(!is.na(mean_virridy_post_cal), mean_virridy_post_cal, mean),
+         mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA)) %>%
   select(DT_round, DT_join, site, parameter, units,
          value_raw = mean_pre_cal,
          value_post_cal_corr = mean,
