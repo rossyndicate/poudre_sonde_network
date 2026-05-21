@@ -772,8 +772,6 @@ drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_verifica
 
 drift_corrected_data <- map_dfr(drift_corrected_files, read_parquet) %>%
   left_join(raw_values, by = c("DT_round", "site", "parameter")) %>%
-  left_join(virridy_cal_corrections, by = c("DT_round", "site", "parameter")) %>%
-  mutate(mean = if_else(!is.na(mean_virridy_post_cal), mean_virridy_post_cal, mean)) %>%
   select(
     DT_round, DT_join, site, parameter, units, value_raw = mean_pre_cal,
     value_post_cal_corr = mean, value_post_ver = mean_analysis,
@@ -834,7 +832,7 @@ raw_dataset <- all_datasets%>%
          DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
   select(-units)%>%
   left_join(units_table, by = "parameter")%>%
-  select(DateTime_MST = DT_round,
+  select(DateTime_MST = with_tz(DT_round, "MST"),
          DateTime_UTC,
          site, parameter, units,
          #Actual data
