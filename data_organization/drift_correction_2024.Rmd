@@ -57,6 +57,9 @@ parameter so that a fitted `k` can be supplied for exponential corrections.
 
 ```{r}
 #' @title Add a column to a data frame if it does not exist
+#' @param df Data frame to modify
+#' @param column_name Name of the column to add
+#' @param default_value Fill value for the new column (default NA)
 
 add_column_if_not_exists <- function(df, column_name, default_value = NA) {
   if (!column_name %in% colnames(df)) {
@@ -68,6 +71,12 @@ add_column_if_not_exists <- function(df, column_name, default_value = NA) {
 
 ```{r}
 #' @title Temporal Weight Factor Calculation
+#' @description Adds a weight column ranging from 0 (first timestamp) to 1
+#'   (last timestamp) based on elapsed time. Used to scale drift corrections
+#'   proportionally across a calibration window.
+#' @param df Data frame containing the datetime column
+#' @param dt_col Name of the POSIXct datetime column
+#' @param wt_col Name to give the computed weight column (default "wt")
 
 cal_wt <- function(df, dt_col, wt_col = "wt"){
 
@@ -94,16 +103,25 @@ cal_wt <- function(df, dt_col, wt_col = "wt"){
 #' @param pre_col Column name for pre-cleaning measurement
 #' @param post_col Column name for post-cleaning measurement
 #' @param wt_col Column name containing temporal weight parameters
-#' @param drift_type "linear" (default), "exponential", "log", "uniform", or "fitted_linear"
+#' @param drift_type Shape of the weight curve applied to the correction:
+#'   - "linear": weight increases linearly from 0 to 1 (default)
+#'   - "exponential": weight follows (exp(k*wt)-1)/(exp(k)-1); convex, correction
+#'     accelerates toward the end. NOTE: not used by the current workflow —
+#'     "exponential" decisions in the decision sheet route to
+#'     exponential_correction_fxn, which applies "log" (not this branch).
+#'   - "log": weight follows log(1 + wt*(exp(k)-1))/k; concave, correction
+#'     accumulates faster early and decelerates toward the end
+#'   - "uniform": constant weight of 1 applied to every observation (full correction
+#'     applied uniformly across the window)
+#'   - "fitted_linear": OLS line is fit to the observed values in the window; the
+#'     slope b is used in a hyperbolic multiplicative correction anchored at post_val:
+#'     corrected(t) = observed(t) * post_val / (post_val + b * wt(t)).
+#'     Head (wt=0) is always untouched; tail ratio is data-informed via b.
+#'     Always positive. Falls back to linear if fewer than 3 non-NA observations.
+#'     exp_coef is not used for this drift_type.
 #' @param correction_type "additive" (default) or "multiplicative"
-#' @param exp_coef Rate parameter k (default 1). Supply a fitted k from exp_k().
-#'   For "log", the weight is the inverse of the exponential curve with the same k:
-#'   wt_log = log(1 + wt * (exp(k) - 1)) / k
-#'   For "fitted_linear", an OLS line is fit to the observed values in the window.
-#'   The slope b is used in a hyperbolic multiplicative correction anchored at
-#'   post_val: corrected(t) = observed(t) * post_val / (post_val + b * wt(t)).
-#'   Head (wt=0) is always untouched; tail ratio is data-informed via b.
-#'   Always positive. Falls back to linear if fewer than 3 non-NA observations.
+#' @param exp_coef Rate parameter k for "exponential" and "log" drift types
+#'   (default 1, equivalent to linear). Supply a fitted k from exp_k().
 
 cal_exp_one_point_drift <- function(df, lm_trans_col, pre_col, post_col, wt_col,
                                     drift_type = "linear", correction_type = "additive",
@@ -172,7 +190,10 @@ cal_exp_one_point_drift <- function(df, lm_trans_col, pre_col, post_col, wt_col,
 ```{r}
 #' @title Low-pass filter for turbidity noise reduction
 #' @description Applies a 5-point binomial kernel three times in succession to
-#'   smooth optical noise. Only applied to Turbidity data.
+#'   smooth optical noise. For non-Turbidity parameters, copies correction_col
+#'   directly into smoothed_mean without filtering.
+#' @param df Data frame containing the sensor data; must have a "parameter" column
+#' @param correction_col Column to smooth (default "mean_drift_trans")
 
 low_pass_filter <- function(df, correction_col = "mean_drift_trans") {
 
@@ -212,7 +233,16 @@ low_pass_filter <- function(df, correction_col = "mean_drift_trans") {
 ```{r}
 #' @title Interpolate missing data within a maximum gap
 #' @description Fills NA values in the value column using linear or spline
-#'   interpolation, up to max_gap consecutive missing observations.
+#'   interpolation, up to max_gap consecutive missing observations. Warns if
+#'   timestamps are not equally spaced (expects padr::pad() to have been called).
+#' @param df Data frame containing sensor data
+#' @param site_col Name of the site column (default "site")
+#' @param parameter_col Name of the parameter column (default "parameter")
+#' @param dt_col Name of the POSIXct datetime column (default "DT_round")
+#' @param value_col Column containing values to interpolate (default "smoothed_mean")
+#' @param max_gap Maximum number of consecutive NA observations to fill (default 4)
+#' @param new_value_col Name for the output column of interpolated values (default "mean_filled")
+#' @param method "linear" (default) or "spline"
 
 apply_interpolation_missing_data <- function(df, site_col = "site", parameter_col = "parameter",
                                              dt_col = "DT_round", value_col = "smoothed_mean",
@@ -298,8 +328,14 @@ site_order <- list(
 ```{r}
 #' @title Plot final corrected data with correction type highlighted
 #' @description Plots the corrected time series coloured by how each segment
-#'   was treated: raw (no correction), linear, exponential (log), or unflagged.
-#'   Upstream/downstream neighbours are shown in grey for network context.
+#'   was treated: raw (no correction), linear, exponential (log), uniform,
+#'   fitted_linear, or unflagged. Upstream/downstream neighbours are shown in
+#'   grey for network context.
+#' @param df Corrected data frame for a single site-parameter; must have
+#'   DT_round, mean_analysis, smoothed_mean, correction_type, and pre_post_source
+#' @param data_list Named list of all site-parameter data frames (used to look up
+#'   upstream/downstream neighbours)
+#' @param site_order_template Named list defining stream network order (e.g. site_order)
 
 plot_final_corrections <- function(df, data_list, site_order_template) {
 
@@ -419,7 +455,7 @@ plot_final_corrections <- function(df, data_list, site_order_template) {
 ```{r}
 #' @title Boundary averages
 #' @description Computes the pre-cleaning (drifted) and post-cleaning (clean)
-#'   boundary values that bracket each drift correction window. Two independent
+#'   boundary values that bracket each drift correction window. Three independent
 #'   sources are tried and the one with greater correction potential is returned.
 #'
 #'   **Option A — time-window average from mean_analysis:**
@@ -440,6 +476,16 @@ plot_final_corrections <- function(df, data_list, site_order_template) {
 #'   These columns are filled forward by the data prep step so the most recent
 #'   field note is always available on the visit row.
 #'
+#'   **Option C — upstream/downstream network neighbours:**
+#'   Used when the post-cleaning gap exceeds `gap_threshold_mins` (i.e. Option A's
+#'   `to_val` cannot be reliably computed because clean data is unavailable soon
+#'   after the visit). Requires `data_list` and `site_order_template`.
+#'   `from_val` is the mean of the last four non-NA `mean_analysis` readings at
+#'   the target site up to `end_dt`. `to_val` is the mean of the neighbouring
+#'   site(s) at those same timestamps. For Turbidity, Option C is rejected if the
+#'   upstream and downstream neighbours disagree by more than 10 NTU, since
+#'   conditions are too different to use as a shared anchor.
+#'
 #'   **Selection logic:**
 #'   A pair is considered valid only when both endpoints are finite (guards
 #'   against NA, NaN, and Inf). Valid pairs are then checked for two additional
@@ -457,14 +503,22 @@ plot_final_corrections <- function(df, data_list, site_order_template) {
 #'   2. *Magnitude constraint* — a difference >= 1000 NTU/RFU almost certainly
 #'      reflects a data error; such pairs are rejected.
 #'
-#'   If both options pass all checks, the one with the larger `|from - to|` is
-#'   returned because it represents the strongest available evidence of drift.
-#'   If differences are equal (including both zero), Option A is preferred.
-#'   If only one option passes, that option is returned.
-#'   If Option A is incomplete (one or both endpoints are non-finite), the
-#'   function falls back to mixing the best finite endpoint from each option
-#'   individually — this preserves the original single-source behavior and
-#'   prevents a tiny field-note drift from collapsing `exp_k`'s denominator.
+#'   When the post-cleaning gap exceeds `gap_threshold_mins` and Option C passes
+#'   all checks, Option C is returned immediately (source = "C").
+#'   Otherwise, the valid option with the largest `|from - to|` is returned,
+#'   with priority order A > C > B on ties.
+#'   If no option passes all checks, the function falls back: if Option A has
+#'   both finite endpoints it is returned as-is (source = "A_fallback"); otherwise
+#'   the best finite endpoint from each source is mixed (source = "mixed_fallback").
+#' @param sensor_df_arg Data frame for a single site-parameter containing
+#'   DT_round, mean_analysis, and optionally turb/fdom pre/post clean columns
+#' @param end_dt POSIXct timestamp of the field visit (end of the drift window)
+#' @param data_list Named list of all site-parameter data frames; required for
+#'   Option C (default NULL disables Option C)
+#' @param site_order_template Named list defining stream network order; required
+#'   for Option C (default NULL disables Option C)
+#' @param gap_threshold_mins Minutes after end_dt with no clean data before
+#'   Option C is preferred over A (default 120)
 
 cal_range_values <- function(sensor_df_arg, end_dt,
                              data_list = NULL, site_order_template = NULL,
@@ -637,9 +691,13 @@ cal_range_values <- function(sensor_df_arg, end_dt,
 #' @description Normalizes the observed sensor values in the drift window to a
 #'   0-1 fraction of the total drift, then fits the exponential weight formula
 #'   to find the k that best describes how drift accumulated over time. Falls
-#'   back to k = 1 (linear-equivalent) on failure.
-#' @param df Prepped drift dataframe with columns: wt, pre_val, post_val, and correction_col
+#'   back to k = 1 (linear-equivalent) when pre_val == post_val (no drift to
+#'   fit), when fewer than 3 non-NA observations are available, or when nls
+#'   fitting fails.
+#' @param df Prepped drift data frame with columns: wt, pre_val, post_val, and
+#'   the column named by correction_col
 #' @param correction_col Column name of observed sensor values to fit against
+#'   (default "mean_analysis")
 
 exp_k <- function(df, correction_col = "mean_analysis") {
 
@@ -677,7 +735,12 @@ exp_k <- function(df, correction_col = "mean_analysis") {
 ```{r}
 #' @title Unflagging function
 #' @description Removes "drift" from user_flag and sets drift = FALSE for all
-#'   rows falling within the time windows defined in decision_df_arg.
+#'   rows falling within the time windows defined in decision_df_arg. Does not
+#'   alter mean_analysis or any corrected value columns.
+#' @param decision_df_arg Data frame of unflag decisions filtered to a single
+#'   site-parameter; must have start_dt and end_dt columns
+#' @param sensor_df_arg Data frame for a single site-parameter; must have
+#'   DT_round, user_flag, and drift columns
 
 unflag_fxn <- function(decision_df_arg, sensor_df_arg) {
 
@@ -715,9 +778,24 @@ unflag_fxn <- function(decision_df_arg, sensor_df_arg) {
 ```
 
 ```{r}
-#' @title Linear drift correction function
-#' @description Applies a linearly-weighted single-point drift correction across
-#'   each calibration window defined in decision_df_arg.
+#' @title General single-point drift correction function
+#' @description Applies a single-point drift correction across each calibration
+#'   window defined in decision_df_arg. The weight curve shape (linear, uniform,
+#'   fitted_linear) is read from the arg_drift_type column of decision_df_arg and
+#'   passed through to cal_exp_one_point_drift. Used directly for linear, uniform,
+#'   and fitted_linear correction types; exponential corrections use
+#'   exponential_correction_fxn instead (which also fits k via exp_k()).
+#' @param decision_df_arg Data frame of correction decisions for a single
+#'   site-parameter; must have start_dt, end_dt, arg_drift_type, and
+#'   arg_correction_type columns
+#' @param sensor_df_arg Data frame for a single site-parameter containing
+#'   DT_round, mean_analysis, and field note pre/post columns
+#' @param correction_col Column to apply the correction to (default "mean_analysis")
+#' @param data_list Named list of all site-parameter data frames passed to
+#'   cal_range_values for Option C (default NULL)
+#' @param site_order_template Network order list passed to cal_range_values for
+#'   Option C (default NULL)
+#' @param gap_threshold_mins Passed to cal_range_values (default 120)
 
 linear_correction_fxn <- function(decision_df_arg, sensor_df_arg, correction_col = "mean_analysis",
                                   data_list = NULL, site_order_template = NULL,
@@ -786,11 +864,21 @@ linear_correction_fxn <- function(decision_df_arg, sensor_df_arg, correction_col
 ```{r}
 #' @title Exponential drift correction function
 #' @description Same structure as linear_correction_fxn but fits k per
-#'   calibration window via exp_k() and passes it to cal_exp_one_point_drift().
-#'   Fits k via exp_k() per calibration window, then applies the
-#'   log weight — the transpose of the exponential curve with the same k:
-#'   wt_log = log(1 + wt * (exp(k) - 1)) / k. This gives a concave weight that
-#'   accumulates correction faster early and decelerates toward the end.
+#'   calibration window via exp_k(), then applies the log weight — the concave
+#'   transpose of the exponential curve with the same k:
+#'   wt_log = log(1 + wt * (exp(k) - 1)) / k.
+#'   This gives a correction that accumulates faster early and decelerates toward
+#'   the end, matching how biofouling drift typically behaves.
+#' @param decision_df_arg Data frame of exponential correction decisions for a
+#'   single site-parameter; must have start_dt, end_dt, and arg_correction_type
+#' @param sensor_df_arg Data frame for a single site-parameter containing
+#'   DT_round, mean_analysis, and field note pre/post columns
+#' @param correction_col Column to apply the correction to (default "mean_analysis")
+#' @param data_list Named list of all site-parameter data frames passed to
+#'   cal_range_values for Option C (default NULL)
+#' @param site_order_template Network order list passed to cal_range_values for
+#'   Option C (default NULL)
+#' @param gap_threshold_mins Passed to cal_range_values (default 120)
 
 exponential_correction_fxn <- function(decision_df_arg, sensor_df_arg, correction_col = "mean_analysis",
                                        data_list = NULL, site_order_template = NULL,
