@@ -1,18 +1,28 @@
 ---
 title: "Processing 2024 Data Pull from HydroVu with Auto Back-Calibration and QA/QC Flagging"
-author: "Sam Struthers - CSU ROSSyndicate"
+author: "Sam Struthers, Juan De La Torre - CSU ROSSyndicate"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
 # Script Purpose & Scope
 
-This script is designed to pull in sensor data from HydroVu for the 2024 
-monitoring season, apply auto back-calibrations, export data for manual checks 
-of back calibration issues, and run through the automated QA/QC flagging 
-process. The auto-flagged dataset will be saved for manual review and 
-verification. Once manual review and verification is complete we will perform
-drift corrections to the optical sensor data.
+This script documents the processing of sensor data for the 2024 monitoring 
+season. Data was pulled from HydroVu, run through automated QA/QC flagging, and 
+manually verified before being exported for back-calibration decisions. Drift 
+corrections were applied after the fact — the drift correction workflow was 
+developed after the 2024 season concluded and was subsequently applied to the 
+2024 data retroactively. The final processed dataset is prepared here for upload 
+to HydroShare.
+
+The order of operations for 2024 is:
+
+1. Pull sensor data from HydroVu and parse any downloaded log files
+2. Run automated QA/QC flagging
+3. Manual verification of auto-flagged data (Shiny verification tool)
+4. Export data for back-calibration decisions and apply back-calibration
+5. Apply drift corrections (`drift_correction_2024.Rmd`)
+6. Prepare final datasets for HydroShare upload
 
 ## Setup Libraries
 
@@ -91,7 +101,8 @@ parameters <- c("Specific Conductivity", "Temperature", "DO", "pH", "ORP", "Dept
 
 ## Establishing directory paths.
 
-These are the folders where raw, and flagged data will be saved. Update base_folder to the current year and log directory as needed
+These are the folders where raw, and flagged data will be saved. Update 
+base_folder to the current year and log directory as needed
 
 ```{r}
 base_folder <- here("data","raw", "sensor","manual_data_verification","2024_cycle")
@@ -121,9 +132,57 @@ if (!dir.exists(flagged_directory)) {
 
 ```
 
+Specific for 2024: the original data was prepared by `process_2024.R`, which used
+different folder names (`raw/` and `flagged/`) and saved flagged data as CSVs rather
+than parquets. The chunk below migrates those files into the folder structure and
+format established above, then removes the old folders once the transfer is complete.
+
+```{r}
+raw_old_dir      <- here(base_folder, "hydro_vu_pull", "raw")
+flagged_old_dir  <- here(base_folder, "hydro_vu_pull", "flagged")
+
+# --- Migrate raw parquets (rename to 2025-style: {site}{YYYYMMDD}-T{HHMMSS}Z) ---
+if (dir.exists(raw_old_dir)) {
+  raw_files <- list.files(raw_old_dir, pattern = "\\.parquet$", full.names = TRUE)
+  walk(raw_files, function(f) {
+    m <- str_match(basename(f), "^(.*?)(\\d{4}-\\d{2}-\\d{2})_(\\d{4})\\.parquet$")
+    site_clean <- str_remove(m[, 2], "_$")
+    date_clean  <- str_remove_all(m[, 3], "-")
+    time_clean  <- paste0(m[, 4], "00")
+    new_name <- paste0(site_clean, date_clean, "-T", time_clean, "Z.parquet")
+    file.copy(f, file.path(staging_directory, new_name), overwrite = FALSE)
+  })
+  unlink(raw_old_dir, recursive = TRUE)
+  message("Raw parquets migrated to raw_data/ and raw/ removed.")
+} else {
+  message("raw/ folder not found — transfer already completed.")
+}
+
+# --- Migrate flagged CSVs to parquets ---
+if (dir.exists(flagged_old_dir)) {
+  flagged_files <- list.files(flagged_old_dir, pattern = "\\.csv$", full.names = TRUE)
+  walk(flagged_files, function(f) {
+    out_name <- paste0(tools::file_path_sans_ext(basename(f)), ".parquet")
+    df <- read_csv(f, show_col_types = FALSE)
+    write_parquet(df, file.path(flagged_directory, out_name))
+  })
+  unlink(flagged_old_dir, recursive = TRUE)
+  message("Flagged CSVs converted to parquets in flagged_data/ and flagged/ removed.")
+} else {
+  message("flagged/ folder not found — transfer already completed.")
+}
+```
+
+The `extra_data/` folder contains `SFM_2024-12-10_1430.csv`, the raw HydroVu pull
+for the SFM site pulled separately on 2024-12-10. It covers 2023-10-24 through
+2024-11-13 but the pre-season stretch (before April 2024) was excluded from
+flagging. SFM is fully represented in `flagged_data/` (April 25 – November 13,
+2024, all 9 parameters, no gaps) so this file is retained here as an artifact 
+of the earlier data processing for 2024.
+
 ## Read in thresholds and credentials
 
-Sensor thresholds are from In-SitU Inc spec sheets and seasonal_thresholds are 
+Sensor thresholds are from In-Situ Inc spec sheets and seasonal_thresholds are 
 created using `ross.wq.tools::make_threshold_table()` using cleaned data from 
 previous years.
 
@@ -136,7 +195,7 @@ sensor_thresholds <- read_yaml(here("data","derived","auto_qaqc_files",
                                     "thresholds",  "sensor_spec_thresholds.yml"))
 
 season_thresholds <- read_csv(here("data","derived","auto_qaqc_files", 
-                                   "thresholds", "updated_seasonal_thresholds_2025_sjs.csv"), 
+                                   "thresholds", "updated_seasonal_thresholds_2025_sjs.csv"), # We use 2025 thresholds because those are the most up to date thresholds
                               show_col_types = FALSE) %>%
   fix_site_names()
 
@@ -151,8 +210,15 @@ hv_token <- hv_auth(client_id = as.character(hv_creds["client"]),
 
 # Data Pulls
 
-Once these sections have been run and data have been checked using plots below, 
-these sections should be commented out as they will take a long time to re-run.
+**Note:** This script was reconstructed after the fact to document the 2024 
+processing workflow. The code below reflects the steps that were taken to 
+generate the 2024 data, but this specific script was not the one used to produce 
+it. Running these sections should reproduce equivalent results.
+
+All data pulls were completed during the 2024 monitoring season and the raw data
+is already saved in the staging directory. These sections are kept here for 
+documentation purposes and should remain commented out unless re-running from 
+scratch is necessary.
 
 ## Pulling in field notes from mWater
 ```{r}
@@ -213,58 +279,9 @@ Once data has been pulled and checked, comment this section out to avoid re-runn
 
 ## Pulling in any downloaded log data
 
-Some logs (Vulink Log if sonde is AT600/800) cannot be backed up to HydroVu. If 
-you have any of these files, we will read them in here so that we are not 
-missing any potential data. Once this has been run and data checked, comment 
-this section out to avoid re-running it.
-
-```{r}
-# log_files <- list.files(log_directory, pattern = "\\vulink.html$", full.names = TRUE)%>%
-#   #only keep files with our sites in them
-#   keep(~any(str_detect(tolower(.x), sites)))
-#
-# log_files_simp <- log_files%>%
-#   str_replace(log_directory, "")%>%
-#   str_replace("/", "")%>%
-#   str_replace_all("\\.html", "")%>%
-#   str_squish()
-#
-# log_data <- map(log_files, ~rvest::read_html(.x)%>%
-#                             parse_insitu_html_log())
-#
-# log_data <- map(html_content, ~parse_insitu_html_log(.x))
-#
-# names(log_data) <- log_files_simp
-#
-# cleaned_log_data <- log_data%>%
-#   rbindlist()%>%
-#   #fixing a few specific location names before passing to fix_site_names
-#   mutate( site = tolower(site),
-#           id = as.double(sensor_sn),
-#          timestamp = with_tz(DT, tzone = "UTC"),
-#          site = case_when(site == "archery range"~ "archery",
-#                          site == "boxelder creek" ~ "boxcreek",
-#                          site == "spring creek" ~ "springcreek",
-#                          TRUE ~ site),
-#          name = paste0("Vulink Log - ", site),
-#          #Correcting for parse log where temp is saved with degrees C rather than C
-#          units = case_when(parameter == "Temperature" ~ "C",
-#                            TRUE ~ unit)
-#          )%>%
-#   fix_site_names()%>%
-#   select(site, id, name, timestamp, parameter, value, units) %>%
-#   distinct(.keep_all = TRUE) %>%
-#   split(f = list(.$site), sep = "-") %>%
-#   keep(~nrow(.) > 0)
-#
-# #write out the log data to the staging directory so it can be processed with the HV data
-# iwalk(cleaned_log_data, ~write_parquet(.x, here(staging_directory, paste0(.y, "_log_data.parquet"))))
-#
-# # beep to let you know when it's done
-# beepr::beep(1)
-
-```
-
+No log files were merged here (unlike 2025) since all data either uploaded to 
+HydroVu via Vulink, we would upload AquaTroll logs or could upload Vulink Logs 
+with AT 500/700 data.
 
 # Raw Data Processing
 
@@ -273,73 +290,369 @@ logs to then be tidied and checked.
 
 ## Load in and tidy the raw files
 
-Here we use `munge_api_data()` and `tidy_api_data()` functions from 
-`ross.wq.tools` to read in and tidy the raw data files. Our output will include 
-lists seperated by site-parameter combinations for easier processing downstream. 
-Each list has DT_round (in UTC), site, parameter, units, mean, n_obs, spread, 
-DT_join and flag columns and is summarized to a 15 minute interval
+**Note:** The raw data has already been munged and the results are saved in
+`flagged_data/`. Only re-run this section if starting from scratch. The
+`tidy_data` object produced here is used by the Data Flagging section below,
+which is also already complete.
+
+A custom munge was used instead of `munge_api_data()` to preserve the Virridy
+sites in the 2024 data. The raw parquet files are read directly, Vulinks are
+filtered out, and Virridy sondes are kept with `_virridy` appended to their site
+names before passing through `fix_site_names()` and `tidy_api_data()`. See
+`data_organization/Process_2024.R` for the original script where this approach
+was first used.
+
+Each list has DT_round (in UTC), site, parameter, units, mean, n_obs, spread,
+DT_join and flag columns and is summarized to a 15 minute interval.
 
 ```{r}
-# Since we no longer have any virridy sites in the network, we can just use a normal munge!
-# TODO: This is not true, but I am not sure how this was handled before, I think that this is in process_2024.R script.
-
-hv_data <- munge_api_data(api_dir = staging_directory,synapse_env = F)%>%
-  # split into site-parameter combinations for parallel processing
+# Custom munge to preserve Virridy sites (munge_api_data() filters them out).
+# See Process_2024.R for the original implementation.
+hv_data <- list.files(staging_directory, full.names = TRUE) %>%
+  future_map_dfr(function(file_path) {
+    read_parquet(file_path, as_data_frame = TRUE)
+  }, .progress = TRUE) %>%
+  data.table() %>%
+  select(-id) %>%
+  mutate(units = as.character(units)) %>%
+  filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
+  mutate(
+    DT = timestamp,
+    DT_round = round_date(DT, "15 minutes"),
+    DT_join = as.character(DT_round),
+    site = tolower(site),
+    site = ifelse(grepl("virridy", name, ignore.case = TRUE), str_replace(site, " virridy", "_virridy"), site)
+  ) %>%
+  select(-name) %>%
+  fix_site_names() %>%
+  distinct(.keep_all = TRUE) %>%
   split(f = list(.$site, .$parameter), sep = "-") %>%
   keep(~nrow(.) > 0)
 
 tidy_data <- hv_data %>%
-  future_map(~tidy_api_data(api_data = .),.progress = TRUE, .options = set_furr_options) %>%  # the summarize interval default is 15 minutes
-  keep(~!is.null(.))%>%
+  future_map(~tidy_api_data(api_data = .), .progress = TRUE, .options = set_furr_options) %>%
+  keep(~!is.null(.)) %>%
   # Only keep parameters we are interested in
   keep(~unique(.$parameter) %in% parameters)
 
 ```
+
 ## Double check that pulls were successful
 
-We are giving it a quick look over to make sure there aren't any large data gaps 
-(>1 day) in the data pulled, that all site names are being applied correctly and 
-that we don't have duplicate data. We are also adding in our field notes to the 
-plots to make sure the data we have lines up with the periods we expect the 
+We are giving it a quick look over to make sure there aren't any large data gaps
+(>1 day) in the data pulled, that all site names are being applied correctly and
+that we don't have duplicate data. We are also adding in our field notes to the
+plots to make sure the data we have lines up with the periods we expect the
 sondes to be deployed and recording data.
 
+Reads directly from `raw_data/` so this check can be run without re-running the
+full munge above.
+
 ```{r}
+raw_check <- list.files(staging_directory, pattern = "\\.parquet$", full.names = TRUE) %>%
+  map_dfr(~read_parquet(.x)) %>%
+  mutate(
+    site = tolower(site),
+    site = ifelse(grepl("virridy", name, ignore.case = TRUE),
+                  str_replace(site, " virridy", "_virridy"), site),
+    DT_round = round_date(timestamp, "15 minutes"),
+    DT_hourly = floor_date(DT_round, "1 hour")
+  ) %>%
+  fix_site_names() %>%
+  filter(parameter %in% parameters)
 
-data_check_plots <- tidy_data%>%
-  bind_rows()%>%
-  #Summarizing to an hour to speed up plotting
-  mutate(DT_hourly = floor_date(DT_round, unit = "1 hour"))%>%
-  group_by(site, parameter, DT_hourly)%>%
-  summarize(hourly_med = median(mean,na.rm = T ))%>%
-  split(f = list(.$site))%>%
-  map(., function(df) {
-
-    field_notes <- all_field_notes %>%filter(site == unique(df$site) & year(DT_round) == "2024")%>%
-      select(DT_round,sonde_employed)%>%
+data_check_plots <- raw_check %>%
+  group_by(site, parameter, DT_hourly) %>%
+  summarize(hourly_med = median(value, na.rm = TRUE), .groups = "drop") %>%
+  split(f = list(.$site)) %>%
+  map(function(df) {
+    field_notes <- all_field_notes %>%
+      filter(site == unique(df$site) & year(DT_round) == "2024") %>%
+      select(DT_round, sonde_employed) %>%
       mutate(sonde_changed = case_when(sonde_employed == 0 ~ "Deployed",
                                        sonde_employed == 1 ~ "Pulled",
                                        TRUE ~ "Active"))
-
     ggplot(df, aes(x = DT_hourly, y = hourly_med)) +
       geom_point() +
-      geom_vline(data = field_notes, aes(xintercept = DT_round, color = sonde_changed))+
-      facet_wrap(~parameter, scales = "free_y")+
+      geom_vline(data = field_notes, aes(xintercept = DT_round, color = sonde_changed)) +
+      facet_wrap(~parameter, scales = "free_y") +
       labs(title = unique(df$site),
            x = "Date",
            y = "Hourly Median Value",
            color = "Sonde Status")
   })
-#Plot
+
 walk(.x = data_check_plots, .f = print)
+```
+
+If there are discrepancies in the data, double check the raw files in `raw_data/`
+to make sure everything looks correct. Occasionally there are issues with the
+HydroVu download missing data and that can be rerun for an individual site. If
+there continue to be large gaps in data (>3 days) during deployment periods,
+check field notes or contact Sam Struthers for troubleshooting.
+
+# Data Flagging
+
+**Note:** Flagging was completed during the 2024 monitoring season using the
+original `process_2024.R` script. The results are already saved in `flagged_data/`.
+These sections are kept for documentation purposes.
+
+## Combine with field notes
+Here we read in our field notes and then join them to the tidied data using
+`add_field_notes()`. We then generate summary statistics (slope, lag, etc) using
+`generate_summary_statistics()`.
+```{r}
+# Add the field note data to all of the data
+all_field_notes <- all_field_notes %>%
+  fix_site_names()
+
+combined_data <- tidy_data %>%
+  future_map(~add_field_notes(df = ., notes = all_field_notes), .progress = TRUE)
+
+# Add summary statistics
+summarized_data <- combined_data %>%
+  map(~generate_summary_statistics(.))
+```
+
+## Single Sensor Flags
+
+This is the first round of flagging that is done on a per-site-parameter basis.
+Here we are applying functions to flag field visits, missing data, DO noise,
+repeating values, depth shifts, optical sensor drift, spec range violations and
+seasonal range violations. This can take ~5-15 min depending on data volume.
+
+```{r}
+# Chunk the data for furrr
+summarized_data_chunks <- split(1:length(summarized_data),
+                                ceiling(seq_along(1:length(summarized_data))/10))
+# Flag data...
+# Single parameter flags
+single_sensor_flags <- list()
+for (chunk_idx in seq_along(summarized_data_chunks)) {
+  message("\n=== Processing chunk ", chunk_idx, " of ", length(summarized_data_chunks), " ===")
+
+  # Get the indices for this chunk
+  indices <- summarized_data_chunks[[chunk_idx]]
+  chunk_data <- summarized_data[indices]
+
+  # Process the chunk in parallel
+  chunk_results <- chunk_data %>%
+    future_map(
+      function(data) {
+        flagged_data <- data %>%
+          data.table(.) %>%
+          # flag field visits
+          add_field_flag(df = .) %>%
+          # flag missing data
+          add_na_flag(df = .) %>%
+          # flag DO noise
+          find_do_noise(df = .) %>%
+          # flag repeating values
+          add_repeat_flag(df = .) %>%
+          # find times when sonde was moved up/down in housing
+          add_depth_shift_flag(df = ., level_shift_table =  all_field_notes, post2024 = TRUE) %>%
+          # find instances of sensor drift (FDOM, Chl-a, Turbidity only)
+          add_drift_flag(df = .)
+
+        if (unique(data$parameter) %in% names(sensor_thresholds)) {
+          # flag instances outside the spec range
+          flagged_data <- flagged_data %>%
+            data.table(.) %>%
+            add_spec_flag(df = ., spec_table = sensor_thresholds)
+        }
+
+        if (unique(data$parameter) %in% unique(season_thresholds$parameter)) {
+          # flag instances outside the spec range
+          flagged_data <- flagged_data %>%
+            data.table(.) %>%
+            add_seasonal_flag(df = ., threshold_table = season_thresholds)
+        }
+
+        flagged_data <- flagged_data %>%
+          data.table(.)
+
+        return(flagged_data)
+      },
+      .progress = TRUE, .options = set_furr_options
+    )
+
+  # Add chunk to list
+  single_sensor_flags <- c(single_sensor_flags, chunk_results)
+
+  if (chunk_idx < length(summarized_data_chunks)) {
+    message("Taking a short break before next chunk...")
+    gc()
+    Sys.sleep(0.1)
+  }
+}
+
+# beep to let you know when it's done
+beepr::beep(1)
 
 ```
 
-If there are discrepancies in the data, double check the raw files downloaded 
-from HydroVu and the log files to make sure everything looks correct. 
-Ocassionally there are issues with the HydroVu download missing data and that 
-can be rerun for an individual site. If there continue to be large gaps in data 
-(>3 days) during deployment periods, check field notes or contact Sam Struthers 
-for troubleshooting.
+## Intrasensor flags
+
+Now we will apply flags that require multiple parameters from the same sensor to
+be present. This includes frozen water flagging (temp < 0C), unsubmerged
+flagging (depth < 0 or SC < 10) and sonde burial flagging (long-term DO noise).
+We also do an intersensor check to remove slope violation flags that occur
+concurrently with temp or depth violations to reduce overflagging. This can take
+~5-15 min depending on data volume.
+
+```{r}
+intrasensor_flags <- single_sensor_flags %>%
+  rbindlist(fill = TRUE) %>%
+  split(by = "site")
+
+# Chunk the data for furrr
+intrasensor_data_chunks <- split(1:length(intrasensor_flags),
+                                 ceiling(seq_along(1:length(intrasensor_flags))/3))
+
+intrasensor_flags_list <- list()
+for (chunk_idx in seq_along(intrasensor_data_chunks)) {
+  message("\n=== Processing chunk ", chunk_idx, " of ", length(intrasensor_data_chunks), " ===")
+
+  # Get the indices for this chunk
+  indices <- intrasensor_data_chunks[[chunk_idx]]
+  chunk_data <- intrasensor_flags[indices]
+  # Process the chunk in parallel
+  chunk_results <- chunk_data %>%
+    future_map(
+      function(data) {
+        # A chunk is a site df
+        flagged_data <- data %>%
+          data.table() %>%
+          # flag times when water was below freezing
+          add_frozen_flag(.) %>%
+          # overflagging correction. remove slope violation flag if it occurs concurrently
+          # with temp or depth
+          intersensor_check(.) %>%
+          # add sonde burial. If DO is noise is long-term, likely burial:
+          add_burial_flag(.) %>%
+          # flag times when sonde was unsubmerged
+          add_unsubmerged_flag(.)
+
+        return(flagged_data)
+      }, .progress = TRUE, .options = set_furr_options
+    ) %>%
+    rbindlist(fill = TRUE) %>%
+    # lil' cleanup of flag column contents
+    dplyr::mutate(flag = ifelse(flag == "", NA, flag)) %>%
+    distinct(site, parameter, DT_round, mean, .keep_all = TRUE) %>%
+    # transform back to site-parameter dfs
+    split(f = list(.$site, .$parameter), sep = "-") %>%
+    purrr::discard(~ nrow(.) == 0) %>%
+    # Add in KNOWN instances of sensor malfunction
+    map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes))
+
+  # Add chunk to list
+  intrasensor_flags_list <- c(intrasensor_flags_list, chunk_results)
+
+  if (chunk_idx < length(intrasensor_data_chunks)) {
+    message("Taking a short break before next chunk...")
+    gc()
+    Sys.sleep(0.1)
+  }
+}
+
+# beep to let you know when it's done
+beepr::beep(1)
+```
+
+### Let's temporarily save this data so we can remove everything else from memory
+
+```{r}
+iwalk(intrasensor_flags_list, ~write_parquet(.x, here(flagged_temp_dir, paste0(.y, ".parquet"))))
+
+#remove everything other than intrasensor flags from memory
+rm(list=setdiff(ls(), c("base_folder", "intrasensor_flags_list", "flagged_directory")))
+#clean up memory
+gc()
+```
+
+## Applying network check
+
+The network check function `ross.wq.tools::network_check()` compares data across
+sites to identify when data is being overflagged and remove flags as needed.
+This step requires knowledge of the site order, which is read in from a YAML
+file and should be updated as sites change.
+
+```{r}
+#Read in site order for year/pull
+site_order_2024 <- load_site_order( here("data","derived","auto_qaqc_files",
+                                         "site_order", "site_order_2024.yml"))
+
+#Applying Network check (non parrallel so only map used)
+final_flags <- intrasensor_flags_list %>%
+  map(~network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list, site_order_arg = site_order_2024)) %>%
+  rbindlist(fill = TRUE) %>%
+  tidy_flag_column() %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  map(~add_suspect_flag(.)) %>%
+  rbindlist(fill = TRUE)
+
+v_final_flags <- final_flags%>%
+  mutate(auto_flag = ifelse(is.na(auto_flag), NA,
+                            ifelse(auto_flag == "suspect data" & is.na(lag(auto_flag, 1)) & is.na(lead(auto_flag, 1)), NA, auto_flag))) %>%
+  select(c("DT_round", "DT_join", "site", "parameter", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit")) %>%
+  mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
+  split(f = list(.$site, .$parameter), sep = "-") %>%
+  keep(~nrow(.) > 0)
+
+# beep to let you know when it's done
+beepr::beep(1)
+```
+
+## Check final output
+
+Here we are making sure that all sites data were flagged and giving a quick look
+at the flagged data to make sure everything looks correct. With newer
+sites/parameters, we expect there to be over-flagging as the seasonal
+ranges/slopes are going to be very small.
+
+```{r}
+v_final_flags%>%
+  bind_rows()%>%
+  split(f = list(.$site))%>%
+  map(., function(df) {
+    ggplot(df, aes(x = DT_round, y = mean, color = auto_flag)) +
+      geom_point() +
+      facet_wrap(~parameter, scales = "free_y")+
+      labs(title = unique(df$site),
+           x = "Date",
+           y = "Mean Value")
+  }) %>%
+  walk(plot)
+```
+
+# Save Final Flagged Dataset
+
+We will save it into two places:
+- Individually flagged site-parameter parquet files for posterity and comparison with manual verification to determine effectiveness of auto-flagging
+- A combined raw data parquet file for use in the manual verification shiny app. Once starting manual verification for the year, this will be used the as "uploaded" data to generate all the necessary files for the app.
+
+```{r}
+# Save the data individually.
+iwalk(v_final_flags, ~write_parquet(.x, here(flagged_directory,  paste0(.y, ".parquet"))))
+
+#saving our data into the "raw_data" folder of the manual verification folder for use in the shiny app
+write_parquet(v_final_flags%>%bind_rows(), here(base_folder,"in_progress","raw_data", "raw_data_2024.parquet"))
+```
+
+# Pass data through Shiny Tool
+
+This tool is located in the folder `shiny_ver_tool`. Here we are manually
+verifying the data, making any necessary corrections and then saving the output
+in the "verified_directory" folder for this year. The key columns added are:
+- final_status: "PASS" if the user has verified the data as good, "FLAGGED" if
+the user has flagged the data for suspect but still useable data, "OMIT if the
+user has concluded that the data should not be used in analysis due to sensor error.
+- user_flag: more specific flag added by the user to indicate why they
+flagged/omitted the data (e.g. "suspect data", "sonde burial", "frozen water",
+"unsubmerged", "depth shift", "drift", "field visit", "other malfunction" etc).
+This is for posterity and to help inform auto-flagging performance.
+- mean_analysis: this is the values where the "OMIT" final status was not applied.
 
 # Apply Back-calibration as needed
 
@@ -424,6 +737,26 @@ write_rds(calibrated_data, here("data", "raw", "sensor", "manual_data_verificati
 
 Take ^ file and run through the shiny app to verify back-calibration and make any manual adjustments as needed.
 
+## Virridy sites: separate back-calibration
+
+Virridy sites (archery_virridy, cottonwood_virridy, riverbend_virridy) required a
+separate back-calibration workflow. The original 2024 pipeline used `munge_api_data()`
+which filtered out Virridy sites, and a filter in an earlier version of
+`ross.wq.tools` also excluded them from `cal_extract_markup_data()`. As a result
+they were not included in the standard back-calibration pipeline above.
+
+Instead, after Shiny manual verification was complete, Virridy sites were
+back-calibrated using `scratch/data_tidying/prep_virridy_2024_for_cal_app.R`.
+That script reads the post-verification Virridy parquets from `verified_directory`,
+runs the standard `cal_back_calibrate()` pipeline on the four calibratable
+parameters (Chl-a Fluorescence, FDOM Fluorescence, Specific Conductivity,
+Turbidity), and injects the results directly into the app tracking RDS at
+`data/raw/sensor/manual_data_verification/complete_dataset/calibrated_sensor_field_data_tracking.rds`.
+
+**Do not re-run `prep_virridy_2024_for_cal_app.R`.** The write step (Section 9
+of that script) is already commented out. Re-running it would duplicate the
+Virridy entries in the tracking RDS and cause downstream issues.
+
 ## Read in user corrected back-calibrated data
 
 ```{r}
@@ -441,7 +774,6 @@ show the raw vs back-calibrated data ("final") with vertical lines indicating
 when the calibration events occurred.
 
 ```{r}
-# TODO: This actually happened after the flagging for 2024, need to reorganize the notebook to reflect that information
 plots <- map(names(calibrated_data_final),
              function(site_param) {
                plot_data <- calibrated_data_final[[site_param]]
@@ -476,66 +808,75 @@ plots[grepl("pH", names(plots))]
 
 ## Remove columns as needed
 
-Here we are removing columns that are not needed downstream to reduce memory 
-usage. We are also merging back in the units, n_obs, spread and flag columns 
-from the original tidy data. Temperature and Depth are not passed into the 
-back-calibration process so we will grab those from the original tidy data as 
-well. We will also add the column "back_cal_performed" to indicate whether a 
+Here we are removing columns that are not needed downstream to reduce memory
+usage. We are also merging back in the units, n_obs, spread and auto_flag columns
+from `flagged_data/`. Temperature and Depth are not passed into the
+back-calibration process so we will grab those from `flagged_data/` as well.
+We will also add the column "back_cal_performed" to indicate whether a
 back-calibration was actually applied to the data or not.
 
 ```{r}
+# Read all flagged parquets into a named list keyed by site-parameter.
+# This is the source for units, n_obs, spread, and auto_flag since tidy_data
+# is not available for 2024 (data was flagged in the original Process_2024.R pipeline).
+flagged_data_list <- list.files(flagged_directory, pattern = "\\.parquet$", full.names = TRUE) %>%
+  map(read_parquet) %>%
+  set_names(
+    list.files(flagged_directory, pattern = "\\.parquet$") %>%
+      tools::file_path_sans_ext()
+  )
 
-cal_corrected_data <- calibrated_data_final%>%
-  map(., function(df){
+cal_corrected_data <- calibrated_data_final %>%
+  map(function(df) {
 
-    site <- unique(df$site)
+    site      <- unique(df$site)
     parameter <- unique(df$parameter)
+    site_param <- paste0(site, "-", parameter)
 
-    site_param = paste0(site, "-", parameter)
+    add_data <- flagged_data_list[[site_param]] %>%
+      mutate(DT_join = as.character(DT_join)) %>%
+      select(DT_join, units, n_obs, spread, auto_flag)
 
-    add_data <- tidy_data[[site_param]]%>%
-      select( DT_join, units, n_obs, spread, flag)
-
-    if("updated_slope_from" %in% names(df)){
-      df <- df%>%
+    if ("updated_slope_from" %in% names(df)) {
+      df <- df %>%
         mutate(back_cal_performed = if_else(slope == updated_slope_to & slope == updated_slope_from, F, T))
     } else {
-      df <- df%>%
+      df <- df %>%
         mutate(back_cal_performed = F)
     }
 
-    df%>%
+    df %>%
       select(
         DT_round,
         site,
         parameter,
-        mean_pre_cal = mean,
-        mean = mean_cal,
+        mean_pre_cal = mean_cleaned,
+        mean = mean_cleaned_cal,
         back_cal_performed
-      )%>%
-      mutate(DT_join = as.character(DT_round))%>%
-      left_join(add_data, by = c("DT_join"))
+      ) %>%
+      mutate(DT_join = as.character(DT_round)) %>%
+      left_join(add_data, by = "DT_join")
   })
 
-# We will also need to grab the Depth and Temperature data (not back calibrated) and merge it here
-non_cal_corrected_data <- tidy_data%>%
-  keep(~unique(.$parameter) %in% c("Depth", "Temperature"))%>%
-  map(., function(df){
-    df%>%
+# Grab Depth and Temperature (not back-calibrated) from flagged_data/
+non_cal_corrected_data <- flagged_data_list %>%
+  keep(~unique(.$parameter) %in% c("Depth", "Temperature")) %>%
+  map(function(df) {
+    df %>%
       mutate(back_cal_performed = FALSE,
-             mean_pre_cal = mean)%>%
-      select(,
-             DT_round,
-             site,
-             parameter,
-             mean_pre_cal,
-             mean,
-             back_cal_performed,
-             DT_join,
-             units,
-             n_obs,
-             spread,
-             flag
+             mean_pre_cal = mean) %>%
+      select(
+        DT_round,
+        site,
+        parameter,
+        mean_pre_cal,
+        mean,
+        back_cal_performed,
+        DT_join,
+        units,
+        n_obs,
+        spread,
+        auto_flag
       )
   })
 
@@ -543,265 +884,6 @@ non_cal_corrected_data <- tidy_data%>%
 tidy_cal_data <- c(cal_corrected_data, non_cal_corrected_data)
 
 ```
-
-# Data Flagging
-
-## Combine with field notes
-Here we read in our field notes and then join them to the calibrated data using 
-`add_field_notes()`. We then generate summary statistics (slope, lag, etc) using 
-`generate_summary_statistics()`.
-```{r}
-# Add the field note data to all of the data
-all_field_notes <- all_field_notes %>%
-  fix_site_names()
-
-combined_data <- tidy_cal_data %>%
-  future_map(~add_field_notes(df = ., notes = all_field_notes), .progress = TRUE)
-
-# Add summary statistics
-summarized_data <- combined_data %>%
-  map(~generate_summary_statistics(.))
-```
-
-## Single Sensor Flags
-
-This is the first round of flagging that is done on a per-site-parameter basis. 
-Here we are applying functions to flag field visits, missing data, DO noise, 
-repeating values, depth shifts, optical sensor drift, spec range violations and 
-seasonal range violations. This can take ~5-15 min depending on data volume.
-
-```{r}
-# Chunk the data for furrr
-summarized_data_chunks <- split(1:length(summarized_data),
-                                ceiling(seq_along(1:length(summarized_data))/10))
-# Flag data...
-# Single parameter flags
-single_sensor_flags <- list()
-for (chunk_idx in seq_along(summarized_data_chunks)) {
-  message("\n=== Processing chunk ", chunk_idx, " of ", length(summarized_data_chunks), " ===")
-
-  # Get the indices for this chunk
-  indices <- summarized_data_chunks[[chunk_idx]]
-  chunk_data <- summarized_data[indices]
-
-  # Process the chunk in parallel
-  chunk_results <- chunk_data %>%
-    future_map(
-      function(data) {
-        flagged_data <- data %>%
-          data.table(.) %>%
-          # flag field visits
-          add_field_flag(df = .) %>%
-          # flag missing data
-          add_na_flag(df = .) %>%
-          # flag DO noise
-          find_do_noise(df = .) %>%
-          # flag repeating values
-          add_repeat_flag(df = .) %>%
-          # find times when sonde was moved up/down in housing
-          add_depth_shift_flag(df = ., level_shift_table =  all_field_notes, post2024 = TRUE) %>%
-          # find instances of sensor drift (FDOM, Chl-a, Turbidity only)
-          add_drift_flag(df = .)
-
-        if (unique(data$parameter) %in% names(sensor_thresholds)) {
-          # flag instances outside the spec range
-          flagged_data <- flagged_data %>%
-            data.table(.) %>%
-            add_spec_flag(df = ., spec_table = sensor_thresholds)
-        }
-
-        if (unique(data$parameter) %in% unique(season_thresholds$parameter)) {
-          # flag instances outside the spec range
-          flagged_data <- flagged_data %>%
-            data.table(.) %>%
-            add_seasonal_flag(df = ., threshold_table = season_thresholds)
-        }
-
-        flagged_data <- flagged_data %>%
-          data.table(.)
-
-        return(flagged_data)
-      },
-      .progress = TRUE, .options = set_furr_options
-    )
-
-  # Add chunk to list
-  single_sensor_flags <- c(single_sensor_flags, chunk_results)
-
-  if (chunk_idx < length(summarized_data_chunks)) {
-    message("Taking a short break before next chunk...")
-    gc()
-    Sys.sleep(0.1)
-  }
-}
-
-# beep to let you know when it's done
-beepr::beep(1)
-
-```
-
-## Intrasensor flags
-
-Now we will apply flags that require multiple parameters from the same sensor to 
-be present. This includes frozen water flagging (temp < 0C), unsubmerged 
-flagging (depth < 0 or SC < 10) and sonde burial flagging (long-term DO noise). 
-We also do an intersensor check to remove slope violation flags that occur 
-concurrently with temp or depth violations to reduce overflagging. This can take 
-~5-15 min depending on data volume.
-
-```{r}
-intrasensor_flags <- single_sensor_flags %>%
-  rbindlist(fill = TRUE) %>%
-  split(by = "site")
-
-# Chunk the data for furrr
-intrasensor_data_chunks <- split(1:length(intrasensor_flags),
-                                 ceiling(seq_along(1:length(intrasensor_flags))/3))
-
-intrasensor_flags_list <- list()
-for (chunk_idx in seq_along(intrasensor_data_chunks)) {
-  message("\n=== Processing chunk ", chunk_idx, " of ", length(intrasensor_data_chunks), " ===")
-
-  # Get the indices for this chunk
-  indices <- intrasensor_data_chunks[[chunk_idx]]
-  chunk_data <- intrasensor_flags[indices]
-  # Process the chunk in parallel
-  chunk_results <- chunk_data %>%
-    future_map(
-      function(data) {
-        # A chunk is a site df
-        flagged_data <- data %>%
-          data.table() %>%
-          # flag times when water was below freezing
-          add_frozen_flag(.) %>%
-          # overflagging correction. remove slope violation flag if it occurs concurrently
-          # with temp or depth
-          intersensor_check(.) %>%
-          # add sonde burial. If DO is noise is long-term, likely burial:
-          add_burial_flag(.) %>%
-          # flag times when sonde was unsubmerged
-          add_unsubmerged_flag(.)
-
-        return(flagged_data)
-      }, .progress = TRUE, .options = set_furr_options
-    ) %>%
-    rbindlist(fill = TRUE) %>%
-    # lil' cleanup of flag column contents
-    dplyr::mutate(flag = ifelse(flag == "", NA, flag)) %>%
-    distinct(site, parameter, DT_round, mean, .keep_all = TRUE) %>%
-    # transform back to site-parameter dfs
-    split(f = list(.$site, .$parameter), sep = "-") %>%
-    purrr::discard(~ nrow(.) == 0) %>%
-    # Add in KNOWN instances of sensor malfunction
-    map(~add_malfunction_flag(df = ., malfunction_records = sensor_malfunction_notes))
-
-  # Add chunk to list
-  intrasensor_flags_list <- c(intrasensor_flags_list, chunk_results)
-
-  if (chunk_idx < length(intrasensor_data_chunks)) {
-    message("Taking a short break before next chunk...")
-    gc()
-    Sys.sleep(0.1)
-  }
-}
-
-# beep to let you know when it's done
-beepr::beep(1)
-```
-
-### Let's temporarily save this data so we can remove everything else from memory
-
-```{r}
-iwalk(intrasensor_flags_list, ~write_parquet(.x, here(flagged_temp_dir, paste0(.y, ".parquet"))))
-
-#remove everything other than intrasensor flags from memory
-rm(list=setdiff(ls(), c("base_folder", "intrasensor_flags_list", "flagged_directory")))
-#clean up memory
-gc()
-```
-
-## Applying network check
-
-The network check function `ross.wq.tools::network_check()` compares data across 
-sites to identify when data is being overflagged and remove flags as needed. 
-This step requires knowledge of the site order, which is read in from a YAML 
-file and should be updated as sites change.
-
-```{r}
-#Read in site order for year/pull
-site_order_2024 <- load_site_order( here("data","derived","auto_qaqc_files", 
-                                         "site_order", "site_order_2024.yml"))
-
-#Applying Network check (non parrallel so only map used)
-final_flags <- intrasensor_flags_list %>%
-  map(~network_check(df = ., intrasensor_flags_arg = intrasensor_flags_list, site_order_arg = site_order_2024)) %>%
-  rbindlist(fill = TRUE) %>%
-  tidy_flag_column() %>%
-  split(f = list(.$site, .$parameter), sep = "-") %>%
-  map(~add_suspect_flag(.)) %>%
-  rbindlist(fill = TRUE)
-
-v_final_flags <- final_flags%>%
-  mutate(auto_flag = ifelse(is.na(auto_flag), NA,
-                            ifelse(auto_flag == "suspect data" & is.na(lag(auto_flag, 1)) & is.na(lead(auto_flag, 1)), NA, auto_flag))) %>%
-  select(c("DT_round", "DT_join", "site", "parameter","mean_pre_cal", "mean", "units", "n_obs", "spread", "auto_flag", "mal_flag", "sonde_moved","sonde_employed", "season", "last_site_visit", "depth_change", "back_cal_performed")) %>%
-  mutate(auto_flag = ifelse(is.na(auto_flag), NA, ifelse(auto_flag == "", NA, auto_flag))) %>%
-  split(f = list(.$site, .$parameter), sep = "-") %>%
-  keep(~nrow(.) > 0)
-
-# beep to let you know when it's done
-beepr::beep(1)
-```
-
-## Check final output
-
-Here we are making sure that all sites data were flagged and giving a quick look 
-at the flagged data to make sure everything looks correct. With newer 
-sites/parameters, we expect there to be over-flagging as the seasonal 
-ranges/slopes are going to be very small.
-
-```{r}
-v_final_flags%>%
-  bind_rows()%>%
-  split(f = list(.$site))%>%
-  map(., function(df) {
-    ggplot(df, aes(x = DT_round, y = mean, color = auto_flag)) +
-      geom_point() +
-      facet_wrap(~parameter, scales = "free_y")+
-      labs(title = unique(df$site),
-           x = "Date",
-           y = "Mean Value")
-  }) %>%
-  walk(plot)
-```
-
-# Save Final Flagged Dataset
-
-We will save it into two places:
-- Individually flagged site-parameter parquet files for posterity and comparison with manual verification to determine effectiveness of auto-flagging
-- A combined raw data parquet file for use in the manual verification shiny app. Once starting manual verification for the year, this will be used the as "uploaded" data to generate all the necessary files for the app.
-
-```{r}
-# Save the data individually.
-iwalk(v_final_flags, ~write_parquet(.x, here(flagged_directory,  paste0(.y, ".parquet"))))
-
-#saving our data into the "raw_data" folder of the manual verification folder for use in the shiny app
-write_parquet(v_final_flags%>%bind_rows(), here(base_folder,"in_progress","raw_data", "raw_data_2024.parquet"))
-```
-
-# Pass data through Shiny Tool
-
-This tool is located in the folder `shiny_ver_tool`. Here we are manually 
-verifying the data, making any necessary corrections and then saving the output 
-in the "verified_directory" folder for this year. The key columns added are:
-- final_status: "PASS" if the user has verified the data as good, "FLAGGED" if 
-the user has flagged the data for suspect but still useable data, "OMIT if the 
-user has concluded that the data should not be used in analysis due to sensor error.
-- user_flag: more specific flag added by the user to indicate why they 
-flagged/omitted the data (e.g. "suspect data", "sonde burial", "frozen water", 
-"unsubmerged", "depth shift", "drift", "field visit", "other malfunction" etc). 
-This is for posterity and to help inform auto-flagging performance.
-- mean_analysis: this is the values where the "OMIT" final status was not applied.
 
 # Pass data through Drift Correction Tool
 

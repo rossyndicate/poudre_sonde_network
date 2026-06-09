@@ -1,11 +1,19 @@
-# Prepare Virridy 2024 sensor data for manual calibration verification app.
+# The objective of this script is to prepare Virridy 2024 sensor data for manual
+# calibration verification app.
+#
 # Runs back-calibration pipeline on archery_virridy, cottonwood_virridy, and
 # riverbend_virridy, then injects results into the app tracking RDS.
 #
 # Prerequisites:
-# - ross.wq.tools reinstalled from dev branch (Virridy filter fix applied)
-# - Run from poudre_sonde_network project root so here::here() resolves correctly
+# - ross.wq.tools reinstalled from with the updates from the dev branch (Virridy filter fix applied)
 # - Calibration HTML files present in data/raw/sensor/calibration_reports/
+#
+# NOTE/WARNING: This is already ran and if it is run again the virridy data will
+# duplicate the calibration app's virridy tracking data. This data's calibration
+# decisions have already been completed and re-running this script will definitely
+# cause some tracking issues downstream. For this reason the section of this script
+# that writes the data to the tracking file is commented out. Do not run section
+# 9 of this script for testing as it is written.
 
 library(tidyverse)
 library(lubridate)
@@ -15,19 +23,21 @@ library(groupdata2)
 library(ross.wq.tools)
 
 # Paths ====
+
+# This is the path for the manually flagged data
 virridy_parquet_dir <- here::here(
   "data/raw/sensor/manual_data_verification/2024_cycle/in_progress/verified_directory"
 )
 
+# This is the path of the tracking file for the manual calibration verification app
 tracking_rds <- here::here(
   "data/raw/sensor/manual_data_verification/complete_dataset/calibrated_sensor_field_data_tracking.rds"
 )
 
 # Parameters with calibration HTML files for Virridy sondes
-# (Depth and Temperature have no calibration data and are excluded)
 cal_params <- c("Chl-a Fluorescence", "FDOM Fluorescence", "Specific Conductivity", "Turbidity")
 
-# Step 1: Extract calibration data (Virridy now included after filter fix) ====
+# Step 1: Extract calibration data (Virridy now included after filter fix in ross.wq.tools) ====
 calibration_data <- cal_extract_markup_data(
   field_cal_dir = here::here("data", "raw", "sensor", "calibration_reports")
 )
@@ -101,11 +111,6 @@ virridy_final <- virridy_cal_renamed %>%
   })
 
 # Step 9: Inject into tracking RDS ====
-tracking_data <- read_rds(tracking_rds)
-tracking_data[["2024"]] <- c(tracking_data[["2024"]], virridy_final)
-write_rds(tracking_data, tracking_rds)
-
-message(
-  "Done. ", length(virridy_final), " Virridy site-params added to 2024 tracking RDS:\n",
-  paste(" -", names(virridy_final), collapse = "\n")
-)
+# tracking_data <- read_rds(tracking_rds)
+# tracking_data[["2024"]] <- c(tracking_data[["2024"]], virridy_final)
+# write_rds(tracking_data, tracking_rds)
