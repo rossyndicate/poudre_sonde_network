@@ -1,11 +1,20 @@
 ---
-title: "Processing 2024 Data Pull from HydroVu with Auto Back-Calibration and QA/QC Flagging"
+title: "Processing 2024 Upper and Lower Poudre Water Quality Network Data for Publication"
 author: "Sam Struthers, Juan De La Torre - CSU ROSSyndicate"
 date: "`r Sys.Date()`"
 output: html_document
 ---
 
+> **WARNING:** This notebook is a documentation record of the 2024 QAQC workflow,
+> not a re-runnable pipeline. The intermediate data files it reads were produced by
+> `Process_2024.R` and other scripts that were run at various points during the
+> 2024 season — many of those files no longer exist at the paths referenced here,
+> or have been reformatted since. Do not attempt to run this notebook end-to-end
+> expecting it to succeed.
+
 # Script Purpose & Scope
+
+Processing 2024 Data Pull from HydroVu with Auto Back-Calibration and QA/QC Flagging
 
 This script documents the processing of sensor data for the 2024 monitoring 
 season. Data was pulled from HydroVu, run through automated QA/QC flagging, and 
@@ -105,7 +114,7 @@ These are the folders where raw, and flagged data will be saved. Update
 base_folder to the current year and log directory as needed
 
 ```{r}
-base_folder <- here("data","raw", "sensor","manual_data_verification","2024_cycle")
+base_folder <- here("data", "raw", "sensor", "manual_data_verification", "2024_cycle")
 # Make sure base folder exists and create if not
 if (!dir.exists(base_folder)) {
   dir.create(base_folder)
@@ -194,8 +203,8 @@ contact Sam Struthers, Juan De La Torre or Katie Willi for help obtaining these.
 sensor_thresholds <- read_yaml(here("data","derived","auto_qaqc_files", 
                                     "thresholds",  "sensor_spec_thresholds.yml"))
 
-season_thresholds <- read_csv(here("data","derived","auto_qaqc_files", 
-                                   "thresholds", "updated_seasonal_thresholds_2025_sjs.csv"), # We use 2025 thresholds because those are the most up to date thresholds
+season_thresholds <- read_csv(here("data","derived","auto_qaqc_files",
+                                   "thresholds", "seasonal_thresholds_2023.csv"), # 2024 data was flagged using 2023 thresholds
                               show_col_types = FALSE) %>%
   fix_site_names()
 
@@ -652,90 +661,31 @@ user has concluded that the data should not be used in analysis due to sensor er
 flagged/omitted the data (e.g. "suspect data", "sonde burial", "frozen water",
 "unsubmerged", "depth shift", "drift", "field visit", "other malfunction" etc).
 This is for posterity and to help inform auto-flagging performance.
-- mean_analysis: this is the values where the "OMIT" final status was not applied.
+- mean_verified: this is the values where the "OMIT" final status was not applied.
 
 # Apply Back-calibration as needed
 
-This uses the Shiny App (https://github.com/juandlt-csu/manual_calibration_verification) 
-developed by Juan. We are essentially deciding when a sensor needs to be 
-back-calibrated based on field notes and applying the back-calibration to the 
-raw data before flagging. The majority of calibrations are fine as is but we 
-want to "skip" over the bad ones.
+Back-calibration for 2024 was performed as part of a multi-year run (2023–2025)
+using the workflow documented in the `fixing_calibrations` vignette in
+`ross.wq.tools` (`vignettes/fixing_calibrations.Rmd`). That workflow uses
+`load_calibration_data()`, `cal_join_sensor_calibration_data()`,
+`cal_prepare_calibration_windows()`, and `cal_back_calibrate()` to identify bad
+calibrations and interpolate corrected values between good ones.
 
-## Read in calibration data
+The automated back-calibration output for all years is stored at:
 
-```{r}
-#This creates calibration_data list object needed for the back-calibration functions
-# load_calibration_data(
-#   cal_data_file_path = here::here("data", "collated", "sensor", "cal_reports", "munged_calibration_data.RDS"),
-#     update = FALSE, # set to TRUE when running for the first time
-#   field_cal_dir = here::here("data", "raw", "sensor", "calibration_reports")
-# )
+`data/raw/sensor/manual_data_verification/complete_dataset/calibrated_sensor_data.rds`
 
-```
+This file is a nested list organized by year (`$"2023"`, `$"2024"`, `$"2025"`),
+where each year contains site-parameter data frames.
 
-## Organize sensor data to match formatting for `cal_join_sensor_calibration_data()`
+After automated back-calibration, calibration decisions were manually reviewed
+and finalized using the Shiny app at
+https://github.com/juandlt-csu/manual_calibration_verification. The app always
+reads from and writes to `complete_dataset/` — it does not use year-specific
+folders. The finalized calibration decisions are stored at:
 
-Data should be in a nested list structure: `sensor_data$years$site-parameter`
-
-```{r}
-# sensor_data <- tidy_data %>%
-#   bind_rows()%>%
-#   split(f = year(.$DT_round)) %>%
-#   map(~ {
-#     split_data <- split(.x, f = list(.x$site, .x$parameter), sep = "-")
-#     discard(split_data, ~is.null(.) || nrow(.) == 0)
-#   })
-```
-
-## Join to calibration data and apply back-calibration
-
-This workflow follows the workflow outlined in the `ross.wq.tools` vignette on 
-back calibration. First, we join the calibration and sensor data so that each 
-time instance has the slope and intercept info needed for back-calibration.
-Next, we prepare the calibration windows to split the data into calibration windows.
-Lastly we loop through each calibration window to apply the back-calibration 
-using `cal_back_calibrate()`.
-
-```{r}
-
-sensor_calibration_data <- cal_join_sensor_calibration_data(
-  sensor_data_list = sensor_data,
-  calibration_data_list = calibration_data
-)
-
-prepped_snsr_cal_data <- cal_prepare_calibration_windows(
-  sensor_calibration_data_list = sensor_calibration_data
-)
-
-calibrated_data <- prepped_snsr_cal_data%>%
-  map(function(year){
-    year%>%
-      map(function(site_param){
-        site_param %>%
-          map_dfr(function(chunk){
-            cal_back_calibrate(chunk)
-          })
-      })
-  })
-
-beepr::beep(1)
-
-```
-
-## Save to back calibrated folder
-
-This will become the "original" file in the shiny app for manual verification
-
-```{r}
-
-write_rds(calibrated_data, here("data", "raw", "sensor", "manual_data_verification", 
-                                "2024_cycle", "hydro_vu_pull", "back_calibration", 
-                                "calibrated_sensor_data_2024.rds"))
-
-```
-
-Take ^ file and run through the shiny app to verify back-calibration and make any manual adjustments as needed.
+`data/raw/sensor/manual_data_verification/complete_dataset/calibrated_sensor_field_data_finalized.rds`
 
 ## Virridy sites: separate back-calibration
 
@@ -996,8 +946,7 @@ raw_dataset <- all_datasets%>%
          DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
   select(-units)%>%
   left_join(units_table, by = "parameter")%>%
-  select(DateTime_MST = with_tz(DT_round, "MST"),
-         DateTime_UTC,
+  select(DateTime_UTC,
          site, parameter, units,
          #Actual data
          value_raw,

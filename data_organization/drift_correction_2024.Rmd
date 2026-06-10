@@ -1151,7 +1151,7 @@ Explore the final results here.
 
 ```{r}
 plot_final_corrections(
-  df                  = corrected_data$`udall-FDOM Fluorescence`,
+  df                  = corrected_data$`archery_virridy-FDOM Fluorescence`,
   data_list           = prepped_data,
   site_order_template = site_order
 )
