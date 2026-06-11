@@ -650,7 +650,8 @@ cal_range_values <- function(sensor_df_arg, end_dt,
   direction_ok <- function(from, to) {
     diff <- abs(from - to)
     direction <- if (!is_turb) to >= from else from >= to
-    diff < 1000 && direction
+    diff_ok <- if (!is_turb) diff < 3 else diff <1000
+    diff_ok && direction
   }
 
   a_ok <- a_valid && direction_ok(from_val_a, to_val_a)
