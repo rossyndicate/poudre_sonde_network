@@ -34,13 +34,13 @@ relevant_sonde_selector <- function(site_arg) {
     plot_filter <- c("pbd", "salyer")
   }
   if (site_arg == "salyer") {
-    plot_filter <- c("bellvue", "udall")
+    plot_filter <- c("bellvue", "riverbend")
   }
   if (site_arg == "udall") {
     plot_filter <- c("salyer", "riverbend")
   }
   if (site_arg == "riverbend") {
-    plot_filter <- c("udall", "cottonwood")
+    plot_filter <- c("salyer", "cottonwood")
   }
   if (site_arg == "riverbend_virridy") {
     plot_filter <- c("udall", "riverbend", "cottonwood")
