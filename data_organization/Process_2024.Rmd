@@ -901,8 +901,9 @@ non_drift_corrected_files <- list.files(path = 'data/raw/sensor/manual_data_veri
 
 non_drift_corrected_data <- map_dfr(non_drift_corrected_files, read_parquet) %>%
   left_join(raw_values, by = c("DT_round", "site", "parameter")) %>%
-  left_join(virridy_cal_corrections, by = c("DT_round", "site", "parameter")) %>%
-  mutate(mean = if_else(!is.na(mean_virridy_post_cal), mean_virridy_post_cal, mean),
+left_join(cal_corrections, by = c("DT_round", "site", "parameter")) %>%
+mutate(mean = if_else(!is.na(mean_post_cal), mean_post_cal, mean),
+
          mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA)) %>%
   select(DT_round, DT_join, site, parameter, units,
          value_raw = mean_pre_cal,
