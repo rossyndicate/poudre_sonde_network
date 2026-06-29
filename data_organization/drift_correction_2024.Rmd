@@ -1173,6 +1173,8 @@ save_dir <- here("data", "raw", "sensor", "manual_data_verification",
 
 iwalk(corrected_data, function(df, key) {
   filename  <- paste0(str_replace_all(key, " ", "_"), ".parquet")
-  arrow::write_parquet(df, file.path(save_dir, filename))
+  df%>%
+      mutate(DT_round = force_tz(DT_round, "MST"))%>% # Convert back to MST for output
+  arrow::write_parquet(., file.path(save_dir, filename))
 })
 ```
