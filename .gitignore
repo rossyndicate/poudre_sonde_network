@@ -41,9 +41,9 @@ _targets/
 #Sam testing script
 scratch/sjs_scratch.Rmd
 timelapse_data
-#testing data for shiny app
-shiny_ver_tool/data.zip
-shiny_ver_tool/ver_tool_v1/data/
+#Hide data for shiny apps
+manual_calibration_tool/data/
+manual_verification_tool/data/
 #ignore planning doc
 operations/Planning_doc.Rmd
 # Ignore all .docx files
