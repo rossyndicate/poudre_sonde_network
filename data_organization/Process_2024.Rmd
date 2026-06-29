@@ -853,7 +853,7 @@ raw_values <- read_parquet(here(base_folder, "in_progress", "raw_data", "raw_dat
   select(DT_round, site, parameter, mean_pre_cal = value)
 ```
 
-## Read in Virridy back-calibrated corrections
+## Read in back-calibrated corrections
 
 The Virridy sites were back-calibrated out of order via 
 `prep_virridy_2024_for_cal_app.R`. The back-calibrated values were saved to the 
