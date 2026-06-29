@@ -25,7 +25,7 @@ options(shiny.autoload.r = TRUE)
 `%nin%` = Negate(`%in%`)
 
 #Source Helper filesq
-walk(list.files(here("shiny_ver_tool", "R"), pattern = "\\.R$", full.names = TRUE), source)
+walk(list.files(here("manual_verification_tool", "R"), pattern = "\\.R$", full.names = TRUE), source)
 ##### Colors + parameters #####
 
 site_color_combo <- tibble(site = c("joei", "cbri", "chd", "pfal", "sfm", "pbr", "pman", "pbd","bellvue","salyer", "udall", "riverbend_virridy", "riverbend",
@@ -52,7 +52,7 @@ available_sites <- get_filenames()%>%mutate(
   unique()
 
 #TODO: Automate for public version or ask for user input
-available_flags <- read_csv(here("shiny_ver_tool", "data", "meta", "available_flags.csv"), show_col_types = F)%>%
+available_flags <- read_csv(here("manual_verification_tool", "data", "meta", "available_flags.csv"), show_col_types = F)%>%
   pull(flags)%>%
   unique()
 
