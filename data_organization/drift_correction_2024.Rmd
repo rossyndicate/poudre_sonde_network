@@ -1,0 +1,1180 @@
+---
+title: "drift_correction_2024"
+output: html_document
+author: "Juan De La Torre"
+---
+
+The objective of this notebook is to manually correct the drift in the turbidity
+and FDOM sensors for 2024. 
+
+# Environment set up
+
+```{r}
+knitr::opts_chunk$set(
+  eval = FALSE,
+  echo = TRUE
+)
+```
+
+```{r}
+#Installing and loading all packages
+invisible(
+  lapply(c(
+    "tidyverse", # Data manipulation
+    "lubridate", # Date-Time Manipulation
+    "readxl", # Reading excel files
+    "here", # Easy, cross platform file referencing
+    "ggplot2", # Plotting libraries
+    "patchwork",
+    "ggpubr",
+    "plotly",
+    "devtools", # For downloading GitHub packages
+    "remotes",
+    "arrow", # Reading parquet files
+    "groupdata2",
+    "ross.wq.tools" # In house functions
+  ),
+  function(x) {
+    if (x %in% installed.packages()) {
+      suppressMessages({
+        library(x, character.only = TRUE)
+      })
+    } else {
+      suppressMessages({
+        install.packages(x)
+        library(x, character.only = TRUE)
+      })
+    }
+  })
+)
+```
+
+## Functions from ross.wq.tools
+
+Local copies of `ross.wq.tools` functions used in this workflow. The version of
+`cal_exp_one_point_drift` below extends the package version with an `exp_coef`
+parameter so that a fitted `k` can be supplied for exponential corrections.
+
+```{r}
+#' @title Add a column to a data frame if it does not exist
+#' @param df Data frame to modify
+#' @param column_name Name of the column to add
+#' @param default_value Fill value for the new column (default NA)
+
+add_column_if_not_exists <- function(df, column_name, default_value = NA) {
+  if (!column_name %in% colnames(df)) {
+    df <- df %>% dplyr::mutate(!!sym(column_name) := default_value)
+  }
+  return(df)
+}
+```
+
+```{r}
+#' @title Temporal Weight Factor Calculation
+#' @description Adds a weight column ranging from 0 (first timestamp) to 1
+#'   (last timestamp) based on elapsed time. Used to scale drift corrections
+#'   proportionally across a calibration window.
+#' @param df Data frame containing the datetime column
+#' @param dt_col Name of the POSIXct datetime column
+#' @param wt_col Name to give the computed weight column (default "wt")
+
+cal_wt <- function(df, dt_col, wt_col = "wt"){
+
+  if(!dt_col %in% colnames(df)){
+    stop(paste0("The specified dt_col '", dt_col, "' is not present in the dataframe."))
+  }
+
+  first_dt <- min(df[[dt_col]])
+  last_dt  <- max(df[[dt_col]])
+  tot_time <- as.numeric(difftime(last_dt, first_dt, units = "mins"))
+
+  df <- df %>%
+    dplyr::mutate(!!wt_col := as.numeric(difftime(.data[[dt_col]], first_dt, units = "mins")) / tot_time)
+
+  return(df)
+}
+```
+
+```{r}
+#' @title Exponential One Point Drift Calibration (local — adds exp_coef param)
+#'
+#' @param df Tibble containing sensor data bounded by two calibrations
+#' @param lm_trans_col Column name containing linearly transformed data
+#' @param pre_col Column name for pre-cleaning measurement
+#' @param post_col Column name for post-cleaning measurement
+#' @param wt_col Column name containing temporal weight parameters
+#' @param drift_type Shape of the weight curve applied to the correction:
+#'   - "linear": weight increases linearly from 0 to 1 (default)
+#'   - "exponential": weight follows (exp(k*wt)-1)/(exp(k)-1); convex, correction
+#'     accelerates toward the end. NOTE: not used by the current workflow —
+#'     "exponential" decisions in the decision sheet route to
+#'     exponential_correction_fxn, which applies "log" (not this branch).
+#'   - "log": weight follows log(1 + wt*(exp(k)-1))/k; concave, correction
+#'     accumulates faster early and decelerates toward the end
+#'   - "uniform": constant weight of 1 applied to every observation (full correction
+#'     applied uniformly across the window)
+#'   - "fitted_linear": OLS line is fit to the observed values in the window; the
+#'     slope b is used in a hyperbolic multiplicative correction anchored at post_val:
+#'     corrected(t) = observed(t) * post_val / (post_val + b * wt(t)).
+#'     Head (wt=0) is always untouched; tail ratio is data-informed via b.
+#'     Always positive. Falls back to linear if fewer than 3 non-NA observations.
+#'     exp_coef is not used for this drift_type.
+#' @param correction_type "additive" (default) or "multiplicative"
+#' @param exp_coef Rate parameter k for "exponential" and "log" drift types
+#'   (default 1, equivalent to linear). Supply a fitted k from exp_k().
+
+cal_exp_one_point_drift <- function(df, lm_trans_col, pre_col, post_col, wt_col,
+                                    drift_type = "linear", correction_type = "additive",
+                                    exp_coef = 1){
+
+  transformed_col <- paste0(str_split_1(lm_trans_col, "_")[1], "_drift_trans")
+
+  pre_drift_back_calibration  <- df[[pre_col]][[nrow(df)]]
+  post_drift_back_calibration <- df[[post_col]][[nrow(df)]]
+
+  if (is.na(pre_drift_back_calibration) || is.na(post_drift_back_calibration)) {
+    df <- df %>%
+      dplyr::mutate(!!transformed_col := NA_integer_)
+    return(df)
+  }
+
+  if (drift_type == "fitted_linear") {
+    fit_data <- df %>% dplyr::filter(!is.na(.data[[lm_trans_col]]))
+    if (nrow(fit_data) >= 3) {
+      fit     <- lm(as.formula(paste0("`", lm_trans_col, "` ~ `", wt_col, "`")), data = fit_data)
+      b_slope <- coef(fit)[[wt_col]]
+      # Hyperbolic multiplicative correction anchored at post_val.
+      # corrected(t) = observed(t) * post_val / (post_val + b * wt(t))
+      # At wt=0: ratio = 1 (head untouched).
+      # At wt=1: ratio = post_val / (post_val + b), data-informed tail.
+      # Always positive. Shape determined by OLS slope b.
+      df <- df %>%
+        dplyr::mutate(!!transformed_col := .data[[lm_trans_col]] *
+                        (post_drift_back_calibration /
+                           (post_drift_back_calibration + b_slope * .data[[wt_col]])))
+      return(df)
+    }
+    # fall back to linear if too few observations
+  }
+
+  if (drift_type == "exponential") {
+    df <- df %>%
+      dplyr::mutate(wt_exp = (exp(exp_coef * .data[[wt_col]]) - 1) / (exp(exp_coef) - 1))
+    wt_col_to_use <- "wt_exp"
+  } else if (drift_type == "log") {
+    df <- df %>%
+      dplyr::mutate(wt_log = log(1 + .data[[wt_col]] * (exp(exp_coef) - 1)) / exp_coef)
+    wt_col_to_use <- "wt_log"
+  } else if (drift_type == "uniform") {
+    df <- df %>%
+      dplyr::mutate(wt_uniform = 1)
+    wt_col_to_use <- "wt_uniform"
+  } else {
+    wt_col_to_use <- wt_col
+  }
+
+  if (correction_type == "multiplicative") {
+    drift_ratio <- post_drift_back_calibration / pre_drift_back_calibration
+    df <- df %>%
+      dplyr::mutate(!!transformed_col := .data[[lm_trans_col]] * (1 - .data[[wt_col_to_use]] + .data[[wt_col_to_use]] * drift_ratio))
+  } else {
+    standard_delta <- post_drift_back_calibration - pre_drift_back_calibration
+    df <- df %>%
+      dplyr::mutate(!!transformed_col := .data[[lm_trans_col]] + (.data[[wt_col_to_use]] * standard_delta))
+  }
+
+  return(df)
+}
+```
+
+```{r}
+#' @title Low-pass filter for turbidity noise reduction
+#' @description Applies a 5-point binomial kernel three times in succession to
+#'   smooth optical noise. For non-Turbidity parameters, copies correction_col
+#'   directly into smoothed_mean without filtering.
+#' @param df Data frame containing the sensor data; must have a "parameter" column
+#' @param correction_col Column to smooth (default "mean_drift_trans")
+
+low_pass_filter <- function(df, correction_col = "mean_drift_trans") {
+
+  if (unique(df$parameter) == "Turbidity") {
+
+    binomial_kernel <- function(int_vec) {
+      kernel <- c(1, 4, 6, 4, 1)
+      x <- sum(int_vec * kernel) / 16
+      return(x)
+    }
+
+    df <- df %>%
+      add_column_if_not_exists(column_name = "smoothed_mean") %>%
+      mutate(
+        smoothed_mean = if_else(is.na(smoothed_mean),
+                                data.table::frollapply(!!sym(correction_col), N = 5, FUN = binomial_kernel,
+                                                       fill = NA, align = "center"),
+                                smoothed_mean),
+        smoothed_mean = if_else(is.na(smoothed_mean),
+                                data.table::frollapply(smoothed_mean, N = 5, FUN = binomial_kernel,
+                                                       fill = NA, align = "center"),
+                                smoothed_mean),
+        smoothed_mean = if_else(is.na(smoothed_mean),
+                                data.table::frollapply(smoothed_mean, N = 5, FUN = binomial_kernel,
+                                                       fill = NA, align = "center"),
+                                smoothed_mean)
+      )
+
+    return(df)
+  } else {
+    df <- df %>% mutate(smoothed_mean = .data[[correction_col]])
+    return(df)
+  }
+}
+```
+
+```{r}
+#' @title Interpolate missing data within a maximum gap
+#' @description Fills NA values in the value column using linear or spline
+#'   interpolation, up to max_gap consecutive missing observations. Warns if
+#'   timestamps are not equally spaced (expects padr::pad() to have been called).
+#' @param df Data frame containing sensor data
+#' @param site_col Name of the site column (default "site")
+#' @param parameter_col Name of the parameter column (default "parameter")
+#' @param dt_col Name of the POSIXct datetime column (default "DT_round")
+#' @param value_col Column containing values to interpolate (default "smoothed_mean")
+#' @param max_gap Maximum number of consecutive NA observations to fill (default 4)
+#' @param new_value_col Name for the output column of interpolated values (default "mean_filled")
+#' @param method "linear" (default) or "spline"
+
+apply_interpolation_missing_data <- function(df, site_col = "site", parameter_col = "parameter",
+                                             dt_col = "DT_round", value_col = "smoothed_mean",
+                                             max_gap = 4, new_value_col = "mean_filled",
+                                             method = "linear") {
+
+  dt_vals <- df[[dt_col]]
+  if (!lubridate::is.POSIXt(dt_vals)) {
+    stop("Error: The datetime column must be POSIXct/POSIXt.")
+  }
+
+  pad_check <- df %>%
+    dplyr::group_by(dplyr::across(all_of(c(site_col, parameter_col)))) %>%
+    dplyr::group_walk(~ {
+      dt_vals      <- sort(unique(.x[[dt_col]]))
+      dt_diffs     <- diff(dt_vals)
+      unique_diffs <- unique(dt_diffs)
+      if (length(unique_diffs) > 1) {
+        warning(
+          paste0("Error: Datetime column is not equally spaced for site = ",
+                 unique(.y[[site_col]]), ", parameter = ", unique(.y[[parameter_col]]),
+                 ". Please pad with padr::pad() first.")
+        )
+      }
+    })
+
+  `%nin%` = Negate(`%in%`)
+
+  if(method %nin% c("spline", "linear")){
+    stop("method must be either 'spline' or 'linear'")
+  }
+
+  if(method == "linear") {
+    return(
+      df %>%
+        arrange(!!sym(site_col), !!sym(parameter_col), !!sym(dt_col)) %>%
+        group_by(!!sym(site_col), !!sym(parameter_col)) %>%
+        mutate(
+          !!sym(new_value_col) := zoo::na.approx(
+            x      = as.numeric(!!sym(dt_col)),
+            object = !!sym(value_col),
+            maxgap = max_gap,
+            na.rm  = FALSE
+          )
+        ) %>%
+        ungroup()
+    )
+  }
+
+  if(method == "spline"){
+    return(
+      df %>%
+        arrange(!!sym(site_col), !!sym(parameter_col), !!sym(dt_col)) %>%
+        group_by(!!sym(site_col), !!sym(parameter_col)) %>%
+        mutate(
+          !!sym(new_value_col) := zoo::na.spline(
+            x      = as.numeric(!!sym(dt_col)),
+            object = !!sym(value_col),
+            maxgap = max_gap,
+            na.rm  = FALSE
+          )
+        ) %>%
+        ungroup()
+    )
+  }
+}
+```
+
+# Plotting functions
+
+```{r}
+# Template to find downstream and upstream data
+site_order <- list(
+  clp = c("joei", "cbri", "chd", "pfal", "pbr", "pman", "pbd", "bellvue",
+          "salyer", "udall", "riverbend", "cottonwood", "elc", "archery", "riverbluffs"),
+  springcreek = c("riverbend", "springcreek", "cottonwood"),
+  boxcreek = c("elc", "boxcreek", "archery"),
+  sfm = c("sfm"),
+  mtn_campus = c("mtn_campus")
+)
+```
+
+```{r}
+#' @title Plot final corrected data with correction type highlighted
+#' @description Plots the corrected time series coloured by how each segment
+#'   was treated: raw (no correction), linear, exponential (log), uniform,
+#'   fitted_linear, or unflagged. Upstream/downstream neighbours are shown in
+#'   grey for network context.
+#' @param df Corrected data frame for a single site-parameter; must have
+#'   DT_round, mean_analysis, smoothed_mean, correction_type, and pre_post_source
+#' @param data_list Named list of all site-parameter data frames (used to look up
+#'   upstream/downstream neighbours)
+#' @param site_order_template Named list defining stream network order (e.g. site_order)
+
+plot_final_corrections <- function(df, data_list, site_order_template) {
+
+  site_name      <- unique(na.omit(df$site))
+  parameter_name <- unique(na.omit(df$parameter))
+  plot_title     <- paste(site_name, parameter_name, "- Final Corrections")
+
+  # Upstream / downstream neighbours
+  matching_networks <- keep(site_order_template, ~ site_name %in% .x)
+
+  above_df <- NULL
+  below_df <- NULL
+
+  if (length(matching_networks) > 0) {
+    if (site_name %in% names(matching_networks)) {
+      sites_order <- matching_networks[[site_name]]
+    } else {
+      sites_order <- matching_networks[[1]]
+    }
+
+    site_index <- which(sites_order == site_name)
+
+    if (site_index > 1) {
+      above_key <- paste0(sites_order[site_index - 1], "-", parameter_name)
+      if (above_key %in% names(data_list)) above_df <- data_list[[above_key]]
+    }
+
+    if (site_index < length(sites_order)) {
+      below_key <- paste0(sites_order[site_index + 1], "-", parameter_name)
+      if (below_key %in% names(data_list)) below_df <- data_list[[below_key]]
+    }
+  }
+
+  # correction_type is stamped by the orchestrator — use it directly
+  plot_df <- df
+
+  # Build plot — neighbours first so they sit behind the main traces
+  p <- plot_ly()
+
+  if (!is.null(above_df)) {
+    p <- p %>%
+      add_trace(data = above_df,
+                x = ~DT_round, y = ~mean_analysis,
+                type = "scatter", mode = "markers",
+                marker = list(color = "rgba(150, 150, 150, 0.25)", symbol = "triangle-up", size = 7),
+                name = paste0(unique(above_df$site), " (above)"),
+                legendgroup = "above")
+  }
+
+  if (!is.null(below_df)) {
+    p <- p %>%
+      add_trace(data = below_df,
+                x = ~DT_round, y = ~mean_analysis,
+                type = "scatter", mode = "markers",
+                marker = list(color = "rgba(150, 150, 150, 0.25)", symbol = "triangle-down", size = 7),
+                name = paste0(unique(below_df$site), " (below)"),
+                legendgroup = "below")
+  }
+
+  # Raw mean_analysis in red with light alpha — visible behind everything as the
+  # "corrected from" reference for all points
+  p <- p %>%
+    add_trace(data = plot_df,
+              x = ~DT_round, y = ~mean_analysis,
+              type = "scatter", mode = "markers",
+              marker = list(color = "rgba(255, 0, 0, 0.15)", size = 4),
+              name = "raw")
+
+  # Final smoothed/interpolated values for uncorrected rows in black
+  raw_df <- plot_df %>% filter(correction_type == "raw")
+
+  p <- p %>%
+    add_trace(data = raw_df,
+              x = ~DT_round, y = ~smoothed_mean,
+              type = "scatter", mode = "markers",
+              marker = list(color = "black", size = 4),
+              name = "no correction")
+
+  # Corrected values overlaid in colour — one trace per type for legend entries,
+  # with per-point hover showing the range strategy (A, B, C, etc.)
+  type_colors <- c(
+    "unflagged"      = "seagreen",
+    "linear"         = "steelblue",
+    "exponential"    = "mediumpurple",
+    "uniform"        = "darkorange",
+    "fitted_linear"  = "firebrick"
+  )
+
+  corrected_df <- plot_df %>%
+    filter(correction_type != "raw") %>%
+    mutate(hover_text = paste0(
+      "Type: ", correction_type,
+      if_else(is.na(pre_post_source), "", paste0("<br>Range strategy: ", pre_post_source))
+    ))
+
+  for (ct in intersect(names(type_colors), unique(corrected_df$correction_type))) {
+    ct_df <- corrected_df %>% filter(correction_type == ct)
+    p <- p %>%
+      add_trace(data = ct_df,
+                x = ~DT_round, y = ~smoothed_mean,
+                type = "scatter", mode = "markers",
+                marker = list(color = type_colors[[ct]], size = 4),
+                name = ct,
+                text = ~hover_text,
+                hovertemplate = "%{x}<br>%{y:.2f}<br>%{text}<extra></extra>")
+  }
+
+  p %>%
+    layout(title = plot_title,
+           xaxis = list(title = "Date"),
+           yaxis = list(title = parameter_name))
+}
+```
+
+# Correction functions
+
+```{r}
+#' @title Boundary averages
+#' @description Computes the pre-cleaning (drifted) and post-cleaning (clean)
+#'   boundary values that bracket each drift correction window. Three independent
+#'   sources are tried and the one with greater correction potential is returned.
+#'
+#'   **Option A — time-window average from mean_analysis:**
+#'   `from_val` is the mean of all non-NA `mean_analysis` readings in the hour
+#'   leading up to (and including) `end_dt`; it represents the drifted sensor
+#'   state just before the field crew cleaned the sensor.
+#'   `to_val` is the mean of the first four non-NA `mean_analysis` readings
+#'   strictly after `end_dt`; it represents the clean sensor state after the
+#'   visit.
+#'
+#'   **Option B — field note pre/post measurements from mWater:**
+#'   `from_val` is the most recent `turb_pre_clean` (or `fdom_pre_clean`) value
+#'   at or before `end_dt` — the field crew's recorded reading of the fouled
+#'   sensor before cleaning.
+#'   `to_val` is the most recent `turb_post_clean` (or `fdom_post_clean`) value
+#'   at or before `end_dt` — the field crew's recorded reading after cleaning.
+#'
+#'   These columns are filled forward by the data prep step so the most recent
+#'   field note is always available on the visit row.
+#'
+#'   **Option C — upstream/downstream network neighbours:**
+#'   Used when the post-cleaning gap exceeds `gap_threshold_mins` (i.e. Option A's
+#'   `to_val` cannot be reliably computed because clean data is unavailable soon
+#'   after the visit). Requires `data_list` and `site_order_template`.
+#'   `from_val` is the mean of the last four non-NA `mean_analysis` readings at
+#'   the target site up to `end_dt`. `to_val` is the mean of the neighbouring
+#'   site(s) at those same timestamps. For Turbidity, Option C is rejected if the
+#'   upstream and downstream neighbours disagree by more than 10 NTU, since
+#'   conditions are too different to use as a shared anchor.
+#'
+#'   **Selection logic:**
+#'   A pair is considered valid only when both endpoints are finite (guards
+#'   against NA, NaN, and Inf). Valid pairs are then checked for two additional
+#'   criteria before being used:
+#'
+#'   1. *Direction constraint* — biofouling pushes sensors in a known direction,
+#'      so a pair must correct in the physically expected direction or it is
+#'      rejected outright, no matter how large its difference is:
+#'      - **FDOM**: biofouling coats the optical window and causes the sensor to
+#'        read *lower* than actual (downward drift). The correction must therefore
+#'        go *upward*, meaning `to_val >= from_val`.
+#'      - **Turbidity**: biofouling scatters additional light and causes the
+#'        sensor to read *higher* than actual (upward drift). The correction must
+#'        therefore go *downward*, meaning `from_val >= to_val`.
+#'   2. *Magnitude constraint* — a difference >= 1000 NTU/ 3 RFU almost certainly
+#'      reflects a data error; such pairs are rejected.
+#'
+#'   When the post-cleaning gap exceeds `gap_threshold_mins` and Option C passes
+#'   all checks, Option C is returned immediately (source = "C").
+#'   Otherwise, the valid option with the largest `|from - to|` is returned,
+#'   with priority order A > C > B on ties.
+#'   If no option passes all checks, the function falls back: if Option A has
+#'   both finite endpoints it is returned as-is (source = "A_fallback"); otherwise
+#'   the best finite endpoint from each source is mixed (source = "mixed_fallback").
+#' @param sensor_df_arg Data frame for a single site-parameter containing
+#'   DT_round, mean_analysis, and optionally turb/fdom pre/post clean columns
+#' @param end_dt POSIXct timestamp of the field visit (end of the drift window)
+#' @param data_list Named list of all site-parameter data frames; required for
+#'   Option C (default NULL disables Option C)
+#' @param site_order_template Named list defining stream network order; required
+#'   for Option C (default NULL disables Option C)
+#' @param gap_threshold_mins Minutes after end_dt with no clean data before
+#'   Option C is preferred over A (default 120)
+
+cal_range_values <- function(sensor_df_arg, end_dt,
+                             data_list = NULL, site_order_template = NULL,
+                             gap_threshold_mins = 120) {
+
+  # --- Option A: mean_analysis based ---
+  from_val_a <- sensor_df_arg %>%
+    filter(
+      !is.na(mean_analysis),
+      between(DT_round, end_dt - hours(1), end_dt)
+    ) %>%
+    pull(mean_analysis) %>%
+    mean()
+
+  to_val_a <- sensor_df_arg %>%
+    filter(
+      !is.na(mean_analysis),
+      DT_round > end_dt
+    ) %>%
+    slice_head(n = 4) %>%
+    pull(mean_analysis) %>%
+    mean()
+
+  # --- Option B: field note pre/post columns ---
+  param    <- unique(sensor_df_arg$parameter)[[1]]
+  is_turb  <- stringr::str_detect(param, stringr::regex("turb", ignore_case = TRUE))
+  pre_col  <- if (is_turb) "turb_pre_clean"  else "fdom_pre_clean"
+  post_col <- if (is_turb) "turb_post_clean" else "fdom_post_clean"
+
+  from_val_b <- NA_real_
+  to_val_b   <- NA_real_
+
+  if (pre_col %in% colnames(sensor_df_arg)) {
+    from_val_b <- sensor_df_arg %>%
+      filter(DT_round <= end_dt, !is.na(.data[[pre_col]])) %>%
+      slice_tail(n = 1) %>%
+      pull(pre_col) %>%
+      { if (length(.) == 0) NA_real_ else .[[1]] }
+  }
+
+  if (post_col %in% colnames(sensor_df_arg)) {
+    to_val_b <- sensor_df_arg %>%
+      filter(DT_round <= end_dt, !is.na(.data[[post_col]])) %>%
+      slice_tail(n = 1) %>%
+      pull(post_col) %>%
+      { if (length(.) == 0) NA_real_ else .[[1]] }
+  }
+
+  # --- Option C: upstream/downstream network neighbors at same timestamps ---
+  from_val_c <- NA_real_
+  to_val_c   <- NA_real_
+
+  if (!is.null(data_list) && !is.null(site_order_template)) {
+    site_name_lookup  <- stringr::str_remove(unique(sensor_df_arg$site)[[1]], "_virridy$")
+    matching_networks <- purrr::keep(site_order_template, ~ site_name_lookup %in% .x)
+
+    if (length(matching_networks) > 0) {
+      sites_order <- matching_networks[[1]]
+      site_index  <- which(sites_order == site_name_lookup)
+
+      last4_dts <- sensor_df_arg %>%
+        filter(!is.na(mean_analysis), DT_round <= end_dt) %>%
+        slice_tail(n = 4) %>%
+        pull(DT_round)
+
+      if (length(last4_dts) > 0) {
+        from_val_c <- sensor_df_arg %>%
+          filter(DT_round %in% last4_dts) %>%
+          pull(mean_analysis) %>%
+          mean(na.rm = TRUE)
+
+        above_mean <- NA_real_
+        below_mean <- NA_real_
+
+        if (site_index > 1) {
+          above_key <- paste0(sites_order[site_index - 1], "-", param)
+          if (above_key %in% names(data_list)) {
+            vals <- data_list[[above_key]] %>%
+              filter(DT_round %in% last4_dts) %>%
+              pull(mean_analysis)
+            if (any(!is.na(vals))) above_mean <- mean(vals, na.rm = TRUE)
+          }
+        }
+
+        if (site_index < length(sites_order)) {
+          below_key <- paste0(sites_order[site_index + 1], "-", param)
+          if (below_key %in% names(data_list)) {
+            vals <- data_list[[below_key]] %>%
+              filter(DT_round %in% last4_dts) %>%
+              pull(mean_analysis)
+            if (any(!is.na(vals))) below_mean <- mean(vals, na.rm = TRUE)
+          }
+        }
+
+        neighbor_means <- c(above_mean, below_mean)
+        neighbor_means <- neighbor_means[is.finite(neighbor_means)]
+
+        # For Turbidity: reject Option C if upstream and downstream means disagree
+        # by more than 10 NTU — conditions are too different to use as a shared anchor
+        turb_neighbor_disagree <- is_turb &&
+          is.finite(above_mean) && is.finite(below_mean) &&
+          abs(above_mean - below_mean) > 10
+
+        if (!turb_neighbor_disagree && length(neighbor_means) > 0) {
+          to_val_c <- mean(neighbor_means)
+        }
+      }
+    }
+  }
+
+  # --- Post-cleaning gap: time from end_dt to first non-NA reading after ---
+  first_post_dt <- sensor_df_arg %>%
+    filter(!is.na(mean_analysis), DT_round > end_dt) %>%
+    slice_head(n = 1) %>%
+    pull(DT_round)
+
+  gap_mins <- if (length(first_post_dt) == 1)
+    as.numeric(difftime(first_post_dt, end_dt, units = "mins"))
+  else
+    Inf
+
+  large_gap <- gap_mins > gap_threshold_mins
+
+  # --- Select the best option ---
+  a_valid <- is.finite(from_val_a) && is.finite(to_val_a)
+  b_valid <- is.finite(from_val_b) && is.finite(to_val_b)
+  c_valid <- is.finite(from_val_c) && is.finite(to_val_c)
+
+  direction_ok <- function(from, to) {
+    diff <- abs(from - to)
+    direction <- if (!is_turb) to >= from else from >= to
+    diff_ok <- if (!is_turb) diff < 3 else diff <1000
+    diff_ok && direction
+  }
+
+  a_ok <- a_valid && direction_ok(from_val_a, to_val_a)
+  b_ok <- b_valid && direction_ok(from_val_b, to_val_b)
+  c_ok <- c_valid && direction_ok(from_val_c, to_val_c)
+
+  # When the post-cleaning gap is large and Option C is valid, prefer C outright
+  if (large_gap && c_ok) {
+    return(list(from = from_val_c, to = to_val_c, source = "C"))
+  }
+
+  # Otherwise pick the valid option with the largest correction magnitude (A > C > B on ties)
+  candidates <- list(
+    a = list(from = from_val_a, to = to_val_a, ok = a_ok),
+    c = list(from = from_val_c, to = to_val_c, ok = c_ok),
+    b = list(from = from_val_b, to = to_val_b, ok = b_ok)
+  )
+
+  passing <- Filter(function(x) x$ok, candidates)
+
+  if (length(passing) > 0) {
+    best_idx <- which.max(sapply(passing, function(x) abs(x$from - x$to)))
+    best     <- passing[[best_idx]]
+    return(list(from = best$from, to = best$to, source = toupper(names(passing)[best_idx])))
+  }
+
+  # Fall back: mix best finite endpoints from A
+  if (a_valid) return(list(from = from_val_a, to = to_val_a, source = "A_fallback"))
+
+  from_val <- if (is.finite(from_val_a)) from_val_a else from_val_b
+  to_val   <- if (is.finite(to_val_a))   to_val_a   else to_val_b
+  return(list(from = from_val, to = to_val, source = "mixed_fallback"))
+}
+```
+
+```{r}
+#' @title Fit exponential rate parameter k for drift correction
+#' @description Normalizes the observed sensor values in the drift window to a
+#'   0-1 fraction of the total drift, then fits the exponential weight formula
+#'   to find the k that best describes how drift accumulated over time. Falls
+#'   back to k = 1 (linear-equivalent) when pre_val == post_val (no drift to
+#'   fit), when fewer than 3 non-NA observations are available, or when nls
+#'   fitting fails.
+#' @param df Prepped drift data frame with columns: wt, pre_val, post_val, and
+#'   the column named by correction_col
+#' @param correction_col Column name of observed sensor values to fit against
+#'   (default "mean_analysis")
+
+exp_k <- function(df, correction_col = "mean_analysis") {
+
+  pre_val  <- df[["pre_val"]][[1]]
+  post_val <- df[["post_val"]][[nrow(df)]]
+
+  if (is.na(pre_val) || is.na(post_val) || pre_val == post_val) return(1)
+
+  fit_data <- df %>%
+    filter(!is.na(.data[[correction_col]])) %>%
+    mutate(observed_frac = (.data[[correction_col]] - post_val) / (pre_val - post_val)) %>%
+    filter(is.finite(observed_frac)) %>%
+    select(wt, observed_frac)
+
+  if (nrow(fit_data) < 3) return(1)
+
+  k <- tryCatch({
+    fit <- nls(
+      observed_frac ~ (exp(k * wt) - 1) / (exp(k) - 1),
+      data    = fit_data,
+      start   = list(k = 1),
+      control = nls.control(maxiter = 100, warnOnly = TRUE)
+    )
+    coef(fit)[["k"]]
+  }, error = function(e) {
+    message("exp_k: nls fit failed, defaulting to k = 1. Error: ", conditionMessage(e))
+    1
+  })
+
+  return(k)
+}
+```
+
+
+```{r}
+#' @title Unflagging function
+#' @description Removes "drift" from user_flag and sets drift = FALSE for all
+#'   rows falling within the time windows defined in decision_df_arg. Does not
+#'   alter mean_analysis or any corrected value columns.
+#' @param decision_df_arg Data frame of unflag decisions filtered to a single
+#'   site-parameter; must have start_dt and end_dt columns
+#' @param sensor_df_arg Data frame for a single site-parameter; must have
+#'   DT_round, user_flag, and drift columns
+
+unflag_fxn <- function(decision_df_arg, sensor_df_arg) {
+
+  if (nrow(decision_df_arg) == 0) return(sensor_df_arg)
+
+  in_unflag_window <- map2(
+    .x = pull(decision_df_arg, start_dt),
+    .y = pull(decision_df_arg, end_dt),
+    function(start, end) between(sensor_df_arg$DT_round, start, end)
+  ) %>%
+    reduce(`|`)
+
+  remove_drift_token <- function(flag_str) {
+    if (is.na(flag_str)) return(NA_character_)
+    tokens <- str_split(flag_str, ";")[[1]] %>%
+      str_replace_all("\\n", " ") %>%
+      str_trim()
+    cleaned <- tokens[tokens != "drift" & tokens != ""]
+    if (length(cleaned) == 0) return(NA_character_)
+    paste(cleaned, collapse = ";")
+  }
+
+  corrected_df <- sensor_df_arg %>%
+    mutate(
+      user_flag = if_else(
+        in_unflag_window,
+        map_chr(user_flag, remove_drift_token),
+        user_flag
+      ),
+      drift = if_else(in_unflag_window, FALSE, drift)
+    )
+
+  return(corrected_df)
+}
+```
+
+```{r}
+#' @title General single-point drift correction function
+#' @description Applies a single-point drift correction across each calibration
+#'   window defined in decision_df_arg. The weight curve shape (linear, uniform,
+#'   fitted_linear) is read from the arg_drift_type column of decision_df_arg and
+#'   passed through to cal_exp_one_point_drift. Used directly for linear, uniform,
+#'   and fitted_linear correction types; exponential corrections use
+#'   exponential_correction_fxn instead (which also fits k via exp_k()).
+#' @param decision_df_arg Data frame of correction decisions for a single
+#'   site-parameter; must have start_dt, end_dt, arg_drift_type, and
+#'   arg_correction_type columns
+#' @param sensor_df_arg Data frame for a single site-parameter containing
+#'   DT_round, mean_analysis, and field note pre/post columns
+#' @param correction_col Column to apply the correction to (default "mean_analysis")
+#' @param data_list Named list of all site-parameter data frames passed to
+#'   cal_range_values for Option C (default NULL)
+#' @param site_order_template Network order list passed to cal_range_values for
+#'   Option C (default NULL)
+#' @param gap_threshold_mins Passed to cal_range_values (default 120)
+
+linear_correction_fxn <- function(decision_df_arg, sensor_df_arg, correction_col = "mean_analysis",
+                                  data_list = NULL, site_order_template = NULL,
+                                  gap_threshold_mins = 120){
+
+  start_dt_values <- pull(decision_df_arg, start_dt)
+  end_dt_values   <- pull(decision_df_arg, end_dt)
+
+  data_to_correct <- map2(
+    .x = start_dt_values,
+    .y = end_dt_values,
+    function(start, end) {
+      sensor_df_arg %>%
+        filter(between(DT_round, start, end))
+    }
+  )
+
+  correction_values <- map(
+    .x = end_dt_values,
+    function(end_dt){
+      cal_range_values(sensor_df_arg = sensor_df_arg, end_dt = end_dt,
+                       data_list = data_list, site_order_template = site_order_template,
+                       gap_threshold_mins = gap_threshold_mins)
+    }
+  )
+
+  drift_type_values      <- pull(decision_df_arg, arg_drift_type)
+  correction_type_values <- pull(decision_df_arg, arg_correction_type)
+
+  corrected_data <- pmap(
+    .l = list(data_to_correct, drift_type_values, correction_type_values, correction_values),
+    function(df, drift, correction, corr_values) {
+
+      prepped_df <- df %>%
+        cal_wt(dt_col = "DT_round") %>%
+        mutate(
+          pre_val        = corr_values$from,
+          post_val       = corr_values$to,
+          pre_post_source = corr_values$source
+        )
+
+      corrected_df <- cal_exp_one_point_drift(
+        df             = prepped_df,
+        lm_trans_col   = correction_col,
+        pre_col        = "pre_val",
+        post_col       = "post_val",
+        wt_col         = "wt",
+        drift_type     = drift,
+        correction_type = correction
+      )
+
+      return(corrected_df)
+    }
+  ) %>%
+    bind_rows() %>%
+    select(DT_round, wt, pre_val, post_val, pre_post_source, mean_drift_trans)
+
+  final_data <- sensor_df_arg %>%
+    left_join(corrected_data, by = "DT_round") %>%
+    mutate(mean_drift_trans = ifelse(is.na(mean_drift_trans), !!sym(correction_col), mean_drift_trans))
+
+  return(final_data)
+}
+```
+
+```{r}
+#' @title Exponential drift correction function
+#' @description Same structure as linear_correction_fxn but fits k per
+#'   calibration window via exp_k(), then applies the log weight — the concave
+#'   transpose of the exponential curve with the same k:
+#'   wt_log = log(1 + wt * (exp(k) - 1)) / k.
+#'   This gives a correction that accumulates faster early and decelerates toward
+#'   the end, matching how biofouling drift typically behaves.
+#' @param decision_df_arg Data frame of exponential correction decisions for a
+#'   single site-parameter; must have start_dt, end_dt, and arg_correction_type
+#' @param sensor_df_arg Data frame for a single site-parameter containing
+#'   DT_round, mean_analysis, and field note pre/post columns
+#' @param correction_col Column to apply the correction to (default "mean_analysis")
+#' @param data_list Named list of all site-parameter data frames passed to
+#'   cal_range_values for Option C (default NULL)
+#' @param site_order_template Network order list passed to cal_range_values for
+#'   Option C (default NULL)
+#' @param gap_threshold_mins Passed to cal_range_values (default 120)
+
+exponential_correction_fxn <- function(decision_df_arg, sensor_df_arg, correction_col = "mean_analysis",
+                                       data_list = NULL, site_order_template = NULL,
+                                       gap_threshold_mins = 120) {
+
+  start_dt_values <- pull(decision_df_arg, start_dt)
+  end_dt_values   <- pull(decision_df_arg, end_dt)
+
+  data_to_correct <- map2(
+    .x = start_dt_values,
+    .y = end_dt_values,
+    function(start, end) {
+      sensor_df_arg %>%
+        filter(between(DT_round, start, end))
+    }
+  )
+
+  correction_values <- map(
+    .x = end_dt_values,
+    function(end_dt) {
+      cal_range_values(sensor_df_arg = sensor_df_arg, end_dt = end_dt,
+                       data_list = data_list, site_order_template = site_order_template,
+                       gap_threshold_mins = gap_threshold_mins)
+    }
+  )
+
+  correction_type_values <- pull(decision_df_arg, arg_correction_type)
+
+  corrected_data <- pmap(
+    .l = list(data_to_correct, correction_type_values, correction_values),
+    function(df, correction, corr_values) {
+
+      prepped_df <- df %>%
+        cal_wt(dt_col = "DT_round") %>%
+        mutate(
+          pre_val         = corr_values$from,
+          post_val        = corr_values$to,
+          pre_post_source = corr_values$source
+        )
+
+      k <- exp_k(prepped_df, correction_col = correction_col)
+
+      corrected_df <- cal_exp_one_point_drift(
+        df              = prepped_df,
+        lm_trans_col    = correction_col,
+        pre_col         = "pre_val",
+        post_col        = "post_val",
+        wt_col          = "wt",
+        drift_type      = "log",
+        correction_type = correction,
+        exp_coef        = k
+      )
+
+      return(corrected_df)
+    }
+  ) %>%
+    bind_rows() %>%
+    select(DT_round, wt, pre_val, post_val, pre_post_source, mean_drift_trans)
+
+  final_data <- sensor_df_arg %>%
+    left_join(corrected_data, by = "DT_round") %>%
+    mutate(mean_drift_trans = ifelse(is.na(mean_drift_trans), !!sym(correction_col), mean_drift_trans))
+
+  return(final_data)
+}
+```
+
+
+# Load and prepare data
+
+```{r}
+sensor_f <- list.files(here("data", "raw", "sensor", "manual_data_verification",
+                            "2024_cycle", "in_progress", "verified_directory"),
+                       pattern = "Turbidity|FDOM",
+                       ignore.case = TRUE,
+                       full.names = TRUE) 
+
+raw_data <- map(sensor_f, arrow::read_parquet) %>%
+  set_names(str_remove(basename(sensor_f), "_FINAL_.*\\.parquet$"))
+
+rm(sensor_f)
+```
+
+For 2024, back-calibration happened after manual verification for all sites, so `verified_directory/` parquets contain raw uncalibrated `mean` values for everyone. The corrected values are recovered here from the finalized calibration RDS for all sites so that `mean_analysis` — and therefore all drift correction outputs — are computed from the back-calibrated base.
+
+```{r}
+cal_corrections <- read_rds(here("data", "raw", "sensor", "manual_data_verification",
+                                  "complete_dataset", "calibrated_sensor_field_data_finalized.rds"))[["2024"]] %>%
+  map_dfr(~ select(., DT_round, site, parameter, mean_cleaned_cal)) %>%
+  rename(mean_post_cal = mean_cleaned_cal)%>%
+  #Virridy sites appear to be offset by 7 hours (but are still saved in UTC) so correcting for that here too
+    mutate(DT_round = if_else(grepl("virridy", site), DT_round - hours(7), DT_round))
+
+
+```{r}
+field_notes <- grab_mWater_sensor_notes(load_mWater())
+virridy_dups <- field_notes %>%
+  filter(str_detect(site, "archery|riverbend|cottonwood") & year(DT_round) == 2024) %>%
+  mutate(site = paste0(site, "_virridy"))
+field_notes <- bind_rows(field_notes, virridy_dups)
+prepped_data <- raw_data %>%
+  map(function(df) {
+    df %>%
+      add_field_notes(field_notes) %>%
+      left_join(cal_corrections, by = c("DT_round", "site", "parameter")) %>%
+      mutate(
+        mean = if_else(!is.na(mean_post_cal), mean_post_cal, mean),
+        drift = ifelse(stringr::str_detect(user_flag, "drift"), TRUE, FALSE),
+        drift = ifelse(is.na(drift), FALSE, drift),
+        mean_analysis = ifelse(verification_status %in% c("FLAGGED", "PASS"), mean, NA)
+      ) %>%
+      select(-mean_post_cal) %>%
+      fill(c("turb_pre_clean", "turb_post_clean", "fdom_pre_clean", "fdom_post_clean"),
+           .direction = "down")
+  })
+
+rm(raw_data)
+gc()
+```
+
+# The whole workflow orchestrated
+
+
+```{r}
+decision_df <- read_excel(here("data", "derived", "auto_qaqc_files",
+                               "drift_corrections", "2024_drift_corrections.xlsx")) %>%
+  fix_site_names()
+
+# For each site-parameter, apply all corrections in order then stitch together.
+# Exponential decisions use the log correction (the functional inverse of the
+# exponential weight), which better matches how biofouling drift accumulates.
+
+corrected_data <- prepped_data %>%
+  imap(function(df, key) {
+
+    # Convert sensor timestamps from MST to UTC so all data is stored in UTC
+    df <- df %>% mutate(DT_round = with_tz(DT_round, "UTC"))
+
+    site_val      <- unique(df$site)
+    parameter_val <- unique(df$parameter)
+
+    # Filter decisions for this site-parameter
+    site_decisions <- decision_df %>%
+      filter(site == site_val, parameter == parameter_val)
+
+    # 1. Unflag: update drift flags and user_flag (does not change mean_analysis)
+    df_working <- unflag_fxn(
+      decision_df_arg = site_decisions %>% filter(decision == "unflag"),
+      sensor_df_arg   = df
+    )
+
+    # Helper: boolean vector marking rows inside any window in a decision subset
+    in_windows <- function(dec_df) {
+      if (nrow(dec_df) == 0) return(rep(FALSE, nrow(df_working)))
+      map2(
+        pull(dec_df, start_dt),
+        pull(dec_df, end_dt),
+        function(s, e) between(df_working$DT_round, s, e)
+      ) %>% reduce(`|`)
+    }
+
+    # 2. Identify which rows belong to each correction window type
+    unflag_decision_df <- site_decisions %>% filter(decision == "unflag")
+    linear_decision_df         <- site_decisions %>% filter(arg_drift_type == "linear")
+    exp_decision_df            <- site_decisions %>% filter(arg_drift_type == "exponential")
+    uniform_decision_df        <- site_decisions %>% filter(arg_drift_type == "uniform")
+    fitted_linear_decision_df  <- site_decisions %>% filter(arg_drift_type == "fitted_linear")
+
+    in_unflag        <- in_windows(unflag_decision_df)
+    in_linear        <- in_windows(linear_decision_df)
+    in_exp           <- in_windows(exp_decision_df)
+    in_uniform       <- in_windows(uniform_decision_df)
+    in_fitted_linear <- in_windows(fitted_linear_decision_df)
+
+    # 3. Compute corrections and join results back onto df_working by DT_round.
+    #    distinct() guards against row expansion from overlapping decision windows.
+    if (any(in_linear)) {
+      linear_join <- linear_correction_fxn(
+        decision_df_arg     = linear_decision_df,
+        sensor_df_arg       = df_working,
+        data_list           = prepped_data,
+        site_order_template = site_order
+      ) %>%
+        distinct(DT_round, .keep_all = TRUE) %>%
+        select(DT_round, linear_trans = mean_drift_trans, linear_source = pre_post_source)
+      df_working <- df_working %>% left_join(linear_join, by = "DT_round")
+    } else {
+      df_working <- df_working %>% mutate(linear_trans = NA_real_, linear_source = NA_character_)
+    }
+
+    if (any(in_exp)) {
+      exp_join <- exponential_correction_fxn(
+        decision_df_arg     = exp_decision_df,
+        sensor_df_arg       = df_working %>% select(-any_of(c("linear_trans", "linear_source"))),
+        data_list           = prepped_data,
+        site_order_template = site_order
+      ) %>%
+        distinct(DT_round, .keep_all = TRUE) %>%
+        select(DT_round, exp_trans = mean_drift_trans, exp_source = pre_post_source)
+      df_working <- df_working %>% left_join(exp_join, by = "DT_round")
+    } else {
+      df_working <- df_working %>% mutate(exp_trans = NA_real_, exp_source = NA_character_)
+    }
+
+    if (any(in_uniform)) {
+      uniform_join <- linear_correction_fxn(
+        decision_df_arg     = uniform_decision_df,
+        sensor_df_arg       = df_working %>% select(-any_of(c("linear_trans", "linear_source", "exp_trans", "exp_source"))),
+        data_list           = prepped_data,
+        site_order_template = site_order
+      ) %>%
+        distinct(DT_round, .keep_all = TRUE) %>%
+        select(DT_round, uniform_trans = mean_drift_trans, uniform_source = pre_post_source)
+      df_working <- df_working %>% left_join(uniform_join, by = "DT_round")
+    } else {
+      df_working <- df_working %>% mutate(uniform_trans = NA_real_, uniform_source = NA_character_)
+    }
+
+    if (any(in_fitted_linear)) {
+      fitted_linear_join <- linear_correction_fxn(
+        decision_df_arg     = fitted_linear_decision_df,
+        sensor_df_arg       = df_working %>% select(-any_of(c("linear_trans", "linear_source", "exp_trans", "exp_source", "uniform_trans", "uniform_source"))),
+        data_list           = prepped_data,
+        site_order_template = site_order
+      ) %>%
+        distinct(DT_round, .keep_all = TRUE) %>%
+        select(DT_round, fitted_linear_trans = mean_drift_trans, fitted_linear_source = pre_post_source)
+      df_working <- df_working %>% left_join(fitted_linear_join, by = "DT_round")
+    } else {
+      df_working <- df_working %>% mutate(fitted_linear_trans = NA_real_, fitted_linear_source = NA_character_)
+    }
+
+    # 4. Stitch: assign corrected values and stamp correction_type for plotting
+    df_corrected <- df_working %>%
+      mutate(
+        mean_drift_trans = case_when(
+          in_linear        ~ linear_trans,
+          in_exp           ~ exp_trans,
+          in_uniform       ~ uniform_trans,
+          in_fitted_linear ~ fitted_linear_trans,
+          TRUE             ~ mean_analysis
+        ),
+        correction_type = case_when(
+          in_linear        ~ "linear",
+          in_exp           ~ "exponential",
+          in_uniform       ~ "uniform",
+          in_fitted_linear ~ "fitted_linear",
+          in_unflag        ~ "unflagged",
+          TRUE             ~ "raw"
+        ),
+        pre_post_source = case_when(
+          in_linear        ~ linear_source,
+          in_exp           ~ exp_source,
+          in_uniform       ~ uniform_source,
+          in_fitted_linear ~ fitted_linear_source,
+          TRUE             ~ NA_character_
+        )
+      ) %>%
+      select(-linear_trans, -exp_trans, -uniform_trans, -fitted_linear_trans,
+             -linear_source, -exp_source, -uniform_source, -fitted_linear_source)
+
+    # 5. Post-process: smooth (Turbidity only) then interpolate short gaps
+    df_corrected %>%
+      apply_interpolation_missing_data(value_col = "mean_drift_trans", new_value_col = "mean_filled")%>%
+       low_pass_filter(correction_col = "mean_filled")
+  })
+```
+
+After all of this work, the final column to consider is: `smoothed_mean`
+
+# Plotting the final corrections
+
+Explore the final results here.
+
+```{r}
+plot_final_corrections(
+  df                  = corrected_data$`archery_virridy-FDOM Fluorescence`,
+  data_list           = prepped_data,
+  site_order_template = site_order
+)
+```
+
+# Save the outputs
+
+```{r}
+# Save each site-parameter data frame as a parquet file.
+# File names match the list keys with spaces replaced by underscores.
+
+save_dir <- here("data", "raw", "sensor", "manual_data_verification",
+                 "2024_cycle", "post_verification")
+
+iwalk(corrected_data, function(df, key) {
+  filename  <- paste0(str_replace_all(key, " ", "_"), ".parquet")
+  df%>%
+      mutate(DT_round = force_tz(DT_round, "MST"))%>% # Convert back to MST for output
+  arrow::write_parquet(., file.path(save_dir, filename))
+})
+```
