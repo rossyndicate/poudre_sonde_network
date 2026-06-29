@@ -32,7 +32,8 @@ The order of operations for 2024 is:
 4. Export data for back-calibration decisions and apply back-calibration
 5. Apply drift corrections (`drift_correction_2024.Rmd`)
 6. Prepare final datasets for HydroShare upload
-
+5. Apply drift corrections (`drift_correction_2024.Rmd`)
+6. Prepare final datasets for HydroShare upload and rejoin with raw data and back-calibrated data
 ## Setup Libraries
 
 ```{r setup, include=FALSE}
