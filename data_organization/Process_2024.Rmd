@@ -862,11 +862,12 @@ recover them here to correct `value_post_cal_corr` for Virridy downstream.
 Depth and Temperature are not present (no calibration applied to those parameters).
 
 ```{r}
-virridy_cal_corrections <- read_rds(here("data", "raw", "sensor", "manual_data_verification",
+cal_corrections <- read_rds(here("data", "raw", "sensor", "manual_data_verification",
                                           "complete_dataset", "calibrated_sensor_field_data_finalized.rds"))[["2024"]] %>%
-  keep(~ grepl("virridy", unique(.$site))) %>%
   map_dfr(~ select(., DT_round, site, parameter, mean_cleaned_cal)) %>%
-  rename(mean_virridy_post_cal = mean_cleaned_cal)
+  rename(mean_post_cal = mean_cleaned_cal)%>%
+  mutate(DT_round = if_else(grepl("virridy", site), DT_round - hours(7), DT_round), 
+         DT_round = force_tz(DT_round, tzone = "MST"))
 ```
 
 # Prep for HydroShare Upload
