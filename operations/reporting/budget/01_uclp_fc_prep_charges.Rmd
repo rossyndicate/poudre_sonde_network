@@ -14,8 +14,8 @@ Once these are done, you can go to the section "Run Above..." to tidy data for u
 
 ```{r}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
-month_select <- 12
-year_select <- 2025
+month_select <- 4
+year_select <- 2026
 ```
 
 # Setup
@@ -30,7 +30,7 @@ package_loader <- function(x) {
     library(x, character.only = TRUE)
   }
 }
-lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "yaml", "here", "fcw.qaqc"), package_loader)
+lapply(c("tidyverse", "readxl", "arrow", "flextable", "officer", "yaml", "here", "ross.wq.tools"), package_loader)
 rm(package_loader)
 # get wd
 dir <- getwd()
@@ -62,7 +62,7 @@ sensor_field_notes <- grab_mWater_sensor_notes(mWater_api_data = mWater_data)%>%
          year = year(date),
          site = tolower(site))%>%
   #filter for PWQN sites and the month and date desired
-  filter(site %in% c("joei","cbri", "chd","pfal","pbr","sfm","pman","pbd") & month == month_select & year == year_select)%>%
+  filter(site %in% c("chd","pfal","pbr","sfm","pman","pbd") & month == month_select & year == year_select)%>%
   #filter(site %in% c("tamasag", "legacy", "lincoln","timberline","prospect",  "boxelder", "archery", "riverbluffs") & month == month_select & year == year_select)%>% 
   select(date,crew, site, cals_performed, DT_round,visit_type, visit_comments)
 
@@ -73,8 +73,8 @@ sampling_field_notes <- mWater_data%>%
     month = month(date),
          year = year(date),
          site = tolower(site))%>%
-  #filter for PWQN sites and the month and date desired
-  filter(site %in% c("joei","cbri", "chd","pfal","pbr","sfm","pman","pbd") & month == month_select & year == year_select)%>%
+  #filter for UCLP sites and the month and date desired
+  filter(site %in% c( "chd","pfal","pbr","sfm","pman","pbd") & month == month_select & year == year_select)%>%
   select(date,crew, site, cals_performed, DT_round,visit_type, visit_comments)
 
 
@@ -96,7 +96,7 @@ sampling_field_notes <- mWater_data%>%
     summarise(cal_dates = paste(date_mmdd, collapse = ", "))
   
   #combine cal dates and monthly visits
-  notes_final <- tibble(site =  c("joei","cbri", "chd","pfal","pbr","sfm","pman","pbd") )%>%
+  notes_final <- tibble(site =  c("chd","pfal","pbr","sfm","pman","pbd") )%>%
     left_join(monthly_visits, by = c("site"))%>%
     left_join(cal_dates, by = c("site"))%>%
     # if site visits is NA, make it 0
@@ -105,7 +105,7 @@ sampling_field_notes <- mWater_data%>%
            `Calibration Dates` = ifelse(is.na(cal_dates), "None", cal_dates),
            # fix site names to be cleaner
            Site = toupper(site),
-           Site = factor(Site, levels = c("JOEI", "CBRI", "CHD","PFAL","PBR", "SFM","PMAN","PBD") )) %>%
+           Site = factor(Site, levels = c("CHD","PFAL","PBR", "SFM","PMAN","PBD") )) %>%
     #arrange upstream to downstream
     arrange(Site)%>%
     #select only the needed columns
@@ -131,7 +131,6 @@ write_csv(field_summary, paste0(dir, "/docs/uclp_dss/docs/monthly_budget/field_s
 
 
 rm(grab_monthly_notes)
-rm(grab_mWater_sensor_notes)
 print("Field Summary Complete and Job Code Data tidied")
 ```
 # Tidy up personnel budget
