@@ -78,7 +78,8 @@ mst_end <- ymd_hms("2026-11-30 23:59:59", tz = "America/Denver")
 
 sites <- c(
   #Upper sites
-  #"chd","pfal", "pbr", "sfm",  "pman", "pbd",
+  #"chd","pfal", "pbr", "sfm",  "pman", 
+  "pbd",
   #Lower sites
   "bellvue","salyer", "udall", "riverbend","cottonwood", "elc","archery","riverbluffs")
 
@@ -173,7 +174,7 @@ hv_sites <- hv_sites %>%
   filter(!grepl("vulink", name, ignore.case = TRUE))%>%
   #Remove Virridy sites/sondes
   filter(!grepl("virridy", name, ignore.case = TRUE))%>%
-   #remove any older sites (containing 2023 in the name)
+   #remove any older sites (containing 2023 or 2024 in the name)
   filter(!grepl("2023|2024", name, ignore.case = TRUE))
 
 
@@ -724,7 +725,7 @@ We will save it into two places:
 iwalk(v_final_flags, ~write_parquet(.x, here(flagged_directory,  paste0(.y, ".parquet"))))
 
 #saving our data into the "raw_data" folder of the manual verification folder for use in the shiny app
-write_parquet(v_final_flags%>%bind_rows(), here(base_folder,"in_progress","raw_data", "raw_data_2026.parquet"))
+#write_parquet(v_final_flags%>%bind_rows(), here(base_folder,"in_progress","raw_data", "raw_data_2026.parquet"))
 ```
 
 # Pass data through Shiny Tool
