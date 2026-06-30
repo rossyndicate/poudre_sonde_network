@@ -101,7 +101,7 @@ server <- function(input, output, session) {
           # User Selection
           column(3,
                  selectInput("user", "Select User:",
-                             choices = c("SJS", "MNR", "JDT", "KW", "BS"),
+                             choices = c("SJS", "MNR","DRD", "JDT", "KW", "BS"),
                              selected = "SJS")
           ),
           # Site Selection
