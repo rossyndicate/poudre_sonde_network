@@ -7,11 +7,18 @@ library(cdssr)
 library(tidyverse)
 library(plotly)
 
-start_dt = "2019-09-01"
-end_dt = "2019-12-31"
+start_dt = "2022-09-01"
+end_dt = "2022-12-31"
 
-lincoln <- get_telemetry_ts(abbrev = "CLAFORCO", start_date = start_dt, end_date = end_dt, timescale = "raw")
-boxelder <- get_telemetry_ts(abbrev = "CLABOXCO", start_date = start_dt, end_date = end_dt, timescale = "raw")
+canyon <- get_telemetry_ts(abbrev = "CLAFTCCO", start_date = start_dt, end_date = end_dt, timescale = "raw") # for PBD, Bellvue
+lincoln <- get_telemetry_ts(abbrev = "CLAFORCO", start_date = start_dt, end_date = end_dt, timescale = "raw") # for Salyer, udall, riverbend
+boxelder <- get_telemetry_ts(abbrev = "CLABOXCO", start_date = start_dt, end_date = end_dt, timescale = "raw") # for Cottonwood, elc, archery
+
+ggplotly(
+  ggplot() +
+    geom_line(data = canyon, aes(x = datetime, y = meas_value)) +
+    labs(x = "Date", y = "Streamflow (cfs)")
+)
 
 ggplotly(
   ggplot() +
