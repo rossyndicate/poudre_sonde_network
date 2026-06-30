@@ -194,7 +194,7 @@ if(verified){
       !(parameter == "Temperature" & mean < 0), # remove frozen instances
       !(parameter == "Depth" & mean < 0), # remove negative depth values
       !(parameter == "Temperature" & mean > 30), # remove instances of temperature > 30 C (sensor error)
-      !(parameter == "DO" & mean < 3), # remove DO < 3 mg/L (sensor error)
+      !(parameter == "DO" & mean < 2), # remove DO < 2 mg/L (sensor error)
       !(mean == 0) # remove instances of 0 values
     ) %>%
     mutate(mean = case_when(
@@ -214,7 +214,7 @@ if(verified){
 
 ```{r}
 # Read in Historical Data
-hist_data_clean <- read_parquet(file = "data/collated/sensor/compiled_ross_sensor_data_2026-02-10.parquet")%>%
+hist_data_clean <- read_parquet(file = "data/collated/sensor/compiled_ross_sensor_data_2026-05-18.parquet")%>%
   filter(site %in% unique(sensor_data_clean$site))%>%
   distinct(site, parameter, DT_round, hourly_median)%>%
   select(site, parameter, DT_round, mean = hourly_median)%>%
@@ -615,6 +615,10 @@ plot_down_days <- function(sensor_df, year_oi){
     flag_col = "user_flag"
   }else{
     flag_col = "auto_flag"
+    year_data <- year_data %>%
+      mutate(
+      #if verification status doesn't exist, make a new column where it is NA if there is no mal flag, and "OMIT" if there is a mal flag
+           verification_status = ifelse(!is.na(mal_flag), "OMIT", NA))
   }
   
   
@@ -624,7 +628,7 @@ plot_down_days <- function(sensor_df, year_oi){
                        "elc", "archery", "riverbluffs")) %>%
     mutate(site_id = as.numeric(factor(site, levels = c("bellvue", "salyer", "udall", "riverbend", "cottonwood",
                                                         "elc", "archery", "riverbluffs")))) %>%
-    mutate(date = as_date(DT_join)) 
+    mutate(date = as_date(DT_join))
   
   flag_sym <- sym(flag_col)
   
@@ -718,13 +722,20 @@ plot_down_days <- function(sensor_df, year_oi){
   
 }
 ```
+## 2026
+Using sensor_data_clean we can make this plot easily
 
+```{r}
+down_day_plot_2026 <- plot_down_days(sensor_data_clean, 2026)
+
+ggsave(here(fig_dir,"down_days_2026.png"), plot = down_day_plot_2026, width = 8, height = 12, units = "in", dpi = 300)
+```
 
 ## 2025
 Using sensor_data we can make this plot easily
 
 ```{r}
-down_day_plot_2025 <- plot_down_days(sensor_data, 2025)
+#down_day_plot_2025 <- plot_down_days(sensor_data, 2025)
 
 ```
 
@@ -950,13 +961,18 @@ date_range = range(sensor_data_clean$DT_round)
 
 
 make_plot <- function(param){
-  plot_data <- sensor_data_clean%>% filter(parameter == param)%>%
+  plot_data <- sensor_data_clean%>% 
+    filter(parameter == param)%>%
+    filter(site %in% c("bellvue", "salyer", "udall", "riverbend", "cottonwood",
+                   "elc", "archery", "riverbluffs"))%>%
     mutate(DT_hourly = floor_date(DT_round, "hour"))%>%
     summarise(mean = mean(mean, na.rm = TRUE), .by = c("site", "DT_hourly", "parameter"))%>%
     left_join(labels, by = c( "parameter" = "param"))%>%
     left_join(site_names, by = "site")
   
   hist_data_plot <- hist_data_clean%>%
+    filter(site %in% c("bellvue", "salyer", "udall", "riverbend", "cottonwood",
+                   "elc", "archery", "riverbluffs"))%>%
     filter(parameter == param & between(plot_date, date_range[1] - days(2), date_range[2] + days(2)))%>%
     left_join(labels, by = c( "parameter" = "param"))%>%
     left_join(site_names, by = "site")%>%
@@ -993,6 +1009,7 @@ plots <- map(unique(sensor_data_clean$parameter), make_plot)%>%
 
 plots$`Specific Conductivity`
 plots$DO
+plots$Temperature
 
 ggsave(plot = plots$DO, filename = here(fig_dir, "DO_Q1_hist_trends.png"), width = 16, height = 10)
 
