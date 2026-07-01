@@ -31,11 +31,17 @@ cal_plot <- function(df) {
 
   # getting post clean values recorded in field notes
   cleaning_notes <- field_notes_data %>%
-    filter(parameter_clean == !!parameter & site == !!site & year(DT_round) == year & !is.na(value) & type != "pre_clean")%>%
-    select(site, DT_round, parameter_clean, type, value)%>%
-    mutate(value = if_else(parameter_clean == "ORP", value / 1000, value))%>%
-    pivot_wider(names_from = type, values_from = value)%>%
-    filter(!is.na(post_clean) & !is.na(post_cal))
+    filter(parameter_clean == !!parameter & site == !!site & year(DT_round) == year & !is.na(value) & type != "pre_clean")
+  if(nrow(cleaning_notes) > 0 ){
+    cleaning_notes <- cleaning_notes %>%
+      select(site, DT_round, parameter_clean, type, value)%>%
+      mutate(value = if_else(parameter_clean == "ORP", value / 1000, value))%>%
+      pivot_wider(names_from = type, values_from = value)%>%
+      filter(!is.na(post_clean) & !is.na(post_cal))
+  }else{
+    cleaning_notes <- tibble(site = character(), DT_round = as.POSIXct(character()), parameter_clean = character(), type = character(), post_clean = numeric(), post_cal = numeric())
+  }
+
 
 
   # Single plot with one geom_line

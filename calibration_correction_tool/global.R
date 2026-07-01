@@ -36,18 +36,24 @@ invisible(
 )
 
 # Load data once when app starts
+#### ---- UPDATE YEAR WHEN NEW DATA IS ADDED ---- ####
+year = "2022"
+cycle = paste0(year, "_cycle")
+#### -------------------------------------------- ####
 
 # Define file paths for tracking system
-data_dir <- here::here("data", "raw", "sensor", "manual_data_verification", "2025_cycle","hydro_vu_pull","back_calibration")
-tracking_file <- file.path(data_dir,"bellvue_calibrated_tracking_sensor_data_2025.rds")
-finalized_file <- file.path(data_dir, "bellvue_calibrated_finalized_sensor_data_2025.rds")
-original_file <- here::here("data", "raw", "sensor", "manual_data_verification",
-                            "2025_cycle","hydro_vu_pull","back_calibration",
-                            "bellvue_calibrated_sensor_data_2025.rds")
+data_dir <- here::here("data", "raw", "sensor", "manual_data_verification", cycle,"hydro_vu_pull","back_calibration")
+tracking_file <- file.path(data_dir,"calibrated_sensor_field_data_tracking.rds")
+finalized_file <- file.path(data_dir, "calibrated_sensor_field_data_finalized.rds")
+original_file <- here::here(data_dir,paste0("calibrated_sensor_data_", year, ".rds"))
 
 # Initialize tracking data (unverified calibrations)
 if (file.exists(tracking_file)) {
   calibrated_data_tracking <- readr::read_rds(tracking_file)
+  #If this year's data is empty, stop the app and display a message
+  if(length(calibrated_data_tracking$year) == 0){
+    stop("Tracking data is empty. Either there is an error with the file or corrections are completed")
+  }
 } else {
   # First time running - copy original to tracking
   calibrated_data_tracking <- readr::read_rds(original_file)
@@ -96,7 +102,7 @@ field_notes_data <- ross.wq.tools::load_mWater()%>%
          type = str_split(col, paste0(parameter, "_"), simplify = T)[,2])
 
 # Source helper functions
-source(here::here("R", "generate_final_df.R"))
-source(here::here("R", "cal_plot.R"))
-source(here::here("R", "final_calibration_plot.R"))
-source(here::here("R", "update_backend.R"))
+# source(here::here("R", "generate_final_df.R"))
+# source(here::here("R", "cal_plot.R"))
+# source(here::here("R", "final_calibration_plot.R"))
+# source(here::here("R", "update_backend.R"))
