@@ -42,7 +42,9 @@ _targets/
 scratch/sjs_scratch.Rmd
 timelapse_data
 #Hide data for shiny apps
-manual_calibration_tool/data/
+calibration_correction_tool/data/
+calibration_correction_tool/creds/
+calibration_correction_tool/creds
 manual_verification_tool/data/
 #ignore planning doc
 operations/Planning_doc.Rmd
