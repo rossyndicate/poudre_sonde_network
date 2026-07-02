@@ -849,6 +849,7 @@ pipeline. Raw pre-calibration values are recovered here from `raw_data.parquet`
 and joined to the verified data downstream.
 
 ```{r}
+base_folder <- here("data", "raw", "sensor", "manual_data_verification","2024_cycle")
 raw_values <- read_parquet(here(base_folder, "in_progress", "raw_data", "raw_data.parquet")) %>%
   select(DT_round, site, parameter, mean_pre_cal = value)
 ```
@@ -931,7 +932,7 @@ units_table <- all_datasets%>%
 raw_dataset <- all_datasets%>%
   bind_rows()%>%
   #exclude springcreek and boxcreek since they we have not done manual verification/calibration correction of those sites yet 
-  filter(!(site %in% c("springcreek", "boxcreek")))%>%
+  filter(!(site %in% c("springcreek", "boxcreek", "mtncampus")))%>%
   mutate(
     #keep fDOM and Chl-a from riverbend and cottonwood sites from 9/2023 and 12/2024
     is_archery_window = str_detect(site, "archery_virridy") &
@@ -995,11 +996,13 @@ raw_dataset <- all_datasets%>%
   mutate(
     modifications = case_when(
       is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
+      value_raw == value_post_cal_corr & !is.na(value_post_ver) & value_post_ver == value_post_drift_corr & grepl("drift", user_qc_flag) ~ "non-resolved drift",
       value_raw == value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "drift correction",
       value_raw != value_post_cal_corr & value_post_ver == value_post_drift_corr ~ "calibration correction",
       value_raw != value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "calibration correction;drift correction",
       TRUE ~ NA_character_
-     )
+     ), 
+    value_post_drift_corr = if_else( !is.na(modifications) & modifications == "non-resolved drift" & parameter != "Chl-a Fluorescence", NA, value_post_drift_corr)
   ) %>%
   #Final cleaning and formatting
   select(-units) %>%
@@ -1025,7 +1028,7 @@ final_dataset <- raw_dataset %>%
 ```{r}
 plots <- map(unique(final_dataset$site), function(site_name) {
   ggplot(final_dataset %>% filter(site == site_name), aes(x = DateTime_UTC, y = value_final, color = modifications)) +
-    geom_point(aes(y = value_raw), color = "gray", alpha = 0.5) + # add raw data points for comparison
+    geom_point(aes(y = value_raw), color = "grey",  alpha = 0.5) + # add raw data points for comparison
     geom_point() +
     facet_wrap(~parameter, scales = "free_y") +
     labs(title = site_name,
@@ -1067,7 +1070,7 @@ write_parquet(raw_dataset, raw_file_name_parquet)
 
 ```{r}
 sensor_field_notes <- grab_mWater_sensor_notes(load_mWater())%>%
-  filter(year(DT_round) == year & !(site %in% c("springcreek", "boxcreek")))%>%
+  filter(year(DT_round) == year & !(site %in% c("springcreek", "boxcreek", "mountaincampus")))%>%
   rename(DateTime_UTC = DT_round) %>%
   select(-photos_downloaded,-DT_join, -cal_report_collected, -sensor_swapped_notes, -end_dt, -last_site_visit, -date,-sensor_deployed, -sensor_pulled)%>%
   #Clean up crew to just initials and remove any extra text
