@@ -931,7 +931,7 @@ units_table <- all_datasets%>%
 
 raw_dataset <- all_datasets%>%
   bind_rows()%>%
-  #exclude springcreek and boxcreek since they we have not done manual verification/calibration correction of those sites yet 
+  #exclude springcreek and boxcreek since we have not done manual verification/calibration correction of those sites yet 
   filter(!(site %in% c("springcreek", "boxcreek", "mtncampus")))%>%
   mutate(
     #keep fDOM and Chl-a from riverbend and cottonwood sites from 9/2023 and 12/2024
