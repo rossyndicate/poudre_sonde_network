@@ -16,8 +16,8 @@
 
 unfinalize_site_parameter <- function(site,
                                       parameter,
-                                      verified_directory = "shiny_ver_tool/data/verified_directory",
-                                      intermediary_directory = "shiny_ver_tool/data/intermediary_directory") {
+                                      verified_directory = "manual_verification_tool/data/verified_directory",
+                                      intermediary_directory = "manual_verification_tool/data/intermediary_directory") {
 
   # Find matching file in verified directory
   pattern <- paste0("^", site, "-", parameter, "_FINAL_")

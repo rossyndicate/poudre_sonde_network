@@ -5,8 +5,8 @@ output: word_document
 ```{r setup, include=FALSE, echo=FALSE}
 ###### ------ MONTH AND YEAR SELECTOR ------ ######
 dir <- getwd()
-month_select <- 11
-year_select <- 2025
+month_select <- 5
+year_select <- 2026
 
 ```
 
@@ -43,10 +43,11 @@ all_data <- read_csv(paste0(dir, "/docs/uclp_dss/docs/monthly_budget/charges_fin
 
   # calculate totals
 final_summary <- tibble(`Hours x Rate (if applicable)` = c("Total CSU Contribution: ",
-                                                           "Total (excluding CSU cont.)"), 
+                                                           "Total"), 
                         Cost = c(sum(all_data$Cost[all_data$include == "No"]),
                                  sum(all_data$Cost[all_data$include != "No"])), 
-                        include = c("No", "Yes"))
+                        include = c("No", "Yes"))%>%
+  filter(Cost > 0)
 
 final <- all_data%>%
   bind_rows(final_summary)
@@ -78,7 +79,7 @@ flextable(final, col_keys = c("Category","Staff or Vendor","Description",
    merge_h( i = nrow(final)-1 )%>%
    merge_h( i = nrow(final))%>%
    # set caption and table width
-  set_caption(caption = paste0("Summary of ", month_select,"/",year_select, " UCLP DSS costs to City of Fort Collins IGA. Italics denote contributions from CSU"))%>%
+  set_caption(caption = paste0("Summary of ", month_select,"/",year_select, " UCLP DSS costs to City of Fort Collins IGA"))%>%
   set_table_properties( width = 1, layout = "autofit")
 
 ```

@@ -1,0 +1,76 @@
+# Function to make example plots
+cal_plot <- function(df) {
+  parameter <- unique(df$parameter)
+  site <- unique(df$site)
+  year <- lubridate::year(df$DT_round)[1]
+
+  # Combine all data into one data frame with descriptive categories
+  combined_data <- bind_rows(
+    # Original data
+    df %>%
+      select(DT_round, value = mean, correct_calibration) %>%
+      mutate(data_type = ifelse(correct_calibration,
+                                "Original Data (Good Calibration)",
+                                "Original Data (Bad Calibration)")),
+    # Calibrated data
+    df %>%
+      select(DT_round, value = mean_cal) %>%
+      mutate(data_type = "Back-calibrated Data")
+  )
+
+  if(parameter == "Turbidity"){
+    combined_data <- combined_data %>%
+      mutate(value = ifelse(value > 200, 200, value))
+  }
+
+  # Create vline dataframe
+  vline_df <- df %>%
+    group_by(sensor_date) %>%
+    slice_min(DT_round, n = 1) %>%
+    arrange(DT_round)
+
+  # getting post clean values recorded in field notes
+  cleaning_notes <- field_notes_data %>%
+    filter(parameter_clean == !!parameter & site == !!site & year(DT_round) == year & !is.na(value) & type != "pre_clean")
+  if(nrow(cleaning_notes) > 0 ){
+    cleaning_notes <- cleaning_notes %>%
+      select(site, DT_round, parameter_clean, type, value)%>%
+      mutate(value = if_else(parameter_clean == "ORP", value / 1000, value))%>%
+      pivot_wider(names_from = type, values_from = value)%>%
+      filter(!is.na(post_clean) & !is.na(post_cal))
+  }else{
+    cleaning_notes <- tibble(site = character(), DT_round = as.POSIXct(character()), parameter_clean = character(), type = character(), post_clean = numeric(), post_cal = numeric())
+  }
+
+
+
+  # Single plot with one geom_line
+  p <- ggplot(combined_data, aes(x = DT_round, y = value, color = data_type)) +
+    geom_line(linewidth = 0.3, alpha = 0.8) +
+    geom_point(data = cleaning_notes, aes(x = DT_round, y = post_clean), color = "black", shape = 17, size = 2) +
+    scale_color_manual(
+      values = c(
+        "Original Data (Good Calibration)" = "springgreen4",
+        "Original Data (Bad Calibration)" = "tomato",
+        "Back-calibrated Data" = "steelblue"
+      ),
+      name = "Data Type"
+    ) +
+    geom_vline(xintercept = vline_df$DT_round) +
+    labs(
+      title = paste(site, parameter, year, "Calibration"),
+      x = NULL,
+      y = paste(parameter, "(units)")
+    ) +
+    theme_minimal()
+
+  p <- ggplotly(p) %>%
+    layout(legend = list(
+      orientation = "h",    # horizontal
+      x = 0.5,             # center horizontally
+      xanchor = 'center',  # anchor at center
+      y = -0.1             # position below plot
+    ))
+
+  return(p)
+}

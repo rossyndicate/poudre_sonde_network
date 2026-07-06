@@ -849,6 +849,7 @@ pipeline. Raw pre-calibration values are recovered here from `raw_data.parquet`
 and joined to the verified data downstream.
 
 ```{r}
+base_folder <- here("data", "raw", "sensor", "manual_data_verification","2024_cycle")
 raw_values <- read_parquet(here(base_folder, "in_progress", "raw_data", "raw_data.parquet")) %>%
   select(DT_round, site, parameter, mean_pre_cal = value)
 ```
@@ -930,35 +931,93 @@ units_table <- all_datasets%>%
 
 raw_dataset <- all_datasets%>%
   bind_rows()%>%
-  #exclude springcreek and boxcreek since they were not verified in 2024
-  filter(!(site %in% c("springcreek", "boxcreek")))%>%
+  #exclude springcreek and boxcreek since we have not done manual verification/calibration correction of those sites yet 
+  filter(!(site %in% c("springcreek", "boxcreek", "mtncampus")))%>%
+  mutate(
+    #keep fDOM and Chl-a from riverbend and cottonwood sites from 9/2023 and 12/2024
+    is_archery_window = str_detect(site, "archery_virridy") &
+      between(DT_round, ymd_hms("2023-09-01 00:00:00", tz = "MST"), ymd_hms("2024-12-31 23:59:59", tz = "MST")),
+    #keep fDOM and Chl-a from riverbend and cottonwood sites from 9/2023 and 5/2024
+    is_river_cotton_window = str_detect(site, "riverbend_virridy|cottonwood_virridy") &
+      between(DT_round, ymd_hms("2023-09-01 00:00:00", tz = "MST"), ymd_hms("2024-05-31 23:59:59", tz = "MST")),
+    site = if_else(is_archery_window | is_river_cotton_window, str_remove(site, "_virridy"), site)
+  ) %>%
+  filter(
+    !(is_archery_window & !parameter %in% c("Turbidity", "FDOM Fluorescence", "Chl-a Fluorescence")),
+    !(is_river_cotton_window & !parameter %in% c("FDOM Fluorescence", "Chl-a Fluorescence")),
+    !(str_detect(site, "^archery$") &
+        between(DT_round, ymd_hms("2023-09-01 00:00:00", tz = "MST"), ymd_hms("2024-12-31 23:59:59", tz = "MST")) &
+        parameter == "Chl-a Fluorescence" &
+        !is_archery_window),
+    site %nin% c("archery_virridy", "riverbend_virridy", "cottonwood_virridy")
+  )%>%
+  #remove helper functions
+  select(-is_archery_window, -is_river_cotton_window)%>%
   # if value_post_drift corr is NA, then fill with value_post_ver (this means that the data was verified but not drift corrected, so the post verification value is the most "final" version of the data we have for those instances) This is for parameters other than FDOM and Turbidity
-  mutate(value_post_drift_corr = if_else(is.na(value_post_drift_corr), value_post_ver, value_post_drift_corr),
-         #round all values to 3 decimal places for consistency with HydroShare upload
-         value_raw = round(value_raw, 3),
-         value_post_cal_corr = round(value_post_cal_corr, 3),
-         value_post_ver = round(value_post_ver, 3),
-         value_post_drift_corr = round(value_post_drift_corr, 3),
-         #Create modifications column to indicate what modifications were made to the data for easier filtering and analysis downstream
-         modifications = case_when( is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
-                                    value_raw == value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "drift correction",
-                                    value_raw != value_post_cal_corr & value_post_ver == value_post_drift_corr ~ "calibration correction",
-                                    value_raw != value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "calibration correction;drift correction",
-                                    TRUE ~ NA),
-         #convert to UTC
-         DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
-  select(-units)%>%
-  left_join(units_table, by = "parameter")%>%
-  select(DateTime_UTC,
-         site, parameter, units,
-         #Actual data
-         value_raw,
-         value_post_cal_corr,
-         value_post_ver,
-         value_post_drift_corr,
-         #QC Info
-         auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications)
+  mutate(#convert to UTC
+     DateTime_UTC = with_tz(DT_round, tzone = "UTC"))%>%
+  #need to do some manual overrides for joei:
+  #Window 1: 7/06/2024 23:30 to 7/09/2024 03:15, remove value_post_drift_corr for Turbidity
+  #Window 2: 8/21/2024 19:00 to 09/26/2024 18:45, set value_post_ver and value_post_drift_corr to value_raw 
+  #Window 3: 09/26/2024 19:45 to 10/14/2024 19:00, subtract 3 NTU from value_post_cal_corr, value_post_ver, and value_post_drift_corr for Turbidity
+  mutate(is_window_one = DateTime_UTC >= ymd_hm("2024-07-06 23:30", tz = "UTC") & DateTime_UTC <= ymd_hm("2024-07-09 03:30", tz = "UTC") & site == "joei" & parameter == "Turbidity"& !is.na(value_post_ver),
+         is_window_two = DateTime_UTC >= ymd_hm("2024-08-21 19:00", tz = "UTC") & DateTime_UTC <= ymd_hm("2024-09-26 18:45", tz = "UTC")& site == "joei" & parameter == "Turbidity" & !is.na(value_post_ver),
+         is_window_three = DateTime_UTC >= ymd_hm("2024-09-26 19:45", tz = "UTC") & DateTime_UTC <= ymd_hm("2024-10-14 19:15", tz = "UTC") & site == "joei" & parameter == "Turbidity"& !is.na(value_post_ver))%>%mutate(
+            # Modify calibration column (Window 3 adjustment)
+           value_post_cal_corr = case_when(
+             is_window_three ~ value_post_cal_corr - 3,
+             TRUE            ~ value_post_cal_corr
+           ),
+           
+           # Modify post_verification column (Window 2 resets to raw; Window 3 adjusts)
+           value_post_ver = case_when(
+             is_window_two   ~ value_raw,
+             is_window_three ~ value_post_ver - 3, #subtract 3.2 NTU from value_post_ver for Window 3
+             TRUE            ~ value_post_ver
+           ),
+           # Modify drift corrected column (Window 1 sets to NA; Window 2 resets to raw; Window 3 adjusts)
+           value_post_drift_corr = case_when(
+             is_window_one   ~ NA_real_,
+             is_window_two   ~ value_raw,
+             is_window_three ~ value_post_drift_corr - 3,
+             # Default fallback: If it's missing, backfill it with verification value
+             is.na(value_post_drift_corr) ~ value_post_ver, 
+             TRUE            ~ value_post_drift_corr
+           )
+         ) %>%
+  #Round to 3 decimal places
+  mutate(
+    value_raw             = round(value_raw, 3),
+    value_post_cal_corr   = round(value_post_cal_corr, 3),
+    value_post_ver        = round(value_post_ver, 3),
+    value_post_drift_corr = round(value_post_drift_corr, 3)
+   ) %>%
+  # Descriptions to the modifications column
+  mutate(
+    modifications = case_when(
+      is.na(value_post_ver) & !is.na(value_raw) ~ "manual data exclusion",
+      value_raw == value_post_cal_corr & !is.na(value_post_ver) & value_post_ver == value_post_drift_corr & grepl("drift", user_qc_flag) ~ "non-resolved drift",
+      value_raw == value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "drift correction",
+      value_raw != value_post_cal_corr & value_post_ver == value_post_drift_corr ~ "calibration correction",
+      value_raw != value_post_cal_corr & value_post_ver != value_post_drift_corr ~ "calibration correction;drift correction",
+      TRUE ~ NA_character_
+     ), 
+    value_post_drift_corr = if_else( !is.na(modifications) & modifications == "non-resolved drift" & parameter != "Chl-a Fluorescence", NA, value_post_drift_corr)
+  ) %>%
+  #Final cleaning and formatting
+  select(-units) %>%
+  left_join(units_table, by = "parameter") %>%
+  select(
+    DateTime_UTC, site, parameter, units,
+    value_raw, value_post_cal_corr, value_post_ver, value_post_drift_corr,
+    auto_qc_flag, mal_flag, user_qc_flag, qc_status, modifications
+   )%>%
+  #ensure turbidity is > 0 for value_post_drift_corr, value_post_ver, value_post_cal_corr, and value_raw. If not, set to 0.1
+  mutate(value_post_drift_corr = if_else(parameter == "Turbidity" & value_post_drift_corr <= 0, 0.1, value_post_drift_corr),
+         value_post_ver = if_else(parameter == "Turbidity" & value_post_ver <= 0, 0.1, value_post_ver),
+         value_post_cal_corr = if_else(parameter == "Turbidity" & value_post_cal_corr <= 0, 0.1, value_post_cal_corr))
 
+ 
 final_dataset <- raw_dataset %>%
   select(DateTime_UTC, site, parameter, units, value_raw, value_final = value_post_drift_corr,user_qc_flag, modifications)
 
@@ -969,7 +1028,7 @@ final_dataset <- raw_dataset %>%
 ```{r}
 plots <- map(unique(final_dataset$site), function(site_name) {
   ggplot(final_dataset %>% filter(site == site_name), aes(x = DateTime_UTC, y = value_final, color = modifications)) +
-    geom_point(aes(y = value_raw), color = "gray", alpha = 0.5) + # add raw data points for comparison
+    geom_point(aes(y = value_raw), color = "grey",  alpha = 0.5) + # add raw data points for comparison
     geom_point() +
     facet_wrap(~parameter, scales = "free_y") +
     labs(title = site_name,
@@ -997,13 +1056,21 @@ raw_file_name <- here( "data/collated/sensor/hydroshare_pub", year, paste0("CSU_
 write_csv(final_dataset, cleaned_file_name)
 
 write_csv(raw_dataset, raw_file_name)
+# Repeat for parquet files
+cleaned_file_name_parquet <- here( "data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_", year,"_cleaned.parquet"))
+
+raw_file_name_parquet <- here( "data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_", year,"_raw.parquet"))
+
+write_parquet(final_dataset, cleaned_file_name_parquet)
+
+write_parquet(raw_dataset, raw_file_name_parquet)
 ```
 
 ## Field Notes
 
 ```{r}
 sensor_field_notes <- grab_mWater_sensor_notes(load_mWater())%>%
-  filter(year(DT_round) == year & !(site %in% c("springcreek", "boxcreek")))%>%
+  filter(year(DT_round) == year & !(site %in% c("springcreek", "boxcreek", "mountaincampus")))%>%
   rename(DateTime_UTC = DT_round) %>%
   select(-photos_downloaded,-DT_join, -cal_report_collected, -sensor_swapped_notes, -end_dt, -last_site_visit, -date,-sensor_deployed, -sensor_pulled)%>%
   #Clean up crew to just initials and remove any extra text
@@ -1011,7 +1078,8 @@ sensor_field_notes <- grab_mWater_sensor_notes(load_mWater())%>%
     str_replace_all("Other \\(please specify\\)", "Other") %>%
     str_replace_all("([A-Z])[a-z]+", "\\1") %>%
     str_replace_all("(?<=[A-Z])\\s+(?=[A-Z])", "")
-  )
+  )%>%
+  fix_site_names()
 
 field_notes_file <- here("data/collated/sensor/hydroshare_pub", year, paste0("CSU_ROSS_sensor_field_notes_", year, ".csv"))
 
@@ -1039,7 +1107,7 @@ location_meta <- read_csv("data/collated/sensor/hydroshare_pub/CSU_ROSS_sonde_lo
 tmap_mode("view")
 tm_basemap("OpenStreetMap") +
   tm_shape(location_meta %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326)) +
-  #color is SiteID and shape is year_range
-  tm_symbols(col = "SiteID", shape = "year_range", size = 0.5, border.col = "black")
+  #color is site and shape is year_range
+  tm_symbols(col = "site", shape = "year_range", size = 0.5, border.col = "black")
 
 ```
