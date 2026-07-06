@@ -34,13 +34,13 @@ relevant_sonde_selector <- function(site_arg) {
     plot_filter <- c("pbd", "salyer")
   }
   if (site_arg == "salyer") {
-    plot_filter <- c("bellvue", "udall")
+    plot_filter <- c("bellvue", "riverbend")
   }
   if (site_arg == "udall") {
     plot_filter <- c("salyer", "riverbend")
   }
   if (site_arg == "riverbend") {
-    plot_filter <- c("udall", "cottonwood")
+    plot_filter <- c("salyer", "cottonwood")
   }
   if (site_arg == "riverbend_virridy") {
     plot_filter <- c("udall", "riverbend", "cottonwood")
@@ -93,7 +93,7 @@ relevant_sonde_selector <- function(site_arg) {
 
 get_auto_parameters <- function(parameter) {
   tryCatch({
-     read_csv(here("shiny_ver_tool", "data", "meta", "parameter_autoselections.csv"), show_col_types = F) %>%
+     read_csv(here("manual_verification_tool", "data", "meta", "parameter_autoselections.csv"), show_col_types = F) %>%
       filter(main_parameter == parameter) %>%
       pull(sub_parameters) %>%
       first() %>%

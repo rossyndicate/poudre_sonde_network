@@ -78,7 +78,8 @@ mst_end <- ymd_hms("2026-11-30 23:59:59", tz = "America/Denver")
 
 sites <- c(
   #Upper sites
-  #"chd","pfal", "pbr", "sfm",  "pman", "pbd",
+  #"chd","pfal", "pbr", "sfm",  "pman", 
+  "pbd",
   #Lower sites
   "bellvue","salyer", "udall", "riverbend","cottonwood", "elc","archery","riverbluffs")
 
@@ -173,7 +174,7 @@ hv_sites <- hv_sites %>%
   filter(!grepl("vulink", name, ignore.case = TRUE))%>%
   #Remove Virridy sites/sondes
   filter(!grepl("virridy", name, ignore.case = TRUE))%>%
-   #remove any older sites (containing 2023 in the name)
+   #remove any older sites (containing 2023 or 2024 in the name)
   filter(!grepl("2023|2024", name, ignore.case = TRUE))
 
 
@@ -200,49 +201,47 @@ beepr::beep(1)
 Some logs (Vulink Log if sonde is AT600/800) cannot be backed up to HydroVu. If you have any of these files, we will read them in here so that we are not missing any potential data. Once this has been run and data checked, comment this section out to avoid re-running it.
 
 ```{r}
-# log_files <- list.files(log_directory, pattern = "\\vulink.html$", full.names = TRUE)%>%
-#   #only keep files with our sites in them
-#   keep(~any(str_detect(tolower(.x), sites)))
+log_files <- list.files(log_directory, pattern = "\\vulink.html$", full.names = TRUE)%>%
+  #only keep files with our sites in them
+  keep(~any(str_detect(tolower(.x), sites)))
+
+log_files_simp <- log_files%>%
+  str_replace(log_directory, "")%>%
+  str_replace("/", "")%>%
+  str_replace_all("\\.html", "")%>%
+  str_squish()
 # 
-# log_files_simp <- log_files%>%
-#   str_replace(log_directory, "")%>%
-#   str_replace("/", "")%>%
-#   str_replace_all("\\.html", "")%>%
-#   str_squish()
-# 
-# log_data <- map(log_files, ~rvest::read_html(.x)%>%
-#                             parse_insitu_html_log())
-# 
-# log_data <- map(html_content, ~parse_insitu_html_log(.x))
-# 
-# names(log_data) <- log_files_simp
-# 
-# cleaned_log_data <- log_data%>%
-#   rbindlist()%>%
-#   #fixing a few specific location names before passing to fix_site_names
-#   mutate( site = tolower(site),
-#           id = as.double(sensor_sn),
-#          timestamp = with_tz(DT, tzone = "UTC"), 
-#          site = case_when(site == "archery range"~ "archery", 
-#                          site == "boxelder creek" ~ "boxcreek", 
-#                          site == "spring creek" ~ "springcreek",
-#                          TRUE ~ site), 
-#          name = paste0("Vulink Log - ", site), 
-#          #Correcting for parse log where temp is saved with degrees C rather than C
-#          units = case_when(parameter == "Temperature" ~ "C", 
-#                            TRUE ~ unit)
-#          )%>%
-#   fix_site_names()%>%
-#   select(site, id, name, timestamp, parameter, value, units) %>%
-#   distinct(.keep_all = TRUE) %>%
-#   split(f = list(.$site), sep = "-") %>%
-#   keep(~nrow(.) > 0)
-# 
-# #write out the log data to the staging directory so it can be processed with the HV data
-# iwalk(cleaned_log_data, ~write_parquet(.x, here(staging_directory, paste0(.y, "_log_data.parquet"))))
-# 
-# # beep to let you know when it's done
-# beepr::beep(1)
+log_data <- map(log_files, ~rvest::read_html(.x)%>%
+                            parse_insitu_html_log())
+
+names(log_data) <- log_files_simp
+
+cleaned_log_data <- log_data%>%
+  rbindlist()%>%
+  #fixing a few specific location names before passing to fix_site_names
+  mutate( site = tolower(site),
+          id = as.double(sensor_sn),
+         timestamp = with_tz(DT, tzone = "UTC"),
+         site = case_when(site == "archery range"~ "archery",
+                         site == "boxelder creek" ~ "boxcreek",
+                         site == "spring creek" ~ "springcreek",
+                         TRUE ~ site),
+         name = paste0("Vulink Log - ", site),
+         #Correcting for parse log where temp is saved with degrees C rather than C
+         units = case_when(parameter == "Temperature" ~ "C",
+                           TRUE ~ unit)
+         )%>%
+  fix_site_names()%>%
+  select(site, id, name, timestamp, parameter, value, units) %>%
+  distinct(.keep_all = TRUE) %>%
+  split(f = list(.$site), sep = "-") %>%
+  keep(~nrow(.) > 0)
+
+#write out the log data to the staging directory so it can be processed with the HV data
+iwalk(cleaned_log_data, ~write_parquet(.x, here(staging_directory, paste0(.y, "_log_data.parquet"))))
+
+# beep to let you know when it's done
+beepr::beep(1)
 
 ```
 
@@ -726,7 +725,7 @@ We will save it into two places:
 iwalk(v_final_flags, ~write_parquet(.x, here(flagged_directory,  paste0(.y, ".parquet"))))
 
 #saving our data into the "raw_data" folder of the manual verification folder for use in the shiny app
-write_parquet(v_final_flags%>%bind_rows(), here(base_folder,"in_progress","raw_data", "raw_data_2026.parquet"))s
+#write_parquet(v_final_flags%>%bind_rows(), here(base_folder,"in_progress","raw_data", "raw_data_2026.parquet"))
 ```
 
 # Pass data through Shiny Tool
