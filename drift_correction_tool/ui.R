@@ -66,17 +66,5 @@ ui <- page_navbar(
         )
       )
     )
-   )#,
-  # nav_panel(
-  #   title = "Other Tab",
-  #   layout_columns(
-  #     col_widths = c(10, 2),
-  #     card(
-  #       card_body(
-  #         h3("This is another tab!"),
-  #         p("You can add more content here for other steps in the data processing pipeline.")
-  #       )
-  #     )
-  #   ) # Fixed closing parenthesis for layout_columns
-  # )
+   )
 )
