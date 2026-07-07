@@ -13,7 +13,9 @@ server <- function(input, output, session) {
   # Keep input$site choices filtered to sites that have ≥1 unfinished parameter.
   # Runs whenever completed_combos changes (i.e. after every submit).
   observe({
-    avail_sites <- unique(sapply(strsplit(remaining_combos(), "-"), `[`, 1))
+    avail_sites <- remaining_combos() %>%
+      str_split_i("-", 1) %>%
+      unique()
     # Preserve current selection if it is still valid
     cur <- isolate(input$site)
     new_sel <- if (!is.null(cur) && cur %in% avail_sites) cur else avail_sites[1]
@@ -25,7 +27,10 @@ server <- function(input, output, session) {
   observe({
     req(input$site)
     site_combos  <- remaining_combos()[startsWith(remaining_combos(), paste0(input$site, "-"))]
-    avail_params <- unique(sapply(strsplit(site_combos, "-"), `[`, 2))
+
+    avail_params <- site_combos %>%
+      str_split_i("-", 2) %>%
+      unique()
     cur <- isolate(input$parameter)
     new_sel <- if (!is.null(cur) && cur %in% avail_params) cur else avail_params[1]
     updateSelectInput(session, "parameter", choices = avail_params, selected = new_sel)
@@ -62,20 +67,18 @@ server <- function(input, output, session) {
     # Enforce a hard cap of two additional sites, even if the UI ever allows more
     sites <- head(unique(sites), 2)
 
-    site_list <- lapply(sites, function(s) {
-      combo <- paste(s, input$parameter, sep = "-")
-      df <- prepped_data[[combo]]
-      if (is.null(df)) {
-        showNotification(paste("No data found for", combo), type = "warning")
-        return(NULL)
-      }
-      df %>% mutate(site_label = s)
-    })
-
-    site_list <- site_list[!vapply(site_list, is.null, logical(1))]
-    if (length(site_list) == 0) return(NULL)
-
-    bind_rows(site_list)
+    sites %>%
+      map(function(s) {
+        combo <- paste(s, input$parameter, sep = "-")
+        df <- prepped_data[[combo]]
+        if (is.null(df)) {
+          showNotification(paste("No data found for", combo), type = "warning")
+          return(NULL)
+        }
+        df %>% mutate(site_label = s)
+      }) %>%
+      compact() %>% # Automatically removes NULL elements
+      list_rbind()
   })
 
   drift_windows <- reactiveVal()
@@ -124,22 +127,19 @@ server <- function(input, output, session) {
     windows <- drift_windows()
     if (is.null(windows) || nrow(windows) == 0) return(p("No drift windows found."))
 
-    ui_elements <- lapply(seq_len(nrow(windows)), function(i) {
-      row_data <- windows[i, ]
-
-      div(
-        style = "border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; margin: 10px; background-color: #ffffff;",
-        h6(paste0("Window Block ", row_data$window_id), style = "margin-top: 0; color: #0d6efd; font-weight: bold;"),
-        fluidRow(
-          column(width = 3, textInput(paste0("start_dt_", i), "Start Timestamp:", value = format(row_data$start_dt, "%Y-%m-%d %H:%M:%S", tz = "MST"))),
-          column(width = 3, textInput(paste0("end_dt_", i), "End Timestamp:", value = format(row_data$end_dt, "%Y-%m-%d %H:%M:%S", tz = "MST"))),
-          column(width = 3, selectInput(paste0("decision_", i), "Strategy:",
-                                        choices = c("None", "linear", "exponential", "uniform", "fitted_linear", "non_resolved", "unflag"),
-                                        selected = row_data$arg_drift_type)),
-          column(width = 3, selectInput(paste0("drift_mode_", i), "Formulation Type:", choices = c("additive", "multiplicative"), selected = row_data$arg_correction_type))
+    ui_elements <- windows %>%
+      pmap(function(window_id, start_dt, end_dt, arg_drift_type, arg_correction_type, ...) {
+        div(
+          style = "border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; margin: 10px; background-color: #ffffff;",
+          h6(paste0("Window Block ", window_id), style = "margin-top: 0; color: #0d6efd; font-weight: bold;"),
+          fluidRow(
+            column(width = 3, textInput(paste0("start_dt_", window_id), "Start Timestamp:", value = format(start_dt, "%Y-%m-%d %H:%M:%S", tz = "MST"))),
+            column(width = 3, textInput(paste0("end_dt_", window_id), "End Timestamp:", value = format(end_dt, "%Y-%m-%d %H:%M:%S", tz = "MST"))),
+            column(width = 3, selectInput(paste0("decision_", window_id), "Strategy:", choices = c("None", "linear", "exponential", "uniform", "fitted_linear", "non_resolved", "unflag"), selected = arg_drift_type)),
+            column(width = 3, selectInput(paste0("drift_mode_", window_id), "Formulation Type:", choices = c("additive", "multiplicative"), selected = arg_correction_type))
+          )
         )
-      )
-    })
+      })
     do.call(tagList, ui_elements)
   })
 
@@ -432,8 +432,9 @@ server <- function(input, output, session) {
       stopApp()
       message("All site-parameter combinations have been processed! Exiting app.\nProceed to next year's data or publication step")
     } else {
-      next_site  <- sapply(strsplit(next_remaining, "-"), `[`, 1)[[1]]
-      next_param <- sapply(strsplit(next_remaining, "-"), `[`, 2)[[1]]
+      next_combo <- str_split_1(next_remaining[1], "-")
+      next_site  <- next_combo[1]
+      next_param <- next_combo[2]
       updateSelectInput(session, "site",      selected = next_site)
       updateSelectInput(session, "parameter", selected = next_param)
       showNotification(
