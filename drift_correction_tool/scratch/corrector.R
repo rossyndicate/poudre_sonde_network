@@ -1,20 +1,20 @@
-# 
+# OLD CODE FROM JUAN FOR REFERENCE
 # # Convert sensor timestamps from MST to UTC so all data is stored in UTC
 # df <- df %>% mutate(DT_round = with_tz(DT_round, "UTC"))
-# 
+#
 # site_val      <- unique(df$site)
 # parameter_val <- unique(df$parameter)
-# 
+#
 # # Filter decisions for this site-parameter
 # site_decisions <- decision_df %>%
 #   filter(site == site_val, parameter == parameter_val)
-# 
+#
 # # 1. Unflag: update drift flags and user_flag (does not change mean_analysis)
 # df_working <- unflag_fxn(
 #   decision_df_arg = site_decisions %>% filter(decision == "unflag"),
 #   sensor_df_arg   = df
 # )
-# 
+#
 # # Helper: boolean vector marking rows inside any window in a decision subset
 # in_windows <- function(dec_df) {
 #   if (nrow(dec_df) == 0) return(rep(FALSE, nrow(df_working)))
@@ -24,20 +24,20 @@
 #     function(s, e) between(df_working$DT_round, s, e)
 #   ) %>% reduce(`|`)
 # }
-# 
+#
 # # 2. Identify which rows belong to each correction window type
 # unflag_decision_df <- site_decisions %>% filter(decision == "unflag")
 # linear_decision_df         <- site_decisions %>% filter(arg_drift_type == "linear")
 # exp_decision_df            <- site_decisions %>% filter(arg_drift_type == "exponential")
 # uniform_decision_df        <- site_decisions %>% filter(arg_drift_type == "uniform")
 # fitted_linear_decision_df  <- site_decisions %>% filter(arg_drift_type == "fitted_linear")
-# 
+#
 # in_unflag        <- in_windows(unflag_decision_df)
 # in_linear        <- in_windows(linear_decision_df)
 # in_exp           <- in_windows(exp_decision_df)
 # in_uniform       <- in_windows(uniform_decision_df)
 # in_fitted_linear <- in_windows(fitted_linear_decision_df)
-# 
+#
 # # 3. Compute corrections and join results back onto df_working by DT_round.
 # #    distinct() guards against row expansion from overlapping decision windows.
 # if (any(in_linear)) {
@@ -53,7 +53,7 @@
 # } else {
 #   df_working <- df_working %>% mutate(linear_trans = NA_real_, linear_source = NA_character_)
 # }
-# 
+#
 # if (any(in_exp)) {
 #   exp_join <- exponential_correction_fxn(
 #     decision_df_arg     = exp_decision_df,
@@ -67,7 +67,7 @@
 # } else {
 #   df_working <- df_working %>% mutate(exp_trans = NA_real_, exp_source = NA_character_)
 # }
-# 
+#
 # if (any(in_uniform)) {
 #   uniform_join <- linear_correction_fxn(
 #     decision_df_arg     = uniform_decision_df,
@@ -81,7 +81,7 @@
 # } else {
 #   df_working <- df_working %>% mutate(uniform_trans = NA_real_, uniform_source = NA_character_)
 # }
-# 
+#
 # if (any(in_fitted_linear)) {
 #   fitted_linear_join <- linear_correction_fxn(
 #     decision_df_arg     = fitted_linear_decision_df,
@@ -95,7 +95,7 @@
 # } else {
 #   df_working <- df_working %>% mutate(fitted_linear_trans = NA_real_, fitted_linear_source = NA_character_)
 # }
-# 
+#
 # # 4. Stitch: assign corrected values and stamp correction_type for plotting
 # df_corrected <- df_working %>%
 #   mutate(
@@ -124,7 +124,7 @@
 #   ) %>%
 #   select(-linear_trans, -exp_trans, -uniform_trans, -fitted_linear_trans,
 #          -linear_source, -exp_source, -uniform_source, -fitted_linear_source)
-# 
+#
 # # 5. Post-process: smooth (Turbidity only) then interpolate short gaps
 # df_corrected %>%
 #   apply_interpolation_missing_data(value_col = "mean_drift_trans", new_value_col = "mean_filled")%>%
