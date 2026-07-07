@@ -111,22 +111,7 @@ server <- function(input, output, session) {
 
     # Fallback: Run if file doesn't exist OR if file exists but has 0 matching rows
     if (!loaded_from_excel) {
-      windows <- df %>%
-        filter(drift & !is.na(mean_analysis)) %>%
-        arrange(DT_round) %>%
-        mutate(gap = as.numeric(DT_round - lag(DT_round), units = "days")) %>%
-        mutate(window_id = cumsum(if_else(is.na(gap) | gap > 1, 1, 0))) %>%
-        group_by(window_id) %>%
-        summarise(
-          start_dt = min(DT_round),
-          end_dt = max(DT_round),
-          end_data_val = last(mean_analysis),
-          .groups = 'drop'
-        ) %>%
-        mutate(
-          arg_drift_type = "None",
-          arg_correction_type = "additive"
-        )
+      windows <- calculate_fallback_windows(df)
     }
 
 
@@ -240,80 +225,12 @@ server <- function(input, output, session) {
   # Scenario Transformation Generation ----
   corrected_scenarios <- reactive({
     req(current_data(), drift_windows())
-
-    df <- current_data()
-    windows_df <- drift_windows()
-
-    if (nrow(windows_df) == 0) {
-      return(df %>% mutate(
-        linear_add = NA_real_, linear_mult = NA_real_,
-        exp_add    = NA_real_, exp_mult    = NA_real_,
-        uniform_add = NA_real_, uniform_mult = NA_real_,
-        fitted_add = NA_real_, fitted_mult = NA_real_
-      ))
-    }
-
-    # Filter out non_resolved windows
-    calc_windows <- windows_df %>% filter(arg_drift_type != "non_resolved")
-
-    if (nrow(calc_windows) == 0) {
-      return(df %>% mutate(
-        linear_add = NA_real_, linear_mult = NA_real_,
-        exp_add    = NA_real_, exp_mult    = NA_real_,
-        uniform_add = NA_real_, uniform_mult = NA_real_,
-        fitted_add = NA_real_, fitted_mult = NA_real_
-      ))
-    }
-
-    # Force strategy variations AND formulation variations explicitly
-    linear_add_dec    <- calc_windows %>% mutate(arg_drift_type = "linear", arg_correction_type = "additive")
-    linear_mult_dec   <- calc_windows %>% mutate(arg_drift_type = "linear", arg_correction_type = "multiplicative")
-
-    exp_add_dec       <- calc_windows %>% mutate(arg_drift_type = "exponential", arg_correction_type = "additive")
-    exp_mult_dec      <- calc_windows %>% mutate(arg_drift_type = "exponential", arg_correction_type = "multiplicative")
-
-    uniform_add_dec   <- calc_windows %>% mutate(arg_drift_type = "uniform", arg_correction_type = "additive")
-    uniform_mult_dec  <- calc_windows %>% mutate(arg_drift_type = "uniform", arg_correction_type = "multiplicative")
-
-    fitted_add_dec    <- calc_windows %>% mutate(arg_drift_type = "fitted_linear", arg_correction_type = "additive")
-    fitted_mult_dec   <- calc_windows %>% mutate(arg_drift_type = "fitted_linear", arg_correction_type = "multiplicative")
-
-    df_working <- df
-
-    # Run functions and select columns separately
-    linear_add_j <- linear_correction_fxn(decision_df_arg = linear_add_dec, sensor_df_arg = df_working, data_list =  prepped_data, site_order_template = site_order) %>%
-      distinct(DT_round, .keep_all = TRUE) %>% select(DT_round, linear_add = mean_drift_trans)
-
-    linear_mult_j <- linear_correction_fxn(decision_df_arg = linear_mult_dec, sensor_df_arg = df_working, data_list =  prepped_data, site_order_template = site_order) %>%
-      distinct(DT_round, .keep_all = TRUE) %>% select(DT_round, linear_mult = mean_drift_trans)
-
-    exp_add_j <- exponential_correction_fxn(decision_df_arg = exp_add_dec, sensor_df_arg = df_working, data_list =  prepped_data, site_order_template = site_order) %>%
-      distinct(DT_round, .keep_all = TRUE) %>% select(DT_round, exp_add = mean_drift_trans)
-
-    exp_mult_j <- exponential_correction_fxn(decision_df_arg = exp_mult_dec, sensor_df_arg = df_working, data_list =  prepped_data, site_order_template = site_order) %>%
-      distinct(DT_round, .keep_all = TRUE) %>% select(DT_round, exp_mult = mean_drift_trans)
-
-    uniform_add_j <- linear_correction_fxn(decision_df_arg = uniform_add_dec, sensor_df_arg = df_working, data_list =  prepped_data, site_order_template = site_order) %>%
-      distinct(DT_round, .keep_all = TRUE) %>% select(DT_round, uniform_add = mean_drift_trans)
-
-    uniform_mult_j <- linear_correction_fxn(decision_df_arg = uniform_mult_dec, sensor_df_arg = df_working, data_list =  prepped_data, site_order_template = site_order) %>%
-      distinct(DT_round, .keep_all = TRUE) %>% select(DT_round, uniform_mult = mean_drift_trans)
-
-    fitted_add_j <- linear_correction_fxn(decision_df_arg = fitted_add_dec, sensor_df_arg = df_working, data_list =  prepped_data, site_order_template = site_order) %>%
-      distinct(DT_round, .keep_all = TRUE) %>% select(DT_round, fitted_add = mean_drift_trans)
-
-    fitted_mult_j <- linear_correction_fxn(decision_df_arg = fitted_mult_dec, sensor_df_arg = df_working, data_list =  prepped_data, site_order_template = site_order) %>%
-      distinct(DT_round, .keep_all = TRUE) %>% select(DT_round, fitted_mult = mean_drift_trans, pre_post_source)
-
-    # Combined Left Joins
-    df_working <- df_working %>%
-      left_join(linear_add_j, by = "DT_round") %>% left_join(linear_mult_j, by = "DT_round") %>%
-      left_join(exp_add_j, by = "DT_round") %>% left_join(exp_mult_j, by = "DT_round") %>%
-      left_join(uniform_add_j, by = "DT_round") %>% left_join(uniform_mult_j, by = "DT_round") %>%
-      left_join(fitted_add_j, by = "DT_round") %>% left_join(fitted_mult_j, by = "DT_round")
-
-
-    return(df_working)
+    generate_scenario_grid(
+      df = current_data(),
+      windows_df = drift_windows(),
+      prepped_data = prepped_data,
+      site_order = site_order
+    )
   })
 
   # Plot Rendering Viewport ----
@@ -490,91 +407,8 @@ server <- function(input, output, session) {
       bind_rows(decision_df) %>%
       writexl::write_xlsx(excel_path)
 
-    # Initialize Stitching Array Containers
-    df_final <- df_scenarios %>%
-      mutate(
-        mean_drift_trans = mean_analysis,
-        correction_type  = "raw"
-      )
-
-    in_any_verified_window <- rep(FALSE, nrow(df_final))
-
-    # Strip Drift Tokens Located Outside Active Window Areas
-    remove_drift_token <- function(flag_str) {
-      if (is.na(flag_str) || flag_str == "") return(NA_character_)
-      tokens <- str_split(flag_str, ";")[[1]] %>% str_replace_all("\\n", " ") %>% str_trim()
-      cleaned <- tokens[tokens != "drift" & tokens != ""]
-      if (length(cleaned) == 0) return(NA_character_)
-      return(paste(cleaned, collapse = "; "))
-    }
-
-    # Process Choices Chronologically Per Window
-    for (i in seq_len(nrow(windows_df))) {
-      s_dt   <- windows_df$start_dt[i]
-      e_dt   <- windows_df$end_dt[i]
-      d_type <- windows_df$arg_drift_type[i]
-      corr_type <- windows_df$arg_correction_type[i]
-
-      in_window <- df_final$DT_round >= s_dt & df_final$DT_round <= e_dt
-      in_any_verified_window <- in_any_verified_window | in_window
-
-      if (d_type == "non_resolved") {
-        # Mark data as missing and flag status tracks as OMIT
-        df_final$mean_analysis[in_window]     <- NA_real_
-        df_final$mean_drift_trans[in_window]  <- NA_real_
-        df_final$correction_type[in_window]   <- "non_resolved"
-        df_final$verification_status[in_window] <- "OMIT"
-        df_final$final_status[in_window]        <- "OMIT"
-        df_final$pre_post_source[in_window]          <- NA_real_
-        } else if( d_type == "unflag" ){
-          # user selected "unflag" for a window,
-          #remove the drift token from user_flag and set drift to FALSE
-          #PASS data if there are no remaining flags
-          df_final$mean_drift_trans[in_window] <- df_final$mean_analysis[in_window]
-          df_final$correction_type[in_window]  <- "raw"
-          df_final$pre_post_source[in_window]          <- NA_real_
-          df_final$user_flag[in_window] <- map_chr(df_final$user_flag[in_window], remove_drift_token)
-          df_final$drift[in_window] <- FALSE
-          df_final$verification_status[in_window] <- if_else(is.na(df_final$user_flag[in_window]) & df_final$verification_status[in_window] != "OMIT", "PASS", df_final$verification_status[in_window])
-          df_final$final_status[in_window]        <- if_else(is.na(df_final$user_flag[in_window]) & df_final$final_status[in_window] != "OMIT", "PASS", df_final$final_status[in_window])
-
-        }else {
-        #based on user selection, determine which column to use for the final mean_drift_trans
-        val_column <- case_when(
-          d_type == "linear" & corr_type == "multiplicative"        ~ "linear_mult",
-          d_type == "linear" & corr_type == "additive"              ~ "linear_add",
-          d_type == "exponential" & corr_type == "multiplicative"  ~ "exp_mult",
-          d_type == "exponential" & corr_type == "additive"        ~ "exp_add",
-          d_type == "uniform"     & corr_type == "multiplicative"  ~ "uniform_mult",
-          d_type == "uniform"     & corr_type == "additive"        ~ "uniform_add",
-          d_type == "fitted_linear" & corr_type == "multiplicative" ~ "fitted_mult",
-          d_type == "fitted_linear" & corr_type == "additive"       ~ "fitted_add",
-          TRUE                      ~ "mean_analysis"
-        )
-
-        if (d_type %in% c("linear", "exponential", "uniform", "fitted_linear")) {
-          df_final$mean_drift_trans[in_window] <- df_final[[val_column]][in_window]
-          df_final$correction_type[in_window]  <- d_type
-        }
-      }
-    }
-
-    outside_unverified_drift <- df_final$drift & !in_any_verified_window
-    # if the data is outside a verified window and is flagged as drift, remove the drift token and set the verification_status and final_status to PASS if user_flag is NA
-
-    if (any(outside_unverified_drift)) {
-      df_final <- df_final %>%
-        mutate(
-          user_flag = if_else(outside_unverified_drift, map_chr(user_flag, remove_drift_token), user_flag),
-          drift = if_else(outside_unverified_drift, FALSE, drift),
-          verification_status = if_else(outside_unverified_drift & is.na(user_flag) & verification_status != "OMIT", "PASS", verification_status),
-          final_status        = if_else(outside_unverified_drift & is.na(user_flag) & final_status != "OMIT", "PASS", final_status)
-        )
-    }
-    # Remove Temporary Scenario Columns Before Export
-    df_final <- df_final %>%
-      select(-any_of(c("linear_add", "linear_mult", "exp_add", "exp_mult",
-                       "uniform_add", "uniform_mult", "fitted_add", "fitted_mult")))
+    # Stitching to select final corrections
+    df_final <- stitch_final_corrections(df_scenarios, windows_df)
 
     # Export File Storage Sequence
     file_name <- paste0(input$site, "-", input$parameter, ".parquet")
