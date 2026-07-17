@@ -18,13 +18,14 @@ library(shinyWidgets)
 library(glue)
 library(anytime)
 library(arrow)
+library(cdssr)
 
 options(shiny.maxRequestSize = 10000 * 1024^2)
 options(shiny.autoload.r = TRUE)
 
 `%nin%` = Negate(`%in%`)
 
-#Source Helper filesq
+#Source Helper files
 walk(list.files(here("manual_verification_tool", "R"), pattern = "\\.R$", full.names = TRUE), source)
 ##### Colors + parameters #####
 
