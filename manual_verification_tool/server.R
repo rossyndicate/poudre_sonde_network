@@ -63,6 +63,8 @@ server <- function(input, output, session) {
   all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots? (why is there a question mark here)
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
   selected_data_cur_filename <- reactiveVal(NULL) # Current filename of selected data, to be updated as filename is saved
+  usgs_yearly_data <- reactiveVal(NULL) # Cache for USGS flow data
+  usgs_current_year <- reactiveVal(NULL) # Track which year's data is cached
 
   auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
@@ -1012,21 +1014,56 @@ server <- function(input, output, session) {
       )
       if (is.na(abbrev)) return(NULL)
       
-      tryCatch({
-        s_date <- as.character(as.Date(week_min_day - days(2)))
-        e_date <- as.character(as.Date(week_max_day + days(2)))
+      current_year <- year(week_min_day)
+      
+      # Check if we need to fetch new yearly data
+      if (is.null(usgs_yearly_data()) || is.null(usgs_current_year()) || usgs_current_year() != current_year) {
+        showNotification("Fetching USGS flow data for the year...", id = "usgs_fetch")
         
-        data <- cdssr::get_telemetry_ts(abbrev = abbrev, 
-                                        start_date = s_date, 
-                                        end_date = e_date, 
-                                        timescale = "raw")
-        if (nrow(data) > 0) {
-          data$site <- site_name
-          data$abbrev <- abbrev
-          return(data)
+        gauges <- c("CLAFTCCO", "CLAFORCO", "CLABOXCO")
+        start_date <- paste0(current_year, "-01-01")
+        end_date <- paste0(current_year, "-12-31")
+        
+        yearly_data_list <- map(gauges, function(abbrev_val) {
+          tryCatch({
+            data <- cdssr::get_telemetry_ts(abbrev = abbrev_val, 
+                                            start_date = start_date, 
+                                            end_date = end_date, 
+                                            timescale = "raw")
+            if (nrow(data) > 0) {
+              data$abbrev <- abbrev_val
+              return(data)
+            }
+            return(NULL)
+          }, error = function(e) NULL)
+        }) %>% compact()
+        
+        if (length(yearly_data_list) > 0) {
+          usgs_yearly_data(bind_rows(yearly_data_list))
+        } else {
+          usgs_yearly_data(tibble())
         }
-        return(NULL)
-      }, error = function(e) NULL)
+        usgs_current_year(current_year)
+        removeNotification(id = "usgs_fetch")
+      }
+      
+      yearly_df <- usgs_yearly_data()
+      if (is.null(yearly_df) || nrow(yearly_df) == 0) return(NULL)
+      
+      s_date <- week_min_day - days(2)
+      e_date <- week_max_day + days(2)
+      
+      # Filter for this gauge and this time window
+      filtered_data <- yearly_df %>% 
+        filter(abbrev == !!abbrev,
+               datetime >= s_date,
+               datetime <= e_date)
+               
+      if (nrow(filtered_data) > 0) {
+        filtered_data$site <- site_name
+        return(filtered_data)
+      }
+      return(NULL)
     }) %>% compact()
 
     if (length(flow_data_list) > 0) {
