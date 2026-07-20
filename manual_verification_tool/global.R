@@ -18,7 +18,9 @@ library(shinyWidgets)
 library(glue)
 library(anytime)
 library(arrow)
-library(cdssr)
+library(cdssr) # Devtools packge, code to install: 
+# install.packages("devtools")
+#devtools::install_github("anguswg-ucsb/cdssr")
 
 options(shiny.maxRequestSize = 10000 * 1024^2)
 options(shiny.autoload.r = TRUE)
