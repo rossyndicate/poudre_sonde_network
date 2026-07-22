@@ -29,9 +29,10 @@ ui <- page_navbar(
 
       #### Left column ####
       layout_columns(
-        col_widths = 12,
+        col_widths = c(12, 6, 6),
         # Main plot (top left)
          card(
+          style = "height: 80vh;",
         #   card_header(
         #     div(
         #       actionButton("prev_tab", "← Back to Selection", class = "btn-info"),
@@ -48,75 +49,56 @@ ui <- page_navbar(
                        ))
           ),
           card_footer(
-            div(
-              class = "d-flex justify-content-between gap-3", # Use space-between instead of evenly
-              class = "d-flex gap-3",
-              selectizeInput("add_sites", "Additional Sites:",
-                             choices = available_sites,
-                             multiple = TRUE,
-                             options = list(plugins = "remove_button"),
-                             width = "300px"),
+            layout_columns(
+              col_widths = c(3, 6, 3),
+
+              # Left: Additional sites selection
               div(
-                class = "d-flex flex-column gap-2",
-                materialSwitch(
-                  inputId = "remove_omit",
-                  label = "Remove Omit",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                ),
-                materialSwitch(
-                  inputId = "remove_flag",
-                  label = "Remove Flag",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                ),
-                materialSwitch(
-                  inputId = "add_line",
-                  label = "Plot Line",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                )
+                selectizeInput("add_sites", "Additional Sites:",
+                               choices = available_sites,
+                               multiple = TRUE,
+                               options = list(plugins = "remove_button"),
+                               width = "100%")
               ),
+
+              # Middle: Checkbox group
               div(
-                class = "d-flex flex-column gap-2",
-                materialSwitch(
-                  inputId = "incl_thresholds",
-                  label = "Thresholds",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                ),
-                materialSwitch(
-                  inputId = "plot_log10",
-                  label = "Log 10",
-                  value = FALSE,
-                  width = "200px",
-                  status = "success"
-                ),
-                materialSwitch(
-                  inputId = "incl_ex_days",
-                  label = "Extra Data",
-                  value = TRUE,
-                  width = "200px",
-                  status = "success"
-                )
+                class = "d-flex justify-content-center align-items-center h-100",
+                checkboxGroupInput("plot_options", label = NULL,
+                                   choices = c("Remove Omit" = "remove_omit",
+                                               "Remove Flag" = "remove_flag",
+                                               "Plot Line" = "add_line",
+                                               "Thresholds" = "incl_thresholds",
+                                               "Log 10" = "plot_log10",
+                                               "Extra Data" = "incl_ex_days",
+                                               "Show Legend" = "show_legend"),
+                                   selected = c("incl_ex_days", "show_legend"),
+                                   inline = TRUE)
               ),
-              actionButton("prev_week","← Previous Week", class = "btn-secondary", style = "width: 200px;"),
-              actionButton("next_week","Next Week →", class = "btn-secondary", style = "width: 200px;"),
-              actionButton("reset_week", "Reset Data", class = "btn-danger"),
-              keys::useKeys(),
-                     keys::keysInput("q_key", "q"),
-                     actionButton("quit_app", "Quit", class = "btn-danger")
+
+              # Right: Buttons (Reset/Quit on top, Prev/Next below)
+              div(
+                class = "d-flex flex-column align-items-end justify-content-center gap-2",
+                div(
+                  class = "d-flex gap-2",
+                  actionButton("reset_week", "Reset", class = "btn-danger"),
+                  keys::useKeys(),
+                  keys::keysInput("q_key", "q"),
+                  actionButton("quit_app", "Quit", class = "btn-danger")
+                ),
+                div(
+                  class = "d-flex gap-2",
+                  actionButton("prev_week", "← Prev", class = "btn-secondary"),
+                  actionButton("next_week", "Next →", class = "btn-secondary")
+                )
+              )
             )
           )
         ),
 
         #### Weekly decision card (bottom left, shorter height) ####
         card(
-          style = "height: 5px; overflow: hidden;",
+          style = "height: 25vh; overflow-y: auto;",
           # card_header(
           #   h6("Make weekly decision")
           # ),
@@ -129,6 +111,40 @@ ui <- page_navbar(
                 )
               ),
               uiOutput("submit_decision_ui")
+            )
+          )
+        ),
+
+        # Data selection card (moved from bottom right to middle left)
+        card(
+          style = "height: 25vh; overflow-y: auto;",
+          card_header(
+            h6("Data Brush")
+          ),
+          card_body(
+            layout_columns(
+              col_widths = c(8, 4),
+              # Left side: Select action then Select flag
+              div(
+                class = "d-flex flex-column gap-2",
+                radioButtons("brush_action",
+                             "Select Action:",
+                             choices = c("Accept" = "A",
+                                         "Flag" = "F",
+                                         "Omit" = "O"),
+                             selected = character(0),
+                             inline = TRUE),
+                selectizeInput("user_brush_flags", label = NULL,
+                               choices = available_flags,
+                               multiple = TRUE,
+                               options = list(plugins = "remove_button"))
+              ),
+              # Right side: Clear button then Submit button
+              div(
+                class = "d-flex flex-column align-items-end gap-2",
+                actionButton("clear_brushes", "Clear"),
+                uiOutput("brush_submit_ui")
+              )
             )
           )
         )
@@ -146,46 +162,24 @@ ui <- page_navbar(
           ),
           card_body(
             # Sub parameter selection
-            selectizeInput("sub_parameters", "Select Parameters:",
-                           choices = available_parameters,
-                           multiple = TRUE,
-                           options = list(plugins = "remove_button")),
-            selectizeInput("sub_sites", "Select Sites:",
-                           choices = available_sites,
-                           multiple = TRUE,
-                           options = list(plugins = "remove_button")),
+            layout_columns(
+              col_widths = c(6, 6),
+              selectizeInput("sub_parameters", "Select Parameters:",
+                             choices = available_parameters,
+                             multiple = TRUE,
+                             options = list(plugins = "remove_button")),
+              selectizeInput("sub_sites", "Select Sites:",
+                             choices = available_sites,
+                             multiple = TRUE,
+                             options = list(plugins = "remove_button"))
+            ),
             div(
-              style = "height: 600px; overflow-y: auto;",  # Make this div scrollable
+              class = "flex-fill",
+              style = "overflow-y: auto; min-height: 600px;",  # Make this div scrollable and fill remaining height
               plotlyOutput("sub_plots", width = "100%", height = "100%")
             )
 
 
-          )
-        ),
-        # Data selection card (bottom right)
-        card(
-          card_header(
-            h6("Data Brush")
-          ),
-          card_body(
-            div(
-              class = "d-flex align-items-center gap-5",
-              radioButtons("brush_action",
-                           "Select Action:",
-                           choices = c("Accept" = "A",
-                                       "Flag" = "F",
-                                       "Omit" = "O"),
-                           selected = character(0),
-                           inline = TRUE),  # This makes the radio buttons horizontal
-              actionButton("clear_brushes", "Clear Brushes")
-            ),
-            selectizeInput("user_brush_flags", "Select Flags:",
-                           choices = available_flags,
-                           multiple = TRUE,
-                           options = list(plugins = "remove_button")),
-
-            # Conditional submit button
-            uiOutput("brush_submit_ui")
           )
         )
       )

@@ -102,13 +102,14 @@ current_status <- map(most_recent_cals$path, read_cal_report)%>%
 lab_sns <- all_sensors%>%
   filter(!grepl("AT|Wiper|Cable|vulink",Equipment, ignore.case = T))%>%
   filter(SN %nin% current_status$sn)%>%
-  select(sn = SN, sensor = Equipment, owner = Owner)%>%
+  select(sn = SN, sensor = Equipment, owner = Owner, lent)%>%
   mutate(
-    site = "Lab",
+    site = if_else(!is.na(lent), "Lent Out", "Lab"),
     sonde_sn = NA,
     cal_date = NA,
     last_calibrated = NA
-  )
+  )%>%
+  select(-lent)
 
 final_status <- bind_rows(current_status, lab_sns)%>%
   arrange(site, sensor)

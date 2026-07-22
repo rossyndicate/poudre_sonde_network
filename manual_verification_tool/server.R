@@ -63,6 +63,8 @@ server <- function(input, output, session) {
   all_datasets <- reactiveVal(NULL) # List of all datasets and is used in generating sub plots? (why is there a question mark here)
   brush_active <- reactiveVal(FALSE) #internal shiny tracker for brush tool
   selected_data_cur_filename <- reactiveVal(NULL) # Current filename of selected data, to be updated as filename is saved
+  usgs_yearly_data <- reactiveVal(NULL) # Cache for USGS flow data
+  usgs_current_year <- reactiveVal(NULL) # Track which year's data is cached
 
   auto_refresh <- reactiveTimer(30000) #refresh every 30 sec
 
@@ -505,7 +507,7 @@ server <- function(input, output, session) {
             input$weekly_decision != "aa" & brush_omit ~ "OMIT"))
 
       #Remove omitted data (user or from weekly decision)
-      if (input$remove_omit) {
+      if (("remove_omit" %in% input$plot_options)) {
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "OMIT")
 
@@ -513,7 +515,7 @@ server <- function(input, output, session) {
           filter(!brush_omit)
       }
       #Remove flagged data if user desired
-      if(input$remove_flag){
+      if(("remove_flag" %in% input$plot_options)){
         week_choice_data <- week_choice_data %>%
           filter(final_decision != "FLAGGED")
 
@@ -580,7 +582,7 @@ server <- function(input, output, session) {
         geom_point(aes(y = mean, fill = final_decision),shape = 21, stroke = 0, size = 2) #plot main site with colors matching final decision
 
       #if incl_ex_days = T, then add in the extra data as points
-      if(input$incl_ex_days){
+      if(("incl_ex_days" %in% input$plot_options)){
         p <- p +
           geom_point(data = week_plus_data%>%filter(week != current_week()),
                      aes(y = mean, fill = final_status), shape = 21, stroke = 0, size = 1.5, alpha = 0.5)
@@ -597,14 +599,14 @@ server <- function(input, output, session) {
           color = "Sites" )+
         theme_bw(base_size = 14)
 
-      if(input$incl_thresholds){
+      if(("incl_thresholds" %in% input$plot_options)){
         p <- add_threshold_lines(plot = p,
                                  plot_data = week_plot_data,
                                  site_arg = input$site,
                                  parameter_arg = input$parameter)
       }
       # This is where the xlim is set, a problem -JD
-      if(input$incl_ex_days){
+      if(("incl_ex_days" %in% input$plot_options)){
         p <- p +
           scale_x_datetime(
             limits = c(min(week_plus_data$DT_round, na.rm = TRUE),
@@ -624,22 +626,26 @@ server <- function(input, output, session) {
           )
       }
 
-      if(input$plot_log10){
+      if(("plot_log10" %in% input$plot_options)){
         p <- p + scale_y_log10()
+      }
+      
+      if(!("show_legend" %in% input$plot_options)) {
+        p <- p + theme(legend.position = "none")
       }
 
       p
     } else {
       # TODO: Swap with create weekly plot function call, adding in other sites, etc
 
-      if(input$remove_omit){
+      if(("remove_omit" %in% input$plot_options)){
         week_data <- week_data %>%
           filter(!brush_omit) # remove omitted data
 
         week_plus_data <- week_plus_data %>%
           filter(!brush_omit)
       }
-      if(input$remove_flag){
+      if(("remove_flag" %in% input$plot_options)){
         week_data <- week_data %>%
           filter(is.na(user_flag) & !brush_omit) # remove flagged data unless it is omitted - why keep omitted data?
 
@@ -650,7 +656,7 @@ server <- function(input, output, session) {
       p <-ggplot(week_data, aes(x = DT_round))
 
       #Adding in extra days (+- 2 days on each side)
-      if(input$incl_ex_days){
+      if(("incl_ex_days" %in% input$plot_options)){
         # check to make sure there is data from last week
         week_min_check <- week_plus_data %>%
           filter(week < current_week())
@@ -706,7 +712,7 @@ server <- function(input, output, session) {
             ungroup()
 
           #filter to just single week if incl_ex_days is false
-          if(!input$incl_ex_days){
+          if(!("incl_ex_days" %in% input$plot_options)){
             add_data_with_interpolation <- add_data_with_interpolation %>%
               filter(week == current_week())
           }
@@ -720,7 +726,7 @@ server <- function(input, output, session) {
         })
 
       # add in extra days if incl_ex_days is true
-      if(input$incl_ex_days){
+      if(("incl_ex_days" %in% input$plot_options)){
         p <- p + geom_point(data = week_plus_data%>%filter(week != current_week()), aes(y = mean),fill = "black",shape = 21, stroke = 0, size = 1.5, alpha = 0.5) #add two extra days on the side
       }
 
@@ -750,7 +756,7 @@ server <- function(input, output, session) {
           fill = "Flags")+
         theme_bw(base_size = 14)
 
-      if(input$add_line){
+      if(("add_line" %in% input$plot_options)){
         p <- p + geom_line(aes(y = mean), color = "grey", linewidth = 1)
       }
 
@@ -780,15 +786,19 @@ server <- function(input, output, session) {
 
       }
       #create plot
-      if(input$incl_thresholds){
+      if(("incl_thresholds" %in% input$plot_options)){
         p <- add_threshold_lines(plot = p,
                                  plot_data = week_plot_data,
                                  site_arg = input$site,
                                  parameter_arg = input$parameter)
       }
 
-      if(input$plot_log10){
+      if(("plot_log10" %in% input$plot_options)){
         p <- p + scale_y_log10()
+      }
+      
+      if(!("show_legend" %in% input$plot_options)) {
+        p <- p + theme(legend.position = "none")
       }
 
       # Return the plot from renderPlot
@@ -800,7 +810,7 @@ server <- function(input, output, session) {
   ## Sub plots output
   # Anything that is flagged/omitted is removed, we want to keep flags and differentiate those points somehow -JD
   output$sub_plots <- renderPlotly({
-    req(all_datasets(), current_week(), input$site, input$sub_parameters, input$sub_sites)
+    req(all_datasets(), current_week(), input$site)
 
     pre_verification_data <- all_datasets()[["pre_verification_data"]]
     intermediary_data <- all_datasets()[["intermediary_data"]]
@@ -830,7 +840,9 @@ server <- function(input, output, session) {
     }
 
     # Create individual plots for each sub parameter
-    all_sub_plot_data <- map_dfr(input$sub_parameters, function(param) {
+    plots <- list()
+    if (length(input$sub_parameters) > 0) {
+      all_sub_plot_data <- map_dfr(input$sub_parameters, function(param) {
       map_dfr(all_sub_sites, function(sub_site) {
         # Get the relevant sonde data
         relevant_sondes <- map(sub_site, ~ {
@@ -988,6 +1000,101 @@ server <- function(input, output, session) {
       return(p)
     }) %>%
       compact() # remove any null plots
+    }
+
+    # Create USGS Flow Plot
+    all_flow_sites <- input$site
+    
+    flow_data_list <- map(all_flow_sites, function(site_name) {
+      abbrev <- case_when(
+        site_name %in% c("pbd", "bellvue", "pman", "pbr", "sfm", "pfal", "chd", "cbri", "joei") ~ "CLAFTCCO",
+        site_name %in% c("salyer", "udall", "riverbend", "riverbend_virridy") ~ "CLAFORCO",
+        site_name %in% c("cottonwood", "cottonwood_virridy", "elc", "archery", "archery_virridy", "boxcreek", "springcreek", "riverbluffs") ~ "CLABOXCO",
+        TRUE ~ NA_character_
+      )
+      if (is.na(abbrev)) return(NULL)
+      
+      current_year <- year(week_min_day)
+      
+      # Check if we need to fetch new yearly data
+      if (is.null(usgs_yearly_data()) || is.null(usgs_current_year()) || usgs_current_year() != current_year) {
+        showNotification("Fetching USGS flow data for the year...", id = "usgs_fetch")
+        
+        gauges <- c("CLAFTCCO", "CLAFORCO", "CLABOXCO")
+        start_date <- paste0(current_year, "-01-01")
+        end_date <- paste0(current_year, "-12-31")
+        
+        yearly_data_list <- map(gauges, function(abbrev_val) {
+          tryCatch({
+            data <- cdssr::get_telemetry_ts(abbrev = abbrev_val, 
+                                            start_date = start_date, 
+                                            end_date = end_date, 
+                                            timescale = "raw")
+            if (nrow(data) > 0) {
+              data$abbrev <- abbrev_val
+              return(data)
+            }
+            return(NULL)
+          }, error = function(e) NULL)
+        }) %>% compact()
+        
+        if (length(yearly_data_list) > 0) {
+          usgs_yearly_data(bind_rows(yearly_data_list))
+        } else {
+          usgs_yearly_data(tibble())
+        }
+        usgs_current_year(current_year)
+        removeNotification(id = "usgs_fetch")
+      }
+      
+      yearly_df <- usgs_yearly_data()
+      if (is.null(yearly_df) || nrow(yearly_df) == 0) return(NULL)
+      
+      s_date <- week_min_day - days(2)
+      e_date <- week_max_day + days(2)
+      
+      # Filter for this gauge and this time window
+      filtered_data <- yearly_df %>% 
+        filter(abbrev == !!abbrev,
+               datetime >= s_date,
+               datetime <= e_date)
+               
+      if (nrow(filtered_data) > 0) {
+        filtered_data$site <- site_name
+        return(filtered_data)
+      }
+      return(NULL)
+    }) %>% compact()
+
+    if (length(flow_data_list) > 0) {
+      flow_df <- bind_rows(flow_data_list)
+      
+      p_flow <- plot_ly()
+      
+      # Add main site flow
+      main_site_flow <- flow_df %>% filter(site == input$site)
+      if (nrow(main_site_flow) > 0) {
+        p_flow <- p_flow %>%
+          add_lines(
+            data = main_site_flow,
+            x = ~datetime,
+            y = ~meas_value,
+            line = list(color = "black", width = 3),
+            name = unique(main_site_flow$abbrev)[1],
+            legendgroup = input$site,
+            showlegend = FALSE
+          )
+      }
+      
+      p_flow <- p_flow %>%
+        layout(
+          xaxis = list(title = "Date"),
+          yaxis = list(title = "USGS Flow (cfs)", type = "log"),
+          margin = list(t = 80, b = 40)
+        )
+      
+      plots <- c(plots, list(p_flow))
+    }
 
     if (length(plots) > 0) {
       # Filter out any NULL or invalid plots using keep
@@ -1125,7 +1232,7 @@ server <- function(input, output, session) {
 
     actionButton(
       "submit_brush",
-      "Submit Brush Decision",
+      "Submit",
       class = ifelse(can_submit, "btn-success", "btn-secondary"),
       disabled = !can_submit
     )
