@@ -236,7 +236,7 @@ hist_data_clean <- read_parquet(file = "data/collated/sensor/compiled_ross_senso
 
 ```{r}
 
-pull_larimer_precip_q <- function(station_id = "11523",  start_dt = "2025-03-01", end_dt = "2025-06-02"){
+pull_larimer_precip_q <- function(station_id = "11523",  start_dt = "2025-03-01", end_dt = "2026-07-08"){
   
   #format DTs for novastar API
   start_dt <- format(as.POSIXct(start_dt, tz = "MST"), "%Y-%m-%dT%H:%M:%S%z")
@@ -351,15 +351,15 @@ pull_larimer_precip_q <- function(station_id = "11523",  start_dt = "2025-03-01"
 
 ```{r}
 
-if(file.exists(here("data/collated/external_datasets/larimer_county_station_flow_precip_20210101_20251201.parquet"))){
-  larimer_flow_precip <- read_parquet("data/collated/external_datasets/larimer_county_station_flow_precip_20210101_20251201.parquet")%>%
+if(file.exists(here("data/collated/external_datasets/larimer_county_station_flow_precip_20210101_20260601.parquet"))){
+  larimer_flow_precip <- read_parquet("data/collated/external_datasets/larimer_county_station_flow_precip_20210101_20260601.parquet")%>%
     filter(station_id != "11525" & watershed != "out")#this site appears to be an outlier with very high precip values, and is located outside of the watershed boundary, so removing from analysis.
 }else{
   meta <- read_csv("data/raw/external_datasets/larimer_co_precip/larimer_county_station_data.csv", show_col_types = F) %>%
     mutate(site = as.character(numId))%>%
     select(site,name, lat, long, agency, watershed)
   
-  all_data <- map(meta$site, ~pull_larimer_precip_q(station_id = .x, start_dt = "2021-01-01", end_dt = "2025-12-01"))
+  all_data <- map(meta$site, ~pull_larimer_precip_q(station_id = .x, start_dt = "2021-01-01", end_dt = "2026-06-01"))
   
   larimer_flow_precip  <- all_data%>%
     bind_rows()%>%
@@ -538,13 +538,14 @@ create_precip_map <- function(precip_flow_df, date_sel){
   
 }
 #Creating a single map
-create_precip_map(larimer_flow_precip,date_sel =  "2025-08-02")
+create_precip_map(larimer_flow_precip,date_sel =  "2026-06-26")
 #creating a sequence of maps over time
 # dates <- seq(as.Date("2025-08-21"), as.Date("2025-09-01"), by = "day")
 # list_of_maps <- map(dates, ~create_precip_map(precip_flow_df = larimer_flow_precip, date_sel = .x))%>%
 #   #name list   elements by date
 #   setNames(dates)
 
+unique(larimer_flow_precip$parameter)
 ```
 
 ## Load in Flow data from the CLP 
@@ -1088,11 +1089,12 @@ final_plot
 
 ```
 
-```{r}
 #WQ Event - Storm Event
+
+```{r}
 date_range = as.Date(c("2026-06-20", "2026-06-30"))
 
-make_plot <- function(param){
+storm_plot <- function(param){
   plot_data <- sensor_data_clean%>% 
     filter(parameter == param)%>%
     filter(site %in% c("udall", "riverbend", "cottonwood",
@@ -1122,7 +1124,7 @@ make_plot <- function(param){
     theme(legend.position = "right")
 }
 
-plots <- map(unique(sensor_data_clean$parameter), make_plot)%>%
+plots <- map(unique(sensor_data_clean$parameter), storm_plot)%>%
   setNames(unique(sensor_data_clean$parameter))
 plots$`Specific Conductivity`
 plots$DO
@@ -1139,7 +1141,7 @@ params_to_plot <- c("Specific Conductivity", "DO", "Turbidity")
 
 combined_data <- sensor_data_clean %>%
   filter(parameter %in% params_to_plot) %>%
-  filter(site %in% c("udall", "riverbend", "cottonwood", "elc", "archery")) %>%
+  filter(site %in% c("salyer", "riverbend", "elc", "archery")) %>%
   filter(between(as.Date(DT_round), date_range[1], date_range[2])) %>%
   mutate(DT_hourly = floor_date(DT_round, "hour")) %>%
   summarise(mean = mean(mean, na.rm = TRUE), 
@@ -1169,7 +1171,6 @@ combined_plot <- ggplot(combined_data, aes(x = DT_hourly, y = mean, color = natu
         strip.placement = "outside",
         strip.background.y = element_blank(),
         axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
-        axis.text.x = element_text(size = 10),
         axis.title.x = element_text(face = "bold"),
         axis.title.y = element_text(face = "bold"))
 
@@ -1575,16 +1576,17 @@ ggsave(here(fig_dir, "temp_do_vs_air_temp.png"),plot = final_plot, width = 18, h
 # Current WY flow analysis vs historic min/max
 
 ```{r}
+library(cdssr)
 library(jsonlite)
 
 #using CDWR lincoln, boxelder, and fossil creek gauges
 
-gauges <- c("CLARIVCO", "CLAFORCO", "CLABOXCO")
+gauges <- c("CLAFORCO", "CLABOXCO", "CLARIVCO")
 
 gauge_labels <- c(
   CLAFORCO = "Lincoln",
   CLABOXCO = "Boxelder",
-  CLARIVCO = "Fossil Creek")
+  CLARIVCO = "Poudre River Below Fossil Creek")
 
 wy_start   <- as.Date("2025-10-01")
 today_date <- Sys.Date()
@@ -1612,12 +1614,17 @@ get_dwr_daily <- function(abbrev, start_date, end_date){
 }
 
 #historic data
-hist_raw <- map_df(gauges, ~get_dwr_daily(.x, as.Date("2000-01-01"), today_date))
+hist_raw <- map_df(gauges, ~get_telemetry_ts(abbrev = .x, 
+                                             parameter = "DISCHRG", 
+                                             start_date = ("2000-01-01"), 
+                                             end_date = format(today_date, "%Y-%m-%d"),
+                                             timescale = "day"))
 hist_raw <- hist_raw %>%
   mutate(
-    water_year = if_else(month(measDate) >= 10, year(measDate) + 1, year(measDate)),
-    plot_year  = if_else(month(measDate) >= 10, 2025, 2026),
-    plot_date  = as.Date(paste0(plot_year, "-", month(measDate), "-", day(measDate)),
+    abbrev = factor(abbrev, levels = gauges),
+    water_year = if_else(month(meas_date) >= 10, year(meas_date) + 1, year(meas_date)),
+    plot_year  = if_else(month(meas_date) >= 10, 2025, 2026),
+    plot_date  = as.Date(paste0(plot_year, "-", month(meas_date), "-", day(meas_date)),
                           format = "%Y-%m-%d")
   ) %>%
   filter(!is.na(plot_date))
@@ -1625,25 +1632,26 @@ hist_raw <- hist_raw %>%
 hist_stats <- hist_raw %>%
   filter(water_year != 2026) %>%
   summarise(
-    median = median(.data$measValue, na.rm = TRUE),
-    min    = min(.data$measValue, na.rm = TRUE),
-    max    = max(.data$measValue, na.rm = TRUE),
+    median = median(.data$meas_value, na.rm = TRUE),
+    min    = min(.data$meas_value, na.rm = TRUE),
+    max    = max(.data$meas_value, na.rm = TRUE),
     .by = c("abbrev", "plot_date")
   )
 
 #current wy data
 current_wy <- hist_raw %>%
   filter(water_year == 2026) %>%
-  select(abbrev, measDate, plot_date, measValue)
+  select(abbrev, meas_date, plot_date, meas_value)
 
 today_plot_date <- current_wy %>% pull(plot_date) %>% max(na.rm = TRUE)
 
 WY_flow_plot <- ggplot(hist_stats, aes(x = plot_date, y = median, color = abbrev)) +
   geom_line(alpha = 0.7, linetype = "dashed") +
   geom_ribbon(aes(ymin = min, ymax = max), color = "grey", alpha = 0.2) +
-  geom_line(data = current_wy, aes(x = plot_date, y = measValue, color = abbrev),
+  geom_line(data = current_wy, aes(x = plot_date, y = meas_value, color = abbrev),
             linewidth = 1.5, alpha = 1) +
   scale_x_date(limits = c(wy_start, today_plot_date), date_labels = "%b") +
+  scale_y_log10()+
   facet_wrap(~abbrev, scales = "free_y", ncol = 1,
              labeller = labeller(abbrev = gauge_labels)) +
   labs(
