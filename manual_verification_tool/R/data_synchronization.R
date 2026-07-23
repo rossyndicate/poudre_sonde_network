@@ -1,4 +1,5 @@
-sync_file_system <- function() {
+sync_file_system <- function(){
+
 
   pre_dir_path <- here("manual_verification_tool",  "data", "pre_verification_directory")# pre_verification_path
   int_dir_path <- here("manual_verification_tool",  "data", "intermediary_directory")# intermediary_path
@@ -98,6 +99,17 @@ check_int_ver_dir <- function(int_file_name) {
   ver_dir_names <- list.files(ver_dir_path)
 
   tryCatch({
+    #first check if the file is in the verified directory, if it is, remove it from the intermediary directory
+    file_info <- split_filename(int_file_name)
+    # Check for existing files with same site/parameter in verified dir
+    ver_files <- list.files(ver_dir_path)
+    existing_files <- ver_files[grepl(paste0("^", file_info$site, "-", file_info$parameter), ver_files)]
+
+    if (length(existing_files) > 0){
+      file.remove(here(int_dir_path, int_file_name))
+      cat("Removed ", int_file_name, " from ", int_dir_path, " because it already exists in verified directory")
+    }
+
     # Only read in the verification columns
     df <- read_parquet(here(int_dir_path, int_file_name)) %>%
       select(verification_status, is_verified, is_finalized)
@@ -106,10 +118,10 @@ check_int_ver_dir <- function(int_file_name) {
     if (!any(df$verification_status == 'SKIP') & all(df$is_verified) & all(df$is_finalized)) {
       # Parse filename to get site and parameter
       file_info <- split_filename(int_file_name)
-
       # Check for existing files with same site/parameter in verified dir
       ver_files <- list.files(ver_dir_path)
       existing_files <- ver_files[grepl(paste0("^", file_info$site, "-", file_info$parameter), ver_files)]
+
 
       # If existing files found, compare timestamps
       if (length(existing_files) > 0) {
@@ -238,8 +250,8 @@ fix_duplicate_files <- function(dataframe_with_duplicate_info, directory){
 
            # and rename the file ...
            dt_string <- format(file$datetime, "%Y%m%d_%H%M%S")
-           new_file_name <- paste(file$site, file$parameter,
-                                  dt_string, file$hash, sep="_")
+           new_file_name <- paste0(file$site, "-", file$parameter,
+                                  "_", dt_string, "_", file$hash, ".parquet")
 
            file.rename(here(file$full_file_path), here(dirname(file$full_file_path), new_file_name))
 
@@ -408,9 +420,10 @@ move_file_to_verified_directory <- function(int_to_fin_filename, int_to_fin_df) 
       # Use sync conflict resolution
       duplicate_info <- split_filename(ver_files) %>%
         bind_rows() %>%
-        mutate(full_file_path = file.path(ver_dir_path, filename))
+        mutate(full_file_path = file.path(ver_dir_path, filename))%>%
+        mutate(duplicate_alert = TRUE)
 
-      fix_duplicate_files(duplicate_info, "ver")
+      fix_duplicate_files(dataframe_with_duplicate_info = duplicate_info, directory = "ver")
     }
 
     # Move and validate

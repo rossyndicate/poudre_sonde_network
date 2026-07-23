@@ -37,7 +37,7 @@ invisible(
 
 # Load data once when app starts
 #### ---- UPDATE YEAR WHEN NEW DATA IS ADDED ---- ####
-year = "2022"
+year = "2023"
 cycle = paste0(year, "_cycle")
 #### -------------------------------------------- ####
 
@@ -51,7 +51,7 @@ original_file <- here::here(data_dir,paste0("calibrated_sensor_data_", year, ".r
 if (file.exists(tracking_file)) {
   calibrated_data_tracking <- readr::read_rds(tracking_file)
   #If this year's data is empty, stop the app and display a message
-  if(length(calibrated_data_tracking$year) == 0){
+  if(length(calibrated_data_tracking[[year]]) == 0){
     stop("Tracking data is empty. Either there is an error with the file or corrections are completed")
   }
 } else {
@@ -81,6 +81,7 @@ ross.wq.tools::load_calibration_data(
 )
 
 # Read in field notes
+
 field_notes_data <- ross.wq.tools::load_mWater()%>%
   mutate(DT_round = floor_date(start_dt, unit = "15 minutes"))%>%
   filter(str_detect(visit_type, "Sensor Calibration, Cleaning or Check"))%>%
@@ -99,8 +100,50 @@ field_notes_data <- ross.wq.tools::load_mWater()%>%
            parameter == "ph" ~ "pH",
            TRUE ~ parameter
          ),
-         type = str_split(col, paste0(parameter, "_"), simplify = T)[,2])
+         type = str_split(col, paste0(parameter, "_"), simplify = T)[,2])%>%
+  ross.wq.tools::fix_site_names()
+#add old field notes if year is 2023 or earlier
+if(year <= 2023){
+  old_field_notes <- readxl::read_excel(here("data","raw","field_notes","sensor_field_notes.xlsx")) %>%
+    mutate(DT = (paste0(date, " ", start_time_mst))) %>%
+    mutate(DT = ymd_hm(DT) + hours(7)) %>%
+    arrange(DT) %>%
+    mutate(DT_round = round_date(DT, "15 minutes")) %>%
+    mutate(DT_round = with_tz(DT_round, tzone = "UTC"),
+           last_site_visit = with_tz(DT_round, tzone = "UTC"),
+           DT_join = as.character(DT_round),
+           sonde_moved = NA,
+           sonde_employed = case_when(is.na(sensor_deployed) & is.na(sensor_pulled) ~ NA,
+                                      sensor_deployed == "x" ~ 0,
+                                      sensor_pulled == "x" ~ 1),
+           site = ifelse(site == "rist", "bellvue", site)) %>%
+    ross.wq.tools::fix_site_names()%>%
+    #add extra cols
+    mutate(rdo_pre_clean = NA,
+           rdo_post_clean = NA,
+           rdo_post_cal = NA,
+           cond_pre_clean = NA,
+           cond_post_clean = NA,
+           cond_post_cal = NA,
+           ph_pre_clean = NA,
+           ph_post_clean = NA,
+           ph_post_cal = NA,
+           orp_pre_clean = NA,
+           orp_post_clean = NA,
+           orp_post_cal = NA,
+           turb_pre_clean = NA,
+           turb_post_clean = NA,
+           turb_post_cal = NA,
+           fdom_pre_clean = NA,
+           fdom_post_clean = NA,
+           fdom_post_cal = NA,
+           chla_pre_clean = NA,
+           chla_post_clean = NA,
+           chla_post_cal = NA)%>%
+    select(-sensors_cleaned, -wiper_working, -cal_report_collected)
 
+  all_field_notes <- bind_rows(field_notes_data, old_field_notes)
+}
 # Source helper functions
 # source(here::here("R", "generate_final_df.R"))
 # source(here::here("R", "cal_plot.R"))
