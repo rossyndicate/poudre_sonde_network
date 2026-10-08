@@ -75,11 +75,13 @@ Double check the parameters of interest for spelling and inclusion of all needed
 #Adjust dates for specific pull
 mst_start <- ymd_hms("2026-03-01 00:00:00", tz = "America/Denver")
 mst_end <- ymd_hms("2026-11-30 23:59:59", tz = "America/Denver")
+# Compute UTC time once
+mst_start_utc <- with_tz(mst_start, tzone = "UTC")
+pull_end      <- with_tz(mst_end,   tzone = "UTC")
 
 sites <- c(
   #Upper sites
-  #"chd","pfal", "pbr", "sfm",  "pman", 
-  "pbd",
+  "chd","pfal", "pbr", "sfm",  "pman", "pbd",
   #Lower sites
   "bellvue","salyer", "udall", "riverbend","cottonwood", "elc","archery","riverbluffs")
 
@@ -120,9 +122,21 @@ if (!dir.exists(flagged_directory)) {
 
 ```
 
+### Clear folders
+If you are re-running this script, you may want to clear out the flagged and flagged_temp folders to avoid duplicate data.
+This is useful as we re-run the workflow throughout the field season for reporting and QA/QC purposes. When working on final verification, comment out these lines. 
+
+```{r}
+list.files(flagged_temp_dir, full.names = TRUE) %>%
+  walk(file.remove)
+list.files(flagged_directory, full.names = TRUE) %>%
+  walk(file.remove)
+```
+
+
 ## Read in thresholds and credentials
 
-Sensor thresholds are from In-SitU Inc spec sheets and seasonal_thresholds are created using `ross.wq.tools::make_threshold_table()` using cleaned data from previous years. 
+Sensor thresholds are from In-Situ Inc spec sheets and seasonal_thresholds are created using `ross.wq.tools::make_threshold_table()` using cleaned data from previous years. 
 mWater and HydroVu creds are created from their respective websites, contact Sam Struthers, Juan De La Torre or Katie Willi for help obtaining these.
 
 ```{r}
@@ -171,27 +185,84 @@ hv_sites <- hv_locations_all(hv_token)
 #trim down to just the sites/types of devices we want
 hv_sites <- hv_sites %>%
   #Remove Vulinks
-  filter(!grepl("vulink", name, ignore.case = TRUE))%>%
+  filter(!grepl("vulink", name, ignore.case = TRUE)) %>%
   #Remove Virridy sites/sondes
-  filter(!grepl("virridy", name, ignore.case = TRUE))%>%
-   #remove any older sites (containing 2023 or 2024 in the name)
+  filter(!grepl("virridy", name, ignore.case = TRUE)) %>%
+  #remove any older sites (containing 2023 or 2024 in the name)
   filter(!grepl("2023|2024", name, ignore.case = TRUE))
 
+# Helper: non-log staged files for one site
+list_site_files <- function(site) {
+  list.files(staging_directory, full.names = TRUE) %>%
+    keep(~ startsWith(basename(.x), site) & !grepl("log", basename(.x)))
+}
 
-walk(sites,
-     function(site) {
-       message("Requesting HV data for: ", site)
-       api_puller(
-         site = site,
-         start_dt = with_tz(mst_start, tzone = "UTC"),
-         end_dt = with_tz(mst_end, tzone = "UTC"),
-         api_token = hv_token,
-         hv_sites_arg = hv_sites,
-         dump_dir = staging_directory
-       )
-     }
-)
-# 
+# Latest timestamp already staged, per site (UTC)
+staged_files <- list.files(staging_directory, full.names = TRUE) %>%
+  keep(~ !grepl("log", basename(.x)))
+
+if (length(staged_files) > 0) {
+  message("Staging directory is not empty. Only new data will be pulled.")
+  max_dts <- staged_files %>%
+    map_dfr(read_parquet, col_select = c(site, timestamp)) %>%
+    group_by(site) %>%
+    summarise(max_dt = max(timestamp, na.rm = TRUE), .groups = "drop") %>%
+    mutate(max_dt = with_tz(max_dt, tzone = "UTC"))
+  #check that all the sites are in max_dts and if not, add them with NA for max_dt
+  missing_sites <- setdiff(sites, max_dts$site)
+  if (length(missing_sites) > 0) {
+    message("The following sites are missing from the staging directory and will pulled from the start DT: ", paste(missing_sites, collapse = ", "))
+    max_dts <- bind_rows(max_dts, tibble(site = missing_sites, max_dt = as.POSIXct(NA, tz = "UTC")))
+  }
+  
+} else {
+  message("Staging directory is empty. All data will be pulled from HydroVu.")
+  max_dts <- tibble(site = character(), max_dt = as.POSIXct(character(), tz = "UTC"))
+}
+
+walk(sites, function(site) {
+
+  # Zero-length if the site has nothing staged; max() then falls back to mst_start
+  last_staged_dt <- max_dts %>% filter(site == !!site) %>% pull(max_dt)
+  pull_start <- max(c(last_staged_dt, mst_start_utc), na.rm = TRUE)
+
+  if (pull_start >= pull_end) {
+    message("Skipping ", site, ": staged data already runs through ", pull_start)
+    return(invisible(NULL))
+  }
+
+  message("Requesting HV data for: ", site,
+          " (", pull_start, " to ", pull_end, " UTC)")
+
+  api_puller(
+    site = site,
+    start_dt = pull_start,
+    end_dt = pull_end,
+    api_token = hv_token,
+    hv_sites_arg = hv_sites,
+    dump_dir = staging_directory
+  )
+
+  # Merge this site's files into one (api_puller's new file + any existing ones)
+  site_files <- list_site_files(site)
+  if (length(site_files) == 0) {
+    message("No staged data found for ", site, " after pull.")
+    return(invisible(NULL))
+  }
+
+  all_site_data <- site_files %>%
+    map_dfr(read_parquet) %>%
+    distinct()   # also removes the overlapping row at pull_start
+
+  max_dt_format <- format(max(all_site_data$timestamp, na.rm = TRUE),
+                          "%Y%m%d-T%H%M%SZ", tz = "UTC")
+  new_file <- file.path(staging_directory, paste0(site, max_dt_format, ".parquet"))
+
+  # Write first, then remove only the old files (never the one just written)
+  write_parquet(all_site_data, new_file)
+  file.remove(site_files[basename(site_files) != basename(new_file)])
+})
+
 # beep to let you know when it's done
 beepr::beep(1)
 ```
@@ -269,17 +340,40 @@ tidy_data <- hv_data %>%
 ```
 ## Double check that pulls were successful
 
+Check that we have all the sites/parameters and date ranges we expect
+
+```{r}
+tidy_data%>%
+  bind_rows()%>%
+  mutate(parameter = case_when(
+    parameter == "FDOM Fluorescence" ~ "FDOM",
+    parameter == "Chl-a Fluorescence" ~ "Chl-a",
+    parameter == "Specific Conductivity" ~ "SpCond",
+    parameter == "Turbidity" ~ "Turb",
+    parameter == "Temperature" ~ "Temp",
+    TRUE ~ parameter
+  ), 
+  date = as.Date(DT_round))%>%
+  summarise(date_range = paste(range(date, na.rm = T), collapse = " -- "),
+            n_obs = n(),
+            #get me a list of all the parameters in the data
+            parameters = paste(unique(parameter), collapse = ", "), .by = "site")
+```
+
+
 We are giving it a quick look over to make sure there aren't any large data gaps (>1 day) in the data pulled, that all site names are being applied correctly and that we don't have duplicate data. We are also adding in our field notes to the plots to make sure the data we have lines up with the periods we expect the sondes to be deployed and recording data. 
 
 ```{r}
 
-data_check_plots <- tidy_data%>%
+data_check <- tidy_data%>%
   bind_rows()%>%
   #Summarizing to an hour to speed up plotting
   mutate(DT_hourly = floor_date(DT_round, unit = "1 hour"))%>%
   group_by(site, parameter, DT_hourly)%>%
   summarize(hourly_med = median(mean,na.rm = T ))%>%
-  split(f = list(.$site))%>%
+  split(f = list(.$site))
+
+data_check_plots <- data_check%>%
   map(., function(df) {
     
     field_notes <- all_field_notes %>%filter(site == unique(df$site) & year(DT_round) == "2026")%>%
@@ -287,10 +381,14 @@ data_check_plots <- tidy_data%>%
       mutate(sonde_changed = case_when(sonde_employed == 0 ~ "Deployed",
                                        sonde_employed == 1 ~ "Pulled",
                                        TRUE ~ "Active"))
+    malfunction_notes <- sensor_malfunction_notes %>%filter(site == unique(df$site) & year(start_DT) == "2026")%>%
+      select(start_DT, end_DT, parameter)%>%
+      mutate(parameter = ifelse(parameter == "FDOM",  "FDOM Fluorescence", parameter))
     
-    ggplot(df, aes(x = DT_hourly, y = hourly_med)) +
-      geom_point() +
+    ggplot(df) +
+      geom_point(aes(x = DT_hourly, y = hourly_med)) +
       geom_vline(data = field_notes, aes(xintercept = DT_round, color = sonde_changed))+
+      geom_rect(data = malfunction_notes, aes(xmin = start_DT, xmax = end_DT, ymin = -Inf, ymax = Inf), fill = "gray", alpha = 0.8)+
       facet_wrap(~parameter, scales = "free_y")+
       labs(title = unique(df$site),
            x = "Date",
@@ -429,6 +527,7 @@ All of this should already have been double checked by the user but we just want
 Here we are removing columns that are not needed downstream to reduce memory usage. We are also merging back in the units, n_obs, spread and flag columns from the original tidy data. Temperature and Depth are not passed into the back-calibration process so we will grab those from the original tidy data as well. We will also add the column "back_cal_performed" to indicate whether a back-calibration was actually applied to the data or not.
 
 ```{r}
+#TODO: COPY OVER FROM 2023 SCRIPT
 # 
 # cal_corrected_data <- calibrated_data_final%>%
 #   map(., function(df){
