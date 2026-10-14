@@ -54,6 +54,22 @@ invisible(
 )
 
 `%nin%` = Negate(`%in%`)
+
+if ({
+  require(systemfonts)
+  ("Roboto" %in% system_fonts()$family)
+}) {
+  ROSS_theme <- theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, face = 'bold', family = "Roboto"),
+          plot.subtitle = element_text(hjust = 0.5, family = "Roboto"))
+} else {
+  message("You do not have the Roboto font family installed on your computer, currenly using ggplot default text family.
+          See ROSS_themes.R for directions to install the font family on your computer.")
+  ROSS_theme <- theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, face = 'bold'),
+          plot.subtitle = element_text(hjust = 0.5))
+}
+
 ```
 
 ## Year
@@ -193,8 +209,8 @@ if(verified){
       !(parameter == "pH" & mean > 11), # remove pH > 10 (sensor malfunction)
       !(parameter == "Temperature" & mean < 0), # remove frozen instances
       !(parameter == "Depth" & mean < 0), # remove negative depth values
-      !(parameter == "Temperature" & mean > 30), # remove instances of temperature > 30 C (sensor error)
-      !(parameter == "DO" & mean < 2), # remove DO < 2 mg/L (sensor error)
+      !(parameter == "Temperature" & mean > 40), # remove instances of temperature > 30 C (sensor error)
+      !(parameter == "DO" & mean < 1), # remove DO < 1 mg/L (sensor error)
       !(mean == 0) # remove instances of 0 values
     ) %>%
     mutate(mean = case_when(
@@ -214,19 +230,33 @@ if(verified){
 
 ```{r}
 # Read in Historical Data
-hist_data_clean <- read_parquet(file = "data/collated/sensor/compiled_ross_sensor_data_2026-05-18.parquet")%>%
-  filter(site %in% unique(sensor_data_clean$site))%>%
-  distinct(site, parameter, DT_round, hourly_median)%>%
-  select(site, parameter, DT_round, mean = hourly_median)%>%
-  mutate(date = as.Date(DT_round))%>%
+cleaned_files <- list.files(path = "data/collated/sensor/hydroshare_pub", pattern = "\\.parquet$", full.names = TRUE, recursive = T)%>%
+  grep(pattern = "clean", ., value = T)
+
+
+hist_data <- map(cleaned_files, ~ read_parquet(file = .x))%>%
+  bind_rows()%>%
+  filter(site %in% unique(sensor_data_clean$site))
+
+hist_data_clean <- hist_data%>%
+  distinct(site, parameter, DateTime_UTC, value_final)%>%
+  select(site, parameter, DateTime_UTC, mean = value_final)%>%
+  mutate(DateTime_MT = with_tz(DateTime_UTC, tz = "MST"))%>%
+  mutate(date = as.Date(DateTime_MT))%>% 
   mutate(doy = yday(date))%>%
   summarise(median = median(mean, na.rm = TRUE),
+            q5 = quantile(mean, 0.05, na.rm = TRUE),
+            q10 = quantile(mean, 0.10, na.rm = TRUE),
+            q25 = quantile(mean, 0.25, na.rm = TRUE),
+            q75 = quantile(mean, 0.75, na.rm = TRUE),
+            q90 = quantile(mean, 0.90, na.rm = TRUE),
+            q95 = quantile(mean, 0.95, na.rm = TRUE),
             max = max(mean, na.rm = T),
             min = min(mean, na.rm = T),
             .by = c("doy", "site", "parameter"))%>%
   mutate(    plot_date = as.POSIXct(paste("2026", doy), format = "%Y %j"),
-             max = ifelse(max == -Inf | max == Inf , NA, max), 
-             min = ifelse(min == -Inf | min == Inf, NA, min))
+             q100 = ifelse(max == -Inf | max == Inf , NA, max), 
+             q0 = ifelse(min == -Inf | min == Inf, NA, min))
 ```
 
 
@@ -359,14 +389,17 @@ if(file.exists(here("data/collated/external_datasets/larimer_county_station_flow
     mutate(site = as.character(numId))%>%
     select(site,name, lat, long, agency, watershed)
   
-  all_data <- map(meta$site, ~pull_larimer_precip_q(station_id = .x, start_dt = "2021-01-01", end_dt = "2026-06-01"))
+  all_data <- map(meta$site, ~pull_larimer_precip_q(station_id = .x,
+                                                    start_dt = "2026-07-01", 
+                                                    end_dt = "2026-09-21"))
   
   larimer_flow_precip  <- all_data%>%
     bind_rows()%>%
     left_join( meta%>%select(agency, watershed, site), by = c('station_id' = "site"))
   
   #Save data
-  write_parquet(larimer_flow_precip,'data/collated/external_datasets/larimer_county_station_flow_precip_20210101_20251201.parquet')
+  write_parquet(larimer_flow_precip,
+                'data/collated/external_datasets/larimer_county_station_flow_precip_20260701_20260921.parquet')
   
 }
 ```
@@ -538,7 +571,7 @@ create_precip_map <- function(precip_flow_df, date_sel){
   
 }
 #Creating a single map
-create_precip_map(larimer_flow_precip,date_sel =  "2026-06-26")
+create_precip_map(larimer_flow_precip,date_sel =  "2026-09-16")
 #creating a sequence of maps over time
 # dates <- seq(as.Date("2025-08-21"), as.Date("2025-09-01"), by = "day")
 # list_of_maps <- map(dates, ~create_precip_map(precip_flow_df = larimer_flow_precip, date_sel = .x))%>%
@@ -632,11 +665,11 @@ plot_down_days <- function(sensor_df, year_oi){
     mutate(date = as_date(DT_join))
   
   flag_sym <- sym(flag_col)
-  
+
   counts <- down_days_all_data %>%
     # Use !!flag_sym to evaluate the variable holding the column name
     filter(!is.na(!!flag_sym)) %>%                
-    filter(grepl("sonde unsubmerged|outside of sensor specification range|sensor malfunction|sonde burial", !!flag_sym) | 
+    filter(grepl("sonde unsubmerged|outside of sensor specification range|sensor malfunction", !!flag_sym) | #usually |sonde burial is included but due to over flagging, we are removing for now
              #Look for excessive drift flags with high turbidity values as a proxy for biofouling
              (parameter == "Turbidity" & grepl("drift", !!flag_sym) & mean >= 40)|
              #Calibration Errors where the data had to be removed
@@ -651,6 +684,8 @@ plot_down_days <- function(sensor_df, year_oi){
     ungroup() %>%
     distinct(site, site_id, date)
   
+    cat("Number of days with poor sensor data:", nrow(counts), "\n")
+
   counts_p2 <- down_days_all_data%>%
     filter(parameter == "Temperature") %>%
     filter(is.na(mean)) %>%
@@ -658,7 +693,11 @@ plot_down_days <- function(sensor_df, year_oi){
     summarize(total = n()) %>%
     filter(total >= 64) %>%
     ungroup() %>%
-    select(site, site_id, date) %>%
+    select(site, site_id, date)
+  
+  cat("Number of days with missing temperature data:", nrow(counts_p2), "\n")
+  
+  counts_p2 <- counts_p2 %>%
     bind_rows(counts) %>%
     distinct(site, site_id, date)
   
@@ -688,6 +727,8 @@ plot_down_days <- function(sensor_df, year_oi){
     # add factor levels for site ordering
     mutate(natural_name = factor(natural_name,
                                  levels = rev(site_order)))
+  
+  perc_down_days <- round((nrow(counts)/nrow(complete))*100, 1)
   #plot theme
   plot_theme <- theme_bw(base_size = 24) +
     theme(text = element_text(size = 20),
@@ -699,7 +740,7 @@ plot_down_days <- function(sensor_df, year_oi){
                      "#00D684", "#00BD48", "#00DB58", "#0FFF6B")
   message(paste0("The PWQN was down for ", nrow(counts), " site days across the ", length(site_order), " sites."))
   
-  message(paste0("The percentage of down days across the network was ", round((nrow(counts)/nrow(complete))*100, 1), "% (of ", nrow(complete), " total site days)."))
+  message(paste0("The percentage of down days across the network was ", perc_down_days, "% (of ", nrow(complete), " total site days)."))
   
   ggplot() +
     # add full dataset as invisible points to maintain data structure
@@ -716,7 +757,7 @@ plot_down_days <- function(sensor_df, year_oi){
     scale_color_manual(values = rev(color_palette)) +
     labs(x = "Date", y = NULL,
          title = paste0("PWQN Down Days for ", year_oi),
-         subtitle = paste0("Total site days: ", nrow(counts), " across the ", length(site_order), " sites.")
+         subtitle = paste0("Total site days: ", nrow(counts), " (", perc_down_days, "%) across the ", length(site_order), " sites.")
     ) +
     plot_theme
   
@@ -727,7 +768,10 @@ plot_down_days <- function(sensor_df, year_oi){
 Using sensor_data_clean we can make this plot easily
 
 ```{r}
-down_day_plot_2026 <- plot_down_days(sensor_data_clean, 2026)
+down_day_plot_2026 <- sensor_data_clean %>%
+  #there were a few days where Udall wasn't recording on the Vulink so I will manually exclude them here:
+  mutate(mean = ifelse(site == "udall" & DT_round >= as.POSIXct("2026-09-10 00:00:00", tz = "America/Denver") & DT_round <= as.POSIXct("2026-09-14 10:00:00", tz = "America/Denver"), NA, mean))%>%
+plot_down_days(., 2026)
 
 ggsave(here(fig_dir,"down_days_2026.png"), plot = down_day_plot_2026, width = 8, height = 12, units = "in", dpi = 300)
 ```
@@ -827,12 +871,20 @@ acc_plot
 ggsave(here(fig_dir,"qaqc_accuracy.png"), plot = acc_plot, width = 10, height = 8, units = "in", dpi = 300)
 ```
 
+## DO Burial Signal improvements
+
+This was done in Juan's notebook (scratch/misc).
+
+
+
 # WQ Event Time Series Plots
+
 
 ## Function to create timeseries plots
 
 This will take in sensor data, pick sites/parameter/date range, summarize data to a timestep median, and make a panel of plot based on the selections. If we want, we can apply a binominal smoothing function to the data if smooth is TRUE. This function assumes that erroneous data has already been removed and will plot the `mean` column. Flow data is pulled from CDWR if needed. 
 
+###   Plot Sensor Function
 ```{r}
 plot_sensor <- function(df, sites, parameters, start_dt, end_dt, timestep, b_size = 30, smooth = TRUE){
   
@@ -952,71 +1004,156 @@ plot_sensor <- function(df, sites, parameters, start_dt, end_dt, timestep, b_siz
   
 }
 ```
-# WQ Events
+
+###   Make Historical Plots
 
 ```{r}
 
-
-
 date_range = range(sensor_data_clean$DT_round)
 
+pct_bands <- tribble(
+  ~ymin,  ~ymax,   ~label,                                          ~color,
+  "q0",   "q5",    "Extreme (<5% / >95%)",                          "#8E857A",
+  "q5",   "q10",   "Much below/above (5-10% / 90-95%)",             "#E8DAB2",
+  "q10",  "q25",   "Below/above normal (10-25% / 75-90%)",          "#F0F7EB",
+  "q25",  "q75",   "Normal range (25-75%)",                         "#9CC4DE",
+  "q75",  "q90",   "Below/above normal (10-25% / 75-90%)",          "#F0F7EB",
+  "q90",  "q95",   "Much below/above (5-10% / 90-95%)",             "#E8DAB2",
+  "q95",  "q100",  "Extreme (<5% / >95%)",                          "#8E857A"
+)
 
-make_plot <- function(param){
-  plot_data <- sensor_data_clean%>% 
-    filter(parameter == param)%>%
-    filter(site %in% c("bellvue", "salyer", "udall", "riverbend", "cottonwood",
-                   "elc", "archery", "riverbluffs"))%>%
-    mutate(DT_hourly = floor_date(DT_round, "hour"))%>%
-    summarise(mean = mean(mean, na.rm = TRUE), .by = c("site", "DT_hourly", "parameter"))%>%
-    left_join(labels, by = c( "parameter" = "param"))%>%
+# One legend entry per unique label/color, in draw order
+band_lookup <- pct_bands %>%
+  distinct(label, color) %>%
+  mutate(label = factor(label, levels = label))
+# Turn pct_bands into one long lookup: label + color per band, in draw order
+# (draw widest/most extreme bands first so narrower ones layer on top)
+
+make_hist_plot <- function(param,
+                           sites = c("bellvue", "salyer", "udall", "riverbend", "cottonwood",
+                                     "elc", "archery", "riverbluffs"),
+                           start_date = date_range[1],
+                           end_date = date_range[2],
+                           summary_level = c("hourly", "daily"),
+                           summary_fun = c("percentiles_10_90", "mean", "median")) {
+  
+  summary_level <- match.arg(summary_level)
+  summary_fun <- match.arg(summary_fun)
+  
+  date_floor_unit <- if (summary_level == "hourly") "hour" else "day"
+  
+  # Calculate summary stats based on chosen option
+  plot_data <- sensor_data_clean %>% 
+    filter(parameter == param) %>%
+    filter(site %in% sites) %>%
+    filter(between(DT_round, start_date, end_date)) %>%
+    mutate(DT_summary = floor_date(DT_round, date_floor_unit))
+  
+  if (summary_fun == "percentiles_10_90") {
+    plot_data <- plot_data %>%
+      summarise(
+        p10 = quantile(mean, probs = 0.10, na.rm = TRUE),
+        p90 = quantile(mean, probs = 0.90, na.rm = TRUE),
+        .by = c("site", "DT_summary", "parameter")
+      )
+  } else {
+    summary_fn <- if (summary_fun == "mean") function(x) mean(x, na.rm = TRUE) else function(x) median(x, na.rm = TRUE)
+    plot_data <- plot_data %>%
+      summarise(
+        value = summary_fn(mean),
+        .by = c("site", "DT_summary", "parameter")
+      )
+  }
+  
+  plot_data <- plot_data %>%
+    left_join(labels, by = c("parameter" = "param")) %>%
     left_join(site_names, by = "site")
   
-  hist_data_plot <- hist_data_clean%>%
-    filter(site %in% c("bellvue", "salyer", "udall", "riverbend", "cottonwood",
-                   "elc", "archery", "riverbluffs"))%>%
-    filter(parameter == param & between(plot_date, date_range[1] - days(2), date_range[2] + days(2)))%>%
-    left_join(labels, by = c( "parameter" = "param"))%>%
-    left_join(site_names, by = "site")%>%
+  hist_data_plot <- hist_data_clean %>%
+    filter(site %in% sites) %>%
+    filter(parameter == param & between(plot_date, start_date - days(2), end_date + days(2))) %>%
+    left_join(labels, by = c("parameter" = "param")) %>%
+    left_join(site_names, by = "site") %>%
     na.omit()
-  
+
   plot_data$natural_name <- factor(plot_data$natural_name, levels = site_order)
   hist_data_plot$natural_name <- factor(hist_data_plot$natural_name, levels = site_order)
   
-  param_label <-chem_expressions[[param]]
+  param_label <- chem_expressions[[param]]
+  scales_param <- if (param == "Specific Conductivity") "free_y" else "free_x"
   
-  if(param == "Specific Conductivity"){
-    scales_param = "free_y"
-  }else{
-    scales_param = "free_x"
+  p <- ggplot(hist_data_plot, aes(x = plot_date, y = median))
+  
+  # Historical percentile ribbons
+  ribbon_layers <- pmap(pct_bands, function(ymin, ymax, label, color) {
+    geom_ribbon(aes(ymin = .data[[ymin]], ymax = .data[[ymax]], fill = !!label),
+                alpha = 0.6, color = NA)
+  })
+  p <- reduce(ribbon_layers, `+`, .init = p)
+  
+  # Base historical median line
+  p <- p + geom_line(alpha = 0.7, linetype = "dashed", color = "black")
+  
+  # Add current sensor data layers according to summary_fun
+  if (summary_fun == "percentiles_10_90") {
+    p <- p +
+      # p10 boundary line
+      geom_line(data = plot_data, aes(x = DT_summary, y = p10, color = natural_name),
+                linewidth = 1, linetype = "solid", alpha = 1) +
+      # p90 boundary line
+      geom_line(data = plot_data, aes(x = DT_summary, y = p90, color = natural_name),
+                linewidth = 1, linetype = "solid", alpha = 1)
+    
+    title_summary <- "10th & 90th Percentiles"
+  } else {
+    p <- p +
+      geom_line(data = plot_data, aes(x = DT_summary, y = value, color = natural_name),
+                linewidth = 1.5, alpha = 1)
+    
+    title_summary <- str_to_title(summary_fun)
   }
   
-  ggplot(hist_data_plot, aes(x = plot_date, y = median, color = natural_name))+
-    geom_line(alpha = 0.7, linetype = "dashed")+
-    geom_ribbon(aes(ymin = min, ymax = max), color = "grey", alpha = 0.2)+
-    geom_line(data = plot_data, aes(x = DT_hourly, y = mean, color = natural_name), linewidth = 1.5, alpha = 1)+
+  p +
     scale_color_manual(name = "Site", values = setNames(plot_data$site_color, plot_data$natural_name)) +
-    facet_wrap(~natural_name, scales = scales_param, ncol = 2)+
+    scale_fill_manual(name = "Historical Range", 
+                      values = setNames(band_lookup$color, band_lookup$label),
+                      breaks = levels(band_lookup$label)) +
+    facet_wrap(~natural_name, scales = scales_param, ncol = 2) +
     labs(x = "Date", y = param_label, color = "Site", 
-         title = paste0(param, " Trends in 2026 (solid) vs Historical (2023-2025) Data"), 
-         subtitle = "Dashed lines show historical daily median values, with grey ribbon showing historical daily range (max/min)")+
-    theme_clean(base_size = 16)+
+         title = paste0(param, " Trends (", str_to_title(summary_level), " ", title_summary,
+                        ") vs Historical (2019-2025) Data"), 
+         subtitle = "Dashed lines show historical daily median values, with shaded bands showing historical percentile ranges") +
+    ROSS_theme +
     theme(legend.position = "right")
 }
 
+```
+# WQ Events
 
-plots <- map(unique(sensor_data_clean$parameter), make_plot)%>%
+## WQ Event: Historical Data
+
+```{r}
+plots <- map(unique(sensor_data_clean$parameter), make_hist_plot)%>%
   setNames(unique(sensor_data_clean$parameter))
 
 
-plots$`Specific Conductivity`
-plots$DO
-plots$Temperature
+ DO <- make_hist_plot(param = "DO",summary_level = "daily", summary_fun = "percentiles_10_90", 
+              sites = c( "salyer", "udall", "riverbend",
+                        "elc", "archery", "riverbluffs"))
 
-ggsave(plot = plots$DO, filename = here(fig_dir, "DO_Q1_hist_trends.png"), width = 16, height = 10)
+Temperature <- make_hist_plot(param = "Temperature",summary_level = "daily", summary_fun = "percentiles_10_90", 
+              sites = c( "salyer", "udall", "riverbend",
+                        "cottonwood", "archery", "riverbluffs"))
 
-ggsave(plot = plots$Temperature, filename = here(fig_dir, "Temp_Q1_hist_trends.png"), width = 16, height = 10)
+SpC <- make_hist_plot(param = "Specific Conductivity",summary_level = "daily", summary_fun = "median", 
+              sites = c( "salyer", "udall", "riverbend",
+                        "elc", "archery", "riverbluffs"))
 
-ggsave(plot = plots$`Specific Conductivity`, filename = here(fig_dir, "SC_Q1_hist_trends.png"), width = 16, height = 10)
+ggsave(plot = DO, filename = here(fig_dir, "DO_hist_trends.png"), width = 16, height = 10)
+
+ggsave(plot = Temperature, filename = here(fig_dir, "Temp_hist_trends.png"), width = 16, height = 10)
+
+ggsave(plot = SpC, filename = here(fig_dir, "SC_hist_trends.png"), width = 16, height = 10)
 ```
 
 ### WQ Event: River Bluffs Beaver Dam Failure
@@ -1060,17 +1197,24 @@ ggsave(paste0(fig_dir,"/march_storm.png"), plot = march_storm, width = 16, heigh
 ```
 
 
-## WQ Events: Example w precip
+## WQ Events: September Storm Event
 
 ```{r}
-sites_august <- c("salyer", "udall","cottonwood", "elc", "archery")
+sites_sept <- c("bellvue", "udall", "cottonwood", "archery")
 
-august_storms <-  plot_sensor(df = sensor_data_clean, sites = sites_august,  parameters = c("Flow", "Turbidity","DO", "Temperature" ), start_dt = "2025-08-20  00:00",
-                              end_dt = "2025-09-02 23:00",timestep =  "1 hours",b_size = 20)#+
-#labs(caption = "Preliminary Data, subject to revision")
-august_storms_precip <- create_storm_precip_plot(precip_flow_df = larimer_flow_precip, station_id_oi = "6320", start_date = "2025-08-20", end_date = "2025-09-03")
+sept_storms <-  plot_sensor(df = sensor_data_clean, sites = sites_sept,  parameters = c("Flow", "Turbidity","DO", "FDOM Fluorescence" ), start_dt = "2026-09-15  00:00",
+                              end_dt = "2026-09-21 23:00",timestep =  "1 hours",b_size = 20)+
+labs(caption = "Preliminary Data, subject to revision")
 
-left_side <- wrap_elements(august_storms)
+sept_storms
+
+sept_storms_precip <-   create_storm_precip_plot(precip_flow_df = larimer_flow_precip,
+                                               station_id_oi = "11029", 
+                                               start_date = "2026-09-10",
+                                               end_date = "2026-09-21")
+
+
+left_side <- wrap_elements(sept_storms)
 
 # 2. Define the design 
 # Here, 'A' is your 4-panel block, 'B' is your precip plot
@@ -1079,15 +1223,33 @@ AAAA BB
 "
 
 # 3. Combine them
-final_plot <- august_storms_precip + left_side + 
+final_plot <- sept_storms_precip + left_side + 
   plot_layout(design = layout)
 
 final_plot
-#ggsave(paste0(fig_dir,"/august_storms.png"), plot = august_storms, width = 18, height = 12, units = "in", dpi = 300)
+ggsave(paste0(fig_dir,"/sept_storms.png"), plot = sept_storms, width = 18, height = 12, units = "in", dpi = 500)
 
-#ggsave(paste0(fig_dir,"/august_storms_precip.png"), plot = final_plot, width = 18, height = 12, units = "in", dpi = 300)
+ggsave(paste0(fig_dir,"/sept_storms_precip.png"), plot = final_plot, width = 18, height = 12, units = "in", dpi = 500)
 
 ```
+
+## WQ Events: Riverbluffs Chl-a
+
+```{r april_drawdown, echo= F}
+
+
+algal_conditions_sites <- c( "udall", "archery", "riverbluffs")
+
+
+  algal_conditions_plot <- plot_sensor(df = sensor_data_clean, sites = algal_conditions_sites,  parameters = c("Flow", "pH","DO", "Chl-a Fluorescence" ), start_dt = "2026-07-01  00:00",
+                            end_dt = "2026-09-21 23:00",timestep =  "24 hours", b_size = 20)+
+  labs(caption = "Daily medians. Preliminary Data, subject to revision")
+
+
+ggsave(paste0(fig_dir,"/algal_conditions.png"), plot = algal_conditions_plot, width = 16, height = 10, units = "in", dpi = 500)
+
+```
+
 
 #WQ Event - Storm Event
 
@@ -1276,8 +1438,8 @@ generate_monthly_boxplot_summary <- function(sensor_data, year, month){
             axis.title.x = element_text(face = "bold"),
             axis.title.y = element_text(face = "bold"),
             plot.title = element_text(size = 12))  # Smaller title for individual plots
-    
-    # Add reference lines based on parameter type
+
+        # Add reference lines based on parameter type
     if (grepl("pH", param, ignore.case = TRUE)) {
       # Add horizontal lines for pH standards
       p <- p + 
@@ -1390,188 +1552,16 @@ monthly_plots <- map2(1:11,2026, ~{
 
 monthly_plots
 
-write_rds(monthly_plots, file = paste0(fig_dir, "monthly_boxplot_summaries.rds"))
+#write_rds(monthly_plots, file = paste0(fig_dir, "monthly_boxplot_summaries.rds"))
 
 walk(monthly_plots, ~ ggsave(.x, filename = paste0(fig_dir, "monthly_boxplot_summary_", attr(.x, "year_month"), ".png"), width = 16, height = 10, units = "in", dpi = 300))
 
 
 ```
 
-# Long Term Comparison
+# Long Term Comparisons
 
-## Read in data
-
-This data has already been generated for the UCLP project so we can just grab that file
-
-```{r}
-
-file <- list.files(path = "data/collated/sensor/", full.names = T, pattern = "compiled_all_")%>%tail(1)
-
-all_data <- read_parquet(file)%>%
-  filter(parameter %in% c("Temperature", "Specific Conductivity", "pH", "DO", "Turbidity"),
-         site %in% c("bellvue", "salyer", "udall", "riverbend", "cottonwood", "elc", "archery", "riverbluffs"))%>%
-  left_join(site_names, by = "site")%>%
-  left_join(labels, by = c("parameter" = "param"))
-
-start_date <- format(min(all_data$DT_round), "%Y-%m-%d")
-end_date <- format(max(all_data$DT_round), "%Y-%m-%d")
-# Pull in air temperature data from CSU for comparison
-fc_temp <- read_csv(paste0("https://coagmet.colostate.edu/data/daily.csv?header=yes&from=",start_date,"&to=",end_date,"&fields=tAvg,tMax,tMin,rhMax,rhMin,precip,solarRad"), show_col_types = F)%>% 
-  filter(Station == "fcl01")%>%
-  mutate(date = mdy(Date))%>%
-  mutate(avg_temp_c =  (as.numeric(`Avg Temp`) - 32) * 5/9,
-         max_temp_c = (as.numeric(`Max Temp`) - 32) * 5/9,
-         min_temp_c = (as.numeric(`Min Temp`) - 32) * 5/9,
-         rh_max = as.numeric(`RH Min`),
-         rh_min = as.numeric(`RH Min`),
-         precip_cm = as.numeric(`Liquid Precip`) *2.54, #convert inches to cm
-         solar_rad = as.numeric(`Solar Rad`))%>%
-  select(date, avg_temp_c, max_temp_c, min_temp_c, rh_max, rh_min, precip_cm, solar_rad)%>%
-  mutate(doy = yday(date), 
-         year = year(date))
-
-fc_temp_sum <- fc_temp%>%
-  group_by(year) %>%
-  # Calculate 7-day moving average
-  mutate(seven_day_avg = rollmean(avg_temp_c, k = 7, fill = NA, align = "center"))%>%
-  ungroup()%>%
-  filter(doy >= 90 & doy <= 320)
-
-ggplot(fc_temp_sum, aes(doy, seven_day_avg, color = factor(year))) +
-  geom_line() +
-  scale_x_continuous(
-    # Sets a tick mark every 30 days starting at 90
-    breaks = seq(90, 320, by = 30), 
-    # Converts DOY to "Month Day" format
-    labels = function(x) format(as.Date(as.character(x), format = "%j"), "%b")
-  ) +
-  labs(x = "Date", y = "3-day Moving Average Air Temperature (°C)", color = "Year") +
-  theme_bw(base_size = 18) +
-  theme(legend.position = "bottom")+
-  coord_cartesian(xlim = c(90, 320))
-
-
-
-```
-
-
-## Calculate rolling averages for each year and site
-
-```{r}
-summarized_data <- all_data %>%
-  filter(parameter %in% c( "Temperature", "pH", "Specific Conductivity", "DO"))%>% 
-  mutate(DT_round = floor_date(DT_round, unit = "day"))%>%
-  group_by(site, label, natural_name, DT_round) %>%
-  summarize(mean_cleaned = mean(mean_cleaned, na.rm = TRUE), .groups = "drop") %>%
-  group_by(site, natural_name, label, year = year(DT_round)) %>%
-  arrange(DT_round) %>%
-  #fill in small gaps of < 2 days
-  mutate(mean_cleaned = na.approx(mean_cleaned, maxgap = 2, na.rm = F))%>%
-  ungroup()%>%
-  group_by(site, natural_name, label,  year) %>%
-  # Calculate 5-day moving average
-  mutate(moving_avg = rollmean(mean_cleaned, k = 5, fill = NA, align = "center"))%>%
-  ungroup()%>%
-  mutate(doy = yday(DT_round), 
-         year = as.factor(year), 
-         natural_name = factor(natural_name, levels = site_names$natural_name))
-
-three_year_comp <- 
-  summarized_data%>%
-  filter(site %in% c("salyer", "riverbend", "riverbluffs"))%>%
-  ggplot(., aes(x = doy, y = moving_avg, color = year)) +
-  geom_line() +
-  scale_color_manual(values = c("2023" =  "#745CFB", "2024" =  "#D55E00", "2025" = "#1E4D2B"))+
-  scale_x_continuous(
-    # Sets a tick mark every 30 days starting at 90
-    breaks = seq(90, 320, by = 30), 
-    # Converts DOY to "Month Day" format
-    labels = function(x) format(as.Date(as.character(x), format = "%j"), "%b")
-  ) +
-  labs(x = "Date", y = "3-day Moving Average", color = "Year") +
-  theme_bw(base_size = 20) +
-  theme(legend.position = "bottom",
-        strip.text = element_text(face="bold")) +
-  facet_grid(label ~ natural_name, scales = "free_y") +
-  coord_cartesian(xlim = c(90, 320)) # Better practice than xlim() as it doesn't remove data points
-
-ggsave(here(fig_dir, "do_ph_sc_temp_2023_2025_comp.png"),plot = three_year_comp, width = 16, height = 16, units = "in", dpi = 300)
-
-```
-
-## LMs between air and water temp
-
-```{r}
-climate_joined <- summarized_data %>% 
-  select(-year, -doy)%>%
-  left_join(fc_temp_sum, by = c("DT_round" = "date")) 
-#Create linear models for each site and parameter with air temp as the predictor
-models_w_temp <- climate_joined %>%
-  group_split(site, label) %>% #split by site & param
-  map_dfr(~{
-    mod <- summary(lm(mean_cleaned ~ avg_temp_c, data = .x))
-    
-    tibble(
-      site = unique(.x$site),
-      label = unique(.x$label),
-      natural_name = unique(.x$natural_name), 
-      r_squared = mod$r.squared,
-      p_value = mod$coefficients[2,4],
-      slope = mod$coefficients[2,1]
-    )
-  })
-
-# Plot of air temp and water temp with model results annotated
-temp_v_air_temp <- ggplot(climate_joined%>%filter(label == "Temperature (C)" & !is.na(year)), aes(x = avg_temp_c, y = mean_cleaned, color = factor(year))) +
-  geom_point(alpha = 0.4) + # Adding alpha helps see density
-  geom_smooth(method = "lm", color = "black") +
-  scale_color_manual(values = c("2023" =  "#745CFB", "2024" =  "#FFCA3A", "2025" = "#1E4D2B"))+
-  
-  # Map the label to the temp_mods data
-  geom_text(
-    data = models_w_temp%>%filter(label == "Temperature (C)"), # Only add text for temperature models
-    aes(x = -Inf, y = Inf, label = paste0("R² = ", round(r_squared, 2), "\nSlope = ", round(slope, 2))),
-    hjust = -0.1, vjust = 1.1, # Positions text in the top-left corner
-    size = 5,
-    inherit.aes = FALSE # Prevents text from looking for avg_temp_c/mean_cleaned in temp_mods
-  ) +
-  facet_wrap(~natural_name) +
-  labs(x = "Daily Mean Air Temperature (°C)", y = "Daily Mean Water Temperature (°C)", color = "Year") +
-  theme_bw(base_size = 18)
-
-ggsave(here(fig_dir, "water_temp_vs_air_temp.png"),plot = temp_v_air_temp, width = 16, height = 10, units = "in", dpi = 300)
-
-# Plot of air temp and water temp with model results annotated
-do_vs_air_temp<-  ggplot(climate_joined%>%filter(label == "DO (mg/L)"& !is.na(year)), aes(x = avg_temp_c, y = mean_cleaned, color = factor(year))) +
-  geom_point(alpha = 0.4) + # Adding alpha helps see density
-  geom_smooth(method = "lm", color = "black") +
-  scale_color_manual(values = c("2023" =  "#745CFB", "2024" =  "#FFCA3A", "2025" = "#1E4D2B"))+
-  
-  # Map the label to the models_w_temp data
-  geom_text(
-    data = models_w_temp %>% filter(label == "DO (mg/L)"), 
-    aes(
-      x = -Inf, # Far Left
-      y = -Inf, # Far Bottom
-      label = paste0("R² = ", round(r_squared, 2), "\nSlope = ", round(slope, 2))
-    ),
-    hjust = -0.1, # Push text slightly right from the edge
-    vjust = -0.3, # Push text slightly up from the edge
-    size = 5,
-    inherit.aes = FALSE 
-  )+
-  facet_wrap(~natural_name) +
-  labs(x = "Daily Mean Air Temperature (°C)", y = "Daily Mean Dissolved Oxygen (mg/L)", color = "Year") +
-  theme_bw(base_size = 18)
-
-ggsave(here(fig_dir, "do_vs_air_temp.png"),plot = do_vs_air_temp, width = 16, height = 10, units = "in", dpi = 300)
-
-final_plot <- temp_v_air_temp + do_vs_air_temp+
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-
-ggsave(here(fig_dir, "temp_do_vs_air_temp.png"),plot = final_plot, width = 18, height = 10, units = "in", dpi = 300)
-```
+Typically for each years report, we want to compare the current water year to historical min/max and median values. This is a good way to visualize how the current year compares to previous years.
 
 # Current WY flow analysis vs historic min/max
 
@@ -1590,28 +1580,6 @@ gauge_labels <- c(
 
 wy_start   <- as.Date("2025-10-01")
 today_date <- Sys.Date()
-
-# Pull daily discharge from CDWR for a station over a date range
-get_dwr_daily <- function(abbrev, start_date, end_date){
-  url <- paste0(
-    "https://dwr.state.co.us/Rest/GET/api/v2/telemetrystations/telemetrytimeseriesday/",
-    "?format=json",
-    "&abbrev=", abbrev,
-    "&parameter=DISCHRG",
-    "&startDate=", format(start_date, "%m/%d/%Y"),
-    "&endDate=", format(end_date, "%m/%d/%Y")
-  )
-  resp <- GET(url)
-  dat <- fromJSON(content(resp, "text", encoding = "UTF-8"))$ResultList
-  
-  if(is.null(dat) || length(dat) == 0) return(NULL)
-  
-  dat %>%
-    mutate(
-      abbrev = abbrev,
-      measDate = as.Date(measDate)
-    )
-}
 
 #historic data
 hist_raw <- map_df(gauges, ~get_telemetry_ts(abbrev = .x, 
