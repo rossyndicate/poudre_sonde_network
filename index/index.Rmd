@@ -1,0 +1,438 @@
+---
+output: 
+  html_document:
+    toc: false
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(lubridate)
+library(arrow)
+library(sf)
+library(leaflet)
+library(nhdplusTools)
+```
+
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #2c3e50;
+}
+
+.page-header {
+  max-width: 800px;
+  margin: 0 auto 20px auto;
+  text-align: center;
+}
+
+.page-header h1 {
+  margin-bottom: 4px;
+}
+
+.page-header .subtitle {
+  color: #555;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.page-footer {
+  max-width: 800px;
+  margin: 24px auto 0 auto;
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+}
+
+/* Leaflet popup content */
+.site-popup {
+  font-family: sans-serif;
+  min-width: 220px;
+  max-width: 300px;
+}
+
+.site-popup h4 {
+  margin: 0 0 4px 0;
+  color: #2c3e50;
+}
+
+.site-popup-meta {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #555;
+}
+
+.site-popup-label {
+  font-size: 12px;
+}
+
+.site-popup-empty {
+  font-size: 11px;
+  color: #888;
+}
+
+.popup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.popup-table-header {
+  background-color: #f2f2f2;
+  text-align: left;
+}
+
+.popup-table th,
+.popup-table td {
+  padding: 4px 8px;
+}
+</style>
+
+<div class="page-header">
+  <h1>CSU ROSS Sensor Network</h1>
+  <p class="subtitle">
+    Interactive map of active and historical water-quality sensor deployments.
+    Click a marker to see site details and the date range of each recorded parameter.
+  </p>
+</div>
+
+```{r load-metadata}
+download_path <- "data/collated/sensor/hydroshare_pub"
+metadata_file <- file.path(download_path, "CSU_ROSS_sonde_location_metadata.csv")
+
+if (!file.exists(metadata_file)) {
+  stop("Metadata file not found at expected location: ", metadata_file)
+}
+
+# read_csv() already returns ISO-8601 dates as POSIXct; this also handles
+# m/d/yy text dates if the file is ever saved that way
+to_utc <- function(x) {
+  if (inherits(x, "POSIXct")) with_tz(x, "UTC") else parse_date_time(x, orders = c("mdy", "ymd"), tz = "UTC")
+}
+
+today_utc <- as.POSIXct(Sys.Date(), tz = "UTC")
+
+# One row per DEPLOYMENT (a site can have several: same `site` ID, different
+# location). `deployment_id` is the unique key for a site + location + window.
+metadata <- read_csv(metadata_file, show_col_types = FALSE) %>%
+  mutate(
+    deployment_id   = row_number(),
+    current         = as.logical(current),
+    data_start_date = to_utc(data_start_date),
+    # sites that are still deployed run through today
+    data_end_date   = if_else(current, today_utc, to_utc(data_end_date)),
+    min_year        = year(data_start_date),
+    max_year        = year(data_end_date),
+    year_range      = paste0(min_year, "-", max_year),
+    # Half-open window [start, end-of-end-day). Back-to-back deployments at a
+    # site (e.g. elc: ends 2023-09-20, next starts 2023-09-21) never overlap,
+    # so each reading matches exactly one deployment.
+    join_start = data_start_date,
+    join_end   = data_end_date + days(1)
+  )
+```
+
+```{r load-sensor-data}
+data_dirs <- list.dirs(download_path, recursive = FALSE) %>%
+  setdiff(file.path(download_path, "metadata"))
+
+cleaned_files <- list.files(data_dirs, pattern = "cleaned.*\\.parquet$", full.names = TRUE)
+
+cleaned_data <- map(cleaned_files, read_parquet) %>%
+  bind_rows()
+```
+
+```{r join-and-summarize}
+# Sensor data only carries `site`, so assign each reading to a deployment by
+# matching site AND date window (this is what separates multiple deployments
+# of the same site)
+cleaned_data_with_metadata <- cleaned_data %>%
+  left_join(
+    metadata %>% select(site, deployment_id, join_start, join_end),
+    by = join_by(
+      site,
+      DateTime_UTC >= join_start,
+      DateTime_UTC < join_end
+    )
+  )
+
+# Date range covered by each parameter within each deployment
+param_summary <- cleaned_data_with_metadata %>%
+  filter(!is.na(value_final), !is.na(deployment_id)) %>%
+  group_by(site, deployment_id, parameter) %>%
+  summarize(
+    start_dt = min(DateTime_UTC, na.rm = TRUE),
+    end_dt   = max(DateTime_UTC, na.rm = TRUE),
+    .groups  = "drop"
+  ) %>%
+  left_join(metadata %>% select(deployment_id, current), by = "deployment_id") %>%
+  # current deployments are shown as running through today
+  mutate(end_dt = if_else(current, today_utc, end_dt)) %>%
+  select(-current)
+```
+
+```{r build-popups}
+deployment_popups <- param_summary %>%
+  mutate(
+    param_row = paste0(
+      "<tr>",
+        "<td><b>", parameter, "</b></td>",
+        "<td>", format(start_dt, "%Y-%m-%d"), " to ", format(end_dt, "%Y-%m-%d"), "</td>",
+      "</tr>"
+    )
+  ) %>%
+  group_by(deployment_id) %>%
+  summarize(
+    param_table = paste0(
+      "<table class='popup-table'>",
+        "<tr class='popup-table-header'>",
+          "<th>Parameter</th>",
+          "<th>Record Window</th>",
+        "</tr>",
+        paste(param_row, collapse = ""),
+      "</table>"
+    ),
+    .groups = "drop"
+  )
+
+# Overall span per site, across all of its deployments
+site_spans <- metadata %>%
+  group_by(site) %>%
+  summarize(
+    site_span = paste0(min(min_year), "-", max(max_year)),
+    n_deployments = n(),
+    .groups = "drop"
+  )
+
+# One marker per deployment location. Historical deployments are drawn first
+# so current ones sit on top.
+sites_sf <- metadata %>%
+  left_join(site_spans, by = "site") %>%
+  left_join(deployment_popups, by = "deployment_id") %>%
+  mutate(
+    status = if_else(current, "Current deployment", "Historical deployment"),
+    popup_content = paste0(
+      "<div class='site-popup'>",
+        "<h4>", site_name, "</h4>",
+        "<p class='site-popup-meta'>",
+          coalesce(site_description, "No description available"), "<br>",
+          "<b>Status:</b> ", status, "<br>",
+          "<b>This deployment:</b> ",
+            format(data_start_date, "%Y-%m-%d"), " to ",
+            if_else(current, "present", format(data_end_date, "%Y-%m-%d")), "<br>",
+          "<b>Site span (all deployments):</b> ", site_span,
+          if_else(n_deployments > 1,
+                  paste0(" (", n_deployments, " deployments)"), ""),
+        "</p>",
+        "<b class='site-popup-label'>Parameter Date Ranges:</b>",
+        coalesce(param_table, "<p class='site-popup-empty'>No parameter records</p>"),
+      "</div>"
+    )
+  ) %>%
+  arrange(current) %>%   # FALSE (historical) first, TRUE (current) last = on top
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+sites_current    <- filter(sites_sf, current)
+sites_historical <- filter(sites_sf, !current)
+```
+
+```{r load-flowlines, cache=TRUE}
+# Poudre River watershed, HUC8 = 10190007
+poudre_huc8 <- get_huc(id = "10190007", type = "huc08")
+
+poudre_flowlines <- get_nhdplus(
+  AOI         = poudre_huc8,
+  realization = "flowline"
+) %>%
+  st_transform(4326)
+```
+
+```{r render-map}
+# ---- Site ordering: edit this vector to reorder everything -----------------
+site_order <- c(
+  "joei", "cbri", "chd", "pfal", "sfm", "lbea", "penn", "pbr", "pman", "pbd",
+  "bellvue", "salyer", "udall", "riverbend", "cottonwood", "elc", "archery",
+  "riverbluffs", "boxcreek", "springcreek"
+)
+# safety net: any site not listed above goes to the end instead of becoming NA
+site_order <- c(site_order, setdiff(unique(sites_sf$site), site_order))
+
+# Everything up to and including this site (in site_order) counts as
+# "Canyon mouth & upstream"; everything after it is "Downstream"
+canyon_mouth_site <- "pbd"
+upstream_sites    <- site_order[seq_len(match(canyon_mouth_site, site_order))]
+region_levels     <- c("Upper CLP", "PWQN")
+
+# site_name levels follow the order of `site` in site_order
+site_name_order <- sites_sf %>%
+  st_drop_geometry() %>%
+  distinct(site, site_name) %>%
+  arrange(match(site, site_order)) %>%
+  pull(site_name) %>%
+  unique()
+
+sites_sf <- sites_sf %>%
+  mutate(
+    site      = factor(site, levels = site_order),
+    site_name = factor(site_name, levels = site_name_order)
+  )
+
+# ---- Styling: color = site, shape = region + current/historical -------------
+# 10 high-contrast colors. Shape separates the two regions, so the same 10
+# colors are reused within each region (shape + color is unique per site).
+site_colors <- c(
+  "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
+  "#A65628", "#F781BF", "#17BECF", "#BCBD22", "#444444"
+)
+
+site_style <- sites_sf %>%
+  st_drop_geometry() %>%
+  distinct(site, site_name) %>%
+  arrange(site) %>%
+  mutate(region = factor(
+    if_else(as.character(site) %in% upstream_sites, region_levels[1], region_levels[2]),
+    levels = region_levels
+  )) %>%
+  group_by(region) %>%
+  mutate(color = rep_len(site_colors, n())) %>%
+  ungroup()
+
+sites_sf <- sites_sf %>%
+  left_join(select(site_style, site, region, color), by = "site") %>%
+  mutate(
+    # triangle up / down = upstream current / historical
+    # square / diamond   = downstream current / historical
+    shape = case_when(
+      region == region_levels[1] &  current ~ "tri_up",
+      region == region_levels[1] & !current ~ "tri_down",
+      current                               ~ "square",
+      TRUE                                  ~ "diamond"
+    ),
+    size = if_else(current, 30, 18),
+    op   = if_else(current, 1, 0.75)
+  ) %>%
+  # historical (FALSE) first, current (TRUE) last so current markers sit on top
+  arrange(current, site)
+
+sites_current    <- filter(sites_sf, current)
+sites_historical <- filter(sites_sf, !current)
+
+# ---- SVG helpers ------------------------------------------------------------
+shape_svg <- function(shape, fill, size = 24, opacity = 1) {
+  geom <- switch(shape,
+    tri_up   = '<polygon points="12,2 22.5,21.5 1.5,21.5"/>',
+    tri_down = '<polygon points="1.5,2.5 22.5,2.5 12,22"/>',
+    square   = '<rect x="3" y="3" width="18" height="18"/>',
+    diamond  = '<polygon points="12,1.5 22.5,12 12,22.5 1.5,12"/>'
+  )
+  paste0(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="', size, '" height="', size,
+    '" viewBox="0 0 24 24"><g fill="', fill, '" fill-opacity="', opacity,
+    '" stroke="#1a1a1a" stroke-width="1.6" stroke-linejoin="round">',
+    geom, '</g></svg>'
+  )
+}
+
+marker_icons <- function(d) {
+  d <- st_drop_geometry(d)
+  urls <- pmap_chr(
+    list(d$shape, d$color, d$op),
+    function(s, f, o) {
+      paste0("data:image/svg+xml;charset=utf-8,",
+             URLencode(shape_svg(s, f, 24, o), reserved = TRUE))
+    }
+  )
+  icons(
+    iconUrl     = urls,
+    iconWidth   = d$size, iconHeight  = d$size,
+    iconAnchorX = d$size / 2, iconAnchorY = d$size / 2
+  )
+}
+
+# ---- Custom legend: one column per region + a shape key --------------------
+legend_column <- function(region_name, shape) {
+  rows <- filter(site_style, region == region_name)
+  items <- map2_chr(rows$color, as.character(rows$site_name), function(col, nm) {
+    paste0(
+      '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">',
+        shape_svg(shape, col, 14), "<span>", nm, "</span>",
+      "</div>"
+    )
+  })
+  paste0(
+    "<div><div style='font-weight:600;margin-bottom:4px;'>", region_name, "</div>",
+    paste(items, collapse = ""), "</div>"
+  )
+}
+
+key_item <- function(shape, size, label) {
+  paste0(
+    '<div style="display:flex;align-items:center;gap:6px;margin:2px 0;">',
+      shape_svg(shape, "#bbbbbb", size), "<span>", label, "</span>",
+    "</div>"
+  )
+}
+
+legend_html <- paste0(
+  '<div style="background:rgba(255,255,255,0.93);padding:10px 12px;',
+  'border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,.3);',
+  'font:12px/1.3 sans-serif;color:#2c3e50;">',
+    '<div style="display:flex;gap:20px;">',
+      legend_column(region_levels[1], "tri_up"),
+      legend_column(region_levels[2], "square"),
+    "</div>",
+    '<hr style="margin:8px 0;border:0;border-top:1px solid #ddd;">',
+    '<div style="display:flex;gap:20px;">',
+      "<div>", key_item("tri_up", 16, "Current"),
+               key_item("tri_down", 11, "Historical"), "</div>",
+      "<div>", key_item("square", 16, "Current"),
+               key_item("diamond", 11, "Historical"), "</div>",
+    "</div>",
+  "</div>"
+)
+
+# ---- Map --------------------------------------------------------------------
+river_group <- "Poudre River (HUC8 10190007)"
+
+leaflet(width = "100%", height = "650px") %>%
+  addProviderTiles(providers$Esri.WorldTopoMap, group = "Topographic") %>%
+  addProviderTiles(providers$OpenStreetMap, group = "Clean") %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
+  addPolylines(
+    data    = poudre_flowlines,
+    color   = "#2C7FB8",
+    weight  = 1.5,
+    opacity = 0.7,
+    group   = river_group
+  ) %>%
+  # Historical deployments: smaller, slightly transparent
+  addMarkers(
+    data  = sites_historical,
+    icon  = marker_icons(sites_historical),
+    popup = ~popup_content,
+    label = ~paste0(site_name, " (historical)"),
+    group = "Historical deployments"
+  ) %>%
+  # Current deployments: larger, drawn on top
+  addMarkers(
+    data    = sites_current,
+    icon    = marker_icons(sites_current),
+    popup   = ~popup_content,
+    label   = ~paste0(site_name, " (current)"),
+    group   = "Current deployments",
+    options = markerOptions(zIndexOffset = 1000)
+  ) %>%
+  addControl(html = legend_html, position = "bottomright") %>%
+  addLayersControl(
+    baseGroups    = c("Topographic", "Clean", "Satellite"),
+    overlayGroups = c("Current deployments", "Historical deployments", river_group),
+    options       = layersControlOptions(collapsed = FALSE)
+  )
+```
+
+<div class="page-footer">
+  <p>CSU ROSS Lab &middot; Data updated as new deployments are collated</p>
+  <p>Data available for download at <a href="https://www.hydroshare.org/resource/521e317e189e498581d0aaa08c3f32bc/" target="_blank">HydroShare</a></p>
+</div>

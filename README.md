@@ -18,18 +18,15 @@ poudre_sonde_network/
 │   └── flagging_descriptions/      # Documentation for each QA/QC flag type
 ├── data_organization/            # Yearly data processing scripts (2019–2026) and drift correction. Tracks file read in, QAQC, and final saving to HydroShare
 ├── calibration_correction_tool/   # Shiny app for reviewing and correcting sensor calibration
-│   ├── creds/                      # Symlink to `creds`  
-│   ├── data/                       # Symlink to `data`
 │   └── ui.R, server.R, global.R, R/  # Shiny files
 ├── manual_verification_tool/     # Shiny app for manual QA/QC verification of sonde data
-│   ├── data/                       # Symlink to `data/raw/sensor/manual_data_verification/YEAR_CYCLE/in_progress`
 │   ├── field_note_check.R          # Helper for checking field notes against sonde data
 │   ├── plot_usgs_flow.R            # Helper for plotting USGS/CDWR flow data
 │   └── ui.R, server.R, global.R, R/  # Shiny files
 ├── src/                            # Core pipeline functions: flagging, plotting, data retrieval, etc
 ├── scratch/                        # Scripts generated for specific tasks, works-in-progress, or archived workflows. 
 ├── archive/                       # Older/superseded analysis scripts, kept for reference
-│   └── manual_post_verification_v0/   # 2023 manual verification workflow 
+│   └── manual_post_verification_v0/   # 2023 manual verification workflow (Depreciated)
 └── timelapse/                      # Scripts for generating and organizing site timelapses from cameras
 ```
 

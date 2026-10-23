@@ -5,10 +5,10 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
+```{r, include = FALSE}
 # set up
 
 ## load packages
-```{r, include = FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_chunk$set(fig.dim = c(12,10))
 # loading packages
@@ -60,8 +60,9 @@ invisible(
 ```
 
 
-## sites, parameters, and plots
+
 ```{r, include = FALSE}
+## sites, parameters, and plots
 if ({
   require(systemfonts)
   ("Roboto" %in% system_fonts()$family)
@@ -80,7 +81,7 @@ if ({
 
 #Site names
 site_names <- tibble(site = c("pbd", "bellvue", "salyer", "udall", "riverbend", "cottonwood" ,"elc",  "archery", "riverbluffs"), 
-                     site_name = c("Canyon Mouth", "Tamasag", "Legacy", "Lincoln", "Timberline", "Prospect" ,"Boxelder",  "Archery", "River Bluffs"), 
+                     site_name = c("Canyon Mouth", "Bellvue", "Salyer", "Udall", "Riverbend", "Cottonwood", "ELC", "Archery", "River Bluffs"), 
                      site_color = c( "#000000" , "#185BB4","#009DD1","#00F5DC", "#00F0C0", "#00D684", "#00BD48",  "#00DB58", "#0FFF6B" ) )
 
 #Site Order from up to downstream
@@ -120,19 +121,16 @@ params <- paste(labels$param, collapse = "|")
 
 ```
 
-
-## read in data
 ```{r, include = FALSE}
-all_data <- list.files(
-  "operations/reporting/pwqn_data_report/data/hydroshare_pub",
-  pattern = "^CSU_ROSS_\\d{4}_cleaned\\.csv$",
+## Loading Dataset
+all_data <- list.files(here("data/collated/sensor/hydroshare_pub"),
+  pattern = "^CSU_ROSS_\\d{4}_cleaned\\.parquet$",
   full.names = TRUE,
   recursive = TRUE) |> 
-  map(~ read_csv(.x, show_col_types = FALSE)) |> 
-  list_rbind()
+  map_dfr(~ read_parquet(.x))
 
 pwqn_data <- all_data |>
-  filter(value_final != "NA") |> 
+  filter(!is.na(value_final)) |> 
   mutate(DateTime_UTC = with_tz(DateTime_UTC, tz = "MST")) |> 
   rename(DateTime_MT = DateTime_UTC) |> 
   mutate(
@@ -202,7 +200,9 @@ monthly_percent <- pwqn_data_clean |>
          year = year(DateTime_MT)) |> 
   group_by(year, month, parameter, site_name) |>
   summarise(actual_records = n(),
-    .groups = 'drop') |> 
+            .groups = 'drop') |> 
+  complete(nesting(year, month), parameter, site_name,
+           fill = list(actual_records = 0)) |> 
   mutate(days_in_month = case_when(
       month == 2 ~ if_else(year %in% c(2020, 2024), 29, 28),
       month %in% c(4, 6, 9, 11) ~ 30, TRUE ~ 31),
@@ -234,19 +234,48 @@ These plots depict the yearly and monthly data availability percentages for each
 # Heatmaps
 ```{r echo=FALSE, fig.width=30, fig.height=50, out.width="100%"}
 #all data heatmap
-combined_monthly <- monthly_percent |> 
+combined_monthly_parameterwise <- monthly_percent |> 
+  filter(site %in% c("archery", "bellvue", "cottonwood", "elc", "riverbluffs", "riverbend", "salyer", "udall"))%>%
+  filter(parameter %in% c("Turbidity", "Specific Conductivity", "Temperature", "DO", 'pH'))%>%
+  mutate(site_name = factor(site_name, levels = rev(site_order)), 
+         data_pct = ifelse(data_pct == 0, NA, data_pct))%>%
   mutate(fake_date = ymd(paste(year, month, "01", sep = "-"))) |> 
   ggplot(aes(x = fake_date, y = site_name, fill = data_pct)) +
   geom_tile(color = "white", linewidth = 0.5) +
-  scale_fill_gradient(low = "red", high = "green", limits = c(0, 100)) +
+  scale_fill_gradient(low = "red", high = "green", limits = c(0, 100), na.value = "white") +
   scale_x_date(date_labels = "%b %Y", date_breaks = "6 months") +
   facet_wrap(~parameter, scales = "free_y", ncol = 1) +
   labs(title = "Data Availability",
        x = "Month",
        y = "Site",
-       fill = "Availability (%)")
+       fill = "Availability (%)")+
+  ROSS_theme
 
-print(combined_monthly)
+print(combined_monthly_parameterwise)
+
+combined_monthly_sitewise <- monthly_percent |> 
+  filter(site %in% c("archery", "bellvue", "cottonwood", "elc", "riverbluffs", "riverbend", "salyer", "udall"))%>%
+  filter(parameter %in% c("Turbidity", "Specific Conductivity", "Temperature", "DO", 'pH'))%>%
+  mutate(site_name = factor(site_name, levels = site_order), 
+         parameter = factor(parameter, levels = rev(c("Temperature", "DO", 'pH', "Specific Conductivity", "Turbidity"))),
+         data_pct = ifelse(data_pct == 0, NA, data_pct))%>%
+  mutate(fake_date = ymd(paste(year, month, "01", sep = "-"))) |> 
+  ggplot(aes(x = fake_date, y = parameter, fill = data_pct)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_gradient(low = "red", high = "green", limits = c(0, 100), na.value = "grey") +
+  scale_x_date(date_labels = "%b %Y", date_breaks = "6 months") +
+  facet_wrap(~site_name, scales = "free_y", ncol = 1) +
+  labs(title = "Data Availability",
+       x = "Month",
+       y = "Parameter",
+       fill = "Availability (%)", 
+        caption = "Data availability is shown as a percentage of the total possible data points for each month. Grey indicates no data available.")+
+  ROSS_theme+
+  theme(strip.text = element_text(face = "bold", size = 10),
+        axis.text.x = element_text(angle = 0, hjust=1))
+
+print(combined_monthly_sitewise)
+ggsave(plot = combined_monthly_sitewise, filename = here("docs/pwqn/figs/pwqn_data_report/monthly_sitewise_data_availability_heatmap.png"), width = 12, height = 8, dpi = 500)
 
 ```
 This heatmap depicts the data availability at each site across the data collection timeframe (March 2019- November 2025). Yearly data availability is highest in 2024 and 2025 and monthly data availability is highest in the late summer months. 
@@ -352,8 +381,8 @@ updated_legend <- function(p) {
 #temps plot
 historic_temps_all_sites <- function(data = pwqn_data_clean,
                                       plot_title = "Historical Water Temperature by Site",
-                                      sites = c("Canyon Mouth", "Tamasag", "Legacy", "Lincoln",
-                                                "Timberline", "Prospect", "Boxelder", "Archery", "River Bluffs"),
+                                      sites = c("Canyon Mouth", "Bellvue", "Salyer", "Udall",
+                                                "Riverbend", "Cottonwood", "ELC", "Archery", "River Bluffs"),
                                       incl_winter = FALSE,
                                       temp_param_name = "Temperature") {
 
@@ -399,8 +428,9 @@ historic_temps_all_sites <- function(data = pwqn_data_clean,
   gp <- ggplotly(p)
   updated_legend(gp)
 }
-
-all_sites_temp_plot2 <- historic_temps_all_sites(pwqn_data_clean)
+all_sites_temp_plot1 <- historic_temps_all_sites(pwqn_data_clean, sites = c("Canyon Mouth", "Bellvue", "Salyer", "Udall"))
+all_sites_temp_plot1
+all_sites_temp_plot2 <- historic_temps_all_sites(pwqn_data_clean, sites = c("Riverbend", "Cottonwood", "ELC", "Archery", "River Bluffs"))
 all_sites_temp_plot2
 
 ```

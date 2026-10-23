@@ -61,9 +61,9 @@ data_dirs <- list.dirs(download_path, recursive = FALSE) %>%
   setdiff(file.path(download_path, "metadata"))
 
 # Batch read all cleaned CSV files into a single unified dataframe
-cleaned_files <- list.files(data_dirs, pattern = "cleaned.*\\.csv$", full.names = TRUE)
+cleaned_files <- list.files(data_dirs, pattern = "cleaned.*\\.parquet$", full.names = TRUE)
 
-cleaned_data <- map(cleaned_files, read_csv, show_col_types = FALSE) %>%
+cleaned_data <- map(cleaned_files, read_parquet) %>%
   bind_rows()
 
 # Load site-specific metadata including coordinates and deployment windows
@@ -156,3 +156,38 @@ data_subset%>%
        y = "Archery",
        color = "Day of Year") +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black")
+
+
+trends <- cleaned_data_with_metadata %>%
+  filter(parameter %in% c("Temperature", "Specific Conductivity", "DO"))%>%
+  filter(site %in% c("bellvue", "salyer", "udall", "riverbend", "cottonwood","elc", "archery", "riverbluffs"))%>%
+  mutate(DT_mst = with_tz(DateTime_UTC, "MST"), date = as.Date(DT_mst))%>%
+  summarise(daily_mean = mean(value_final, na.rm = T),
+            daily_median = median(value_final, na.rm = T),
+            daily_min = min(value_final, na.rm = T),
+            daily_max = max(value_final, na.rm = T),
+            q10 = quantile(value_final, na.rm = T, probs = 0.1),
+            q90 = quantile(value_final, na.rm = T, probs = 0.9),
+            n = n(),
+            .by = c("site", "parameter", "date"))%>%
+  filter(n > 10 & !(month(date) %in% c(12, 1, 2,3)))%>%# we don't want to include winter months in the trend analysis because of ice and snow issues
+  mutate(site = factor(site, levels = c("bellvue", "salyer", "udall", "riverbend", "cottonwood","elc", "archery", "riverbluffs")))%>%
+  #for every site and parameter, put in a NA value for 12-31 of each year
+  bind_rows(
+    expand_grid(
+      site = unique(.$site),
+      parameter = unique(.$parameter),
+      date = seq.Date(from = as.Date("2019-12-31"), to = as.Date("2025-12-31"), by = "year")
+    ) %>%
+      anti_join(., ., by = c("site", "parameter", "date"))
+  )
+
+ggplot(trends, aes(x = date, y = daily_mean, color = site)) +
+  geom_line() +
+  geom_smooth(method = "loess", se = FALSE, linetype = "dashed", color = "black") +
+  facet_grid(parameter ~site, scales = "free_y") +
+  #scale_color_manual(values = c("bellvue" = "#E70870", "archery" = "#256BF5")) +
+  labs(title = "Daily Mean Trends for Temperature, Specific Conductivity, and DO",
+       x = "Date",
+       y = "Daily Mean Value",
+       color = "Site")

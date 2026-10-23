@@ -1,0 +1,201 @@
+---
+title: "Boxelder Creek"
+author: "Sam Struthers-CSU"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(arrow)
+library(ggplot2)
+library(plotly)
+library(ross.wq.tools)
+`%nin%` = Negate(`%in%`)
+```
+
+# Finding the data...
+
+```{r}
+list.files("data/raw/sensor/manual_data_verification/", pattern = "*.parquet", full.names = TRUE, recursive = TRUE)%>%
+  grep("boxcreek", ., ignore.case = TRUE,value = T)
+
+## Each year's data
+# 2023 is in: verified directory
+# 2024 is in:verified directory
+# 2025 is in: optical sensors in pre-verified directory, SC, Temp and Depth verified
+
+```
+
+## Load the data
+
+```{r}
+# Load the 2023 data
+boxcreek_2023 <- map(list.files("data/raw/sensor/manual_data_verification/2023_cycle/in_progress/verified_directory/", pattern = "*.parquet", full.names = TRUE, recursive = TRUE)%>%
+      grep("boxcreek", ., ignore.case = TRUE,value = T), read_parquet)%>%
+  bind_rows()
+
+# Load the 2024 data
+boxcreek_2024 <- map(list.files("data/raw/sensor/manual_data_verification/2024_cycle/in_progress/verified_directory/", pattern = "*.parquet", full.names = TRUE, recursive = TRUE)%>%
+      grep("boxcreek", ., ignore.case = TRUE,value = T), read_parquet)%>%
+  bind_rows()
+
+boxcreek_2025_non_ver <- map(list.files("data/raw/sensor/manual_data_verification/2025_cycle/in_progress/pre_verification_directory/", pattern = "*.parquet", full.names = TRUE, recursive = TRUE)%>%
+      grep("boxcreek", ., ignore.case = TRUE,value = T), read_parquet)%>%
+  bind_rows()
+boxcreek_2025_ver <- map(list.files("data/raw/sensor/manual_data_verification/2025_cycle/in_progress/verified_directory/", pattern = "*.parquet", full.names = TRUE, recursive = TRUE)%>%
+      grep("boxcreek", ., ignore.case = TRUE,value = T), read_parquet)%>%
+  bind_rows()
+
+
+all_boxcreek <- bind_rows(boxcreek_2023, boxcreek_2024, boxcreek_2025_non_ver, boxcreek_2025_ver)
+```
+
+# Quick plot
+
+```{r }
+all_boxcreek%>%
+  filter(parameter %in% c("Temperature", "Specific Conductivity", "Depth"))%>%
+  mutate(DT_round_MT = with_tz(DT_round, tz = "America/Denver"))%>%
+  ggplot(., aes(x = DT_round, y = mean, color = verification_status))+
+  geom_point()+
+  facet_wrap(~parameter, scales = "free_y")
+```
+
+# Organize for Boxelder Sanitation Folks
+
+```{r}
+
+all_boxcreek_clean <- all_boxcreek%>%  
+  mutate(DT_round_MT = with_tz(DT_round, tz = "America/Denver"), 
+         quality_status = case_when(
+           is.na(mean) ~ "Data Missing",
+           !is_verified & !is.na(flag) ~ "Non Verified, Auto Flagged",
+           !is_verified & is.na(flag) ~"Non Verified, No Auto Flag",
+           is_verified & final_status == "PASS" ~ "Verified, PASSED", 
+           is_verified & final_status == "FLAGGED" ~ "Verified, FLAGGED", 
+           is_verified & final_status == "OMIT" ~ "Verified, FAILED", 
+           TRUE ~ "Unknown Status"
+         ), 
+         value_cleaned = case_when(
+           is.na(mean) ~ NA,
+           !is_verified & !is.na(flag) ~ mean,
+           !is_verified & is.na(flag) ~ mean,
+           is_verified & final_status == "PASS" ~ mean, 
+           is_verified & final_status == "FLAGGED" ~ mean, 
+           is_verified & final_status == "OMIT" ~ NA, 
+           TRUE ~ NA
+         ), 
+         qc_flag = case_when(
+           is.na(mean) ~ NA,
+           !is_verified & !is.na(flag) ~ flag,
+           !is_verified & is.na(flag) ~ NA,
+           is_verified & final_status == "PASS" ~ NA, 
+           is_verified & final_status == "FLAGGED" ~ user_flag, 
+           is_verified & final_status == "OMIT" & is.na(user_flag) ~ "Suspect Data", 
+           is_verified & final_status == "OMIT" & !is.na(user_flag) ~ user_flag, 
+           TRUE ~ NA
+         )
+         )%>%
+  select(DT_round_MT,site, parameter, value_raw = mean, value_cleaned, units, quality_status, qc_flag )
+
+
+```
+
+## Apply smoothing
+
+```{r}
+apply_low_pass_binomial_filter <- function(df,
+                                           site_col = "site",
+                                           parameter_col = "parameter",
+                                           dt_col = "DT_round_MT",
+                                           value_col = "value_cleaned",
+                                           new_value_col = "value_smoothed") {
+
+
+  # 5-point binomial kernel [1,4,6,4,1]
+  binomial_kernel <- function(int_vec) {
+    kernel <- c(1, 4, 6, 4, 1)
+    sum(int_vec * kernel) / 16
+  }
+
+  data_smoothed <- df %>%
+    arrange(!!sym(site_col), !!sym(parameter_col), !!sym(dt_col)) %>%
+    group_split(!!sym(site_col), !!sym(parameter_col)) %>%   # split into list of dfs
+    purrr::map(~ {
+      .x <- add_column_if_not_exists(.x, new_value_col)
+
+      this_param <- dplyr::first(.x[[parameter_col]])
+
+      if (!is.na(this_param) && this_param %nin% c("Temperature", "Depth")) {
+        .x <- .x %>%
+          mutate(
+            # First pass
+            !!sym(new_value_col) := data.table::frollapply(
+              !!sym(value_col), N = 5, FUN = binomial_kernel,
+              fill = NA, align = "center"
+            )
+          )
+          # ),
+          # # Second pass
+          # !!sym(new_value_col) := data.table::frollapply(
+          #   !!sym(new_value_col), n = 5, FUN = binomial_kernel,
+          #   fill = NA, align = "center"
+          # ),
+          # # Third pass
+          # !!sym(new_value_col) := data.table::frollapply(
+          #   !!sym(new_value_col), n = 5, FUN = binomial_kernel,
+          #   fill = NA, align = "center"
+          # )
+        #)
+      } else {
+        .x <- .x %>%
+          mutate(!!sym(new_value_col) := NA_real_)
+      }
+      #Fill remaining NA in smoothed column with original values
+      .x <- .x %>%
+        mutate(
+          !!sym(new_value_col) := if_else(
+            is.na(!!sym(new_value_col)) & !is.na(!!sym(value_col)),
+            !!sym(value_col),
+            !!sym(new_value_col)
+          )
+        )
+      return(.x)
+    }) %>%
+    dplyr::bind_rows()   # put the list back together
+
+  return(data_smoothed)
+
+
+}
+
+smoothed_bc <- all_boxcreek_clean %>%
+  mutate(year = year(DT_round_MT))%>%
+  split(list(.$year, .$parameter), drop = TRUE)%>%
+  map(., apply_low_pass_binomial_filter)%>%
+  bind_rows()%>%
+  select(-year)%>%
+  arrange(DT_round_MT)%>%
+  mutate(DT_round_MT = as.character(DT_round_MT))%>%
+  select(DT_round_MT, parameter, units, value_raw, value_cleaned, value_smoothed, quality_status, qc_flag)
+
+p <- smoothed_bc%>%
+  filter(parameter == "Temperature" & year(DT_round_MT) == 2025)%>%
+  ggplot(., aes(x = DT_round_MT, y = value_cleaned))+
+  geom_line(color = "red")+
+      geom_line(aes(y = value_smoothed), color = "black")
+
+
+ggplotly(p)
+
+```
+
+# Save Data
+
+```{r}
+
+write_csv(x = smoothed_bc, file = "docs/pwqn/shared/boxelder_creek_craig/boxelder_creek_ROSS_sensor_202309_202512.csv")
+```
+
